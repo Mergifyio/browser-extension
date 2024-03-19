@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mergify",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Mergify extension for GitHub",
   "icons": {
     "48": "icon-48.png",

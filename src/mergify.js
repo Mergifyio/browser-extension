@@ -11,10 +11,13 @@
 
 function postCommand(command){
     var input = document.querySelector("#new_comment_field")
-    input.focus()
+    input.removeAttribute('disabled')
     input.value = "@mergify " + command
-    input.blur()
-    Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(el => el.textContent.trim() === 'Comment').click()
+    var button = Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(
+        el => el.textContent.trim() === 'Comment'
+    )
+    button.removeAttribute('disabled')
+    button.click()
 }
 
 function buildBtn(command) {
