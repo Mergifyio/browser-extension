@@ -15,6 +15,15 @@
       "matches": [
         "https://github.com/*"
       ]
+    },
+    {
+      "js": [
+        "sendInstallState.js"
+      ],
+      "matches": [
+        "https://dashboard.mergify.com/github/*",
+        "http://localhost:3000/github/*"
+      ]
     }
   ]
 }
