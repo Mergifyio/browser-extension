@@ -22,7 +22,6 @@
       ],
       "matches": [
         "https://dashboard.mergify.com/github/*",
-        "http://localhost:3000/github/*"
       ]
     }
   ]
