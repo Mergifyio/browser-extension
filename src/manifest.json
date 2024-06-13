@@ -21,7 +21,7 @@
         "sendInstallState.js"
       ],
       "matches": [
-        "https://dashboard.mergify.com/github/*",
+        "https://dashboard.mergify.com/github/*"
       ]
     }
   ]
