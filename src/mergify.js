@@ -74,6 +74,7 @@ function buildDetailItem () {
     btnbox.style.float = "right"
     btnbox.appendChild(buildBtn("queue"))
     btnbox.appendChild(buildBtn("requeue"))
+    btnbox.appendChild(buildBtn("dequeue"))
     btnbox.appendChild(buildBtn("refresh"))
     btnbox.appendChild(buildBtn("rebase"))
     btnbox.appendChild(buildBtn("update"))
