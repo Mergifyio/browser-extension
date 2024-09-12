@@ -1,11 +1,12 @@
-# Mergify Chrome extension
+# Mergify Browser extension
 
 
 ![Screenshot of Mergify Chrome extension](/marketplace-materials/screenshot.png)
 
 ## Install
 
-Go to [Google Chrome web store](https://chromewebstore.google.com/detail/mergify/idhdcccjlcijifdphaicgnmhifpmilge).
+For Chrome, go to [Google Chrome web store](https://chromewebstore.google.com/detail/mergify/idhdcccjlcijifdphaicgnmhifpmilge).
+For Firefox, go to [Firefox web store](https://addons.mozilla.org/fr/firefox/addon/mergify/).
 
 ## Build
 
