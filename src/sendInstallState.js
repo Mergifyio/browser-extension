@@ -1,5 +1,9 @@
 function sendInstallState() {
-    window.postMessage({ isMergifyChromeExtensionInstalled: true }, '*');
+    window.postMessage({
+        mergifyExtensionVariant: "unknown-browser",
+        // For backward compatibility
+        isMergifyChromeExtensionInstalled: true,
+    }, '*');
 }
 
 (function() {
