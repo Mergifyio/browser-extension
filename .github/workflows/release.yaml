@@ -12,18 +12,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.1.7
-      - run: make VERSION=${{ github.event.release.tag_name }}
-      - name: upload chrome artifact
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: mergify-chrome-${{ github.event.release.tag_name }}.zip
-          asset_name: mergify-chrome-${{ github.event.release.tag_name }}.zip
-          asset_content_type: application/zip
-      - name: upload firefox artifact
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: mergify-firefox-${{ github.event.release.tag_name }}.zip
-          asset_name: mergify-firefox-${{ github.event.release.tag_name }}.zip
-          asset_content_type: application/zip
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPLOAD_URL: ${{ github.event.release.upload_url }}
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          make
+
+          set +e
+          for variant in firefox chrome; do
+            name="mergify-${variant}-${VERSION}.zip"
+
+            curl -L \
+              --fail \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${name}" \
+              "${UPLOAD_URL}?name=${name}"
+
+            if [ $? = 22 ]; then
+               echo "Upload of $name failed"
+               exit 22
+            fi
+
+          done
+          set -e
