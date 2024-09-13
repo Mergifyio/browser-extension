@@ -30,7 +30,7 @@ jobs:
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@${name}" \
-              "${UPLOAD_URL}?name=${name}"
+              "${UPLOAD_URL%%/assets*}/assets?name=${name}"
 
             if [ $? = 22 ]; then
                echo "Upload of $name failed"
