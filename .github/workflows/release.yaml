@@ -12,13 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.1.7
-      - env:
+      - name: Build
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run:  make
+
+      - name: Upload to GitHub release assets
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPLOAD_URL: ${{ github.event.release.upload_url }}
           VERSION: ${{ github.event.release.tag_name }}
         run: |
-          make
-
           set +e
           for variant in firefox chrome; do
             name="mergify-${variant}-${VERSION}.zip"
@@ -39,3 +43,24 @@ jobs:
 
           done
           set -e
+
+      - name: Upload to Google Web Store
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          GOOGLE_CHROME_WEBSTORE_APP_ID: ${{ secrets.GOOGLE_CHROME_WEBSTORE_APP_ID }}
+          GOOGLE_CHROME_WEBSTORE_TOKEN: ${{ secrets.GOOGLE_CHROME_WEBSTORE_TOKEN }}
+        run: |
+            name="mergify-chrome-${VERSION}.zip"
+            curl \
+              -v \
+              -H "Authorization: Bearer ${GOOGLE_CHROME_WEBSTORE_TOKEN}"  \
+              -H "x-goog-api-version: 2" \
+              -X PUT \
+              -T "$name" \
+              "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${GOOGLE_CHROME_WEBSTORE_APP_ID}"
+            curl -v \
+              -H "Authorization: Bearer $GOOGLE_CHROME_WEBSTORE_TOKEN"  \
+              -H "x-goog-api-version: 2" \
+              -H "Content-Length: 0" \
+              -X POST \
+              "https://www.googleapis.com/chromewebstore/v1.1/items/${GOOGLE_CHROME_WEBSTORE_APP_ID}/publish"
