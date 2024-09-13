@@ -1,0 +1,99 @@
+extends: .github
+shared:
+  DefaultQueueOptions: &DefaultQueueOptions
+    commit_message_template: |
+      {{ title }} (#{{ number }})
+
+      {{ body }}
+    allow_inplace_checks: true
+    merge_method: squash
+    speculative_checks: 5
+  CheckRuns: &CheckRuns
+    - check-success=test
+    - check-success=actionlint
+
+queue_rules:
+  - name: hotfix
+    <<: *DefaultQueueOptions
+    queue_conditions:
+      - or:
+          # Author is engineering manager, we allow with one review
+          - and:
+              - author=@eng-mgr
+              - "#approved-reviews-by>=1"
+          - and:
+              - author=@devs
+              # in any other case, we allow if approve by engineering manager
+              # or anyone if it's a regular fix/revert
+              - or:
+                  - approved-reviews-by=@eng-mgr
+                  - and:
+                      - title~=^(revert|fix)
+                      - "#approved-reviews-by>=1"
+      - label=hotfix
+      - "#changes-requested-reviews-by=0"
+      - "#review-requested=0"
+    merge_conditions:
+      - and: *CheckRuns
+
+  - name: default
+    <<: *DefaultQueueOptions
+    queue_conditions:
+      - and: *CheckRuns
+      - "#approved-reviews-by>=2"
+      - "#changes-requested-reviews-by=0"
+      - "#review-threads-unresolved=0"
+      - "#review-requested=0"
+      - label!=manual merge
+    merge_conditions:
+      - and: *CheckRuns
+      - schedule=Mon-Fri 09:00-17:30[Europe/Paris]
+
+  - name: lowprio
+    <<: *DefaultQueueOptions
+    merge_method: merge
+    speculative_checks: 1
+    queue_conditions:
+      - and: *CheckRuns
+      - "#commits=1"
+      - or:
+          - and:
+              - author=mergify-ci-bot
+              - head~=^(configuration-spec|openapi-types)-sync$
+              - "title~=^chore: sync"
+          - and:
+              - author=mergify-ci-bot
+              - head~=^clifus/
+              - "title~=^chore: bump"
+          - author=dependabot[bot]
+    merge_conditions:
+      - and: *CheckRuns
+      - schedule=Mon-Fri 09:00-17:00[Europe/Paris]
+    batch_size: 7
+    batch_max_wait_time: 5min
+    queue_branch_merge_method: fast-forward
+    disallow_checks_interruption_from_queues:
+      - default
+    commit_message_template: null
+
+pull_request_rules:
+  - name: automatic merge
+    conditions:
+      - base=main
+    actions:
+      queue:
+
+  - name: request review
+    conditions:
+      - -author=dependabot[bot]
+      - -author=mergify-ci-bot
+      - -merged
+      - -closed
+      - and: *CheckRuns
+      - "#approved-reviews-by=0"
+      - "#changes-requested-reviews-by=0"
+      - "review-requested!=@devs"
+    actions:
+      request_reviews:
+        teams:
+          - devs

@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.7
+      - run: make VERSION=${{ github.event.release.tag_name }}
+      - name: upload chrome artifact
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: mergify-chrome-${{ github.event.release.tag_name }}.zip
+          asset_name: mergify-chrome-${{ github.event.release.tag_name }}.zip
+          asset_content_type: application/zip
+      - name: upload firefox artifact
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: mergify-firefox-${{ github.event.release.tag_name }}.zip
+          asset_name: mergify-firefox-${{ github.event.release.tag_name }}.zip
+          asset_content_type: application/zip
