@@ -24,6 +24,7 @@ mergify-%-${VERSION}.zip: %
 	rm -rf build $@
 	cp -a src build
 	sed -i \
+		-e 's/#VERSION#/$(VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
 		-e 's/$(MERGIFY_DOMAIN_DEFAULT)/$(MERGIFY_DOMAIN)/g' \
 		-e "s/$(BROWSER_INSTALLATION_TEMPLATE)/$</g" \
