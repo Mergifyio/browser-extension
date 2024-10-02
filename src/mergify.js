@@ -59,8 +59,8 @@ function buildDetailItem () {
     var org = parts[1]
     var repo = parts[2]
     var pull = parts[4]
-    var eventlogLink = `https://dashboard.mergify.com/github/${org}/repo/${repo}/event-logs?&pullRequestNumber=${pull}`
-    var mergequeueLink = `https://dashboard.mergify.com/github/${org}/repo/${repo}/queues?branch=main`
+    var eventlogLink = `https://dashboard.mergify.com/event-logs?login=${org}&repository=${repo}&pullRequestNumber=${pull}`
+    var mergequeueLink = `https://dashboard.mergify.com/queues?login=${org}&repository=${repo}&branch=main`
 
     var headline = document.createElement("span")
     headline.className = "status-meta"
