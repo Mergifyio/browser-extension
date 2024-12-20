@@ -215,7 +215,18 @@ function buildMergifySectionForNewMergeBox () {
 }
 
 
+function isGitHubPullRequestPage() {
+    var url = new URL(document.location.href);
+    var parts = url.pathname.split("/");
+    return parts.length >= 5 && parts[3] === 'pull';
+}
+
+
 function tryInject() {
+    if (!isGitHubPullRequestPage()) {
+        return
+    }
+    
     var isMergifyEnabledOnTheRepo = document.querySelector('a[href="/apps/mergify"]')
     if (!isMergifyEnabledOnTheRepo) {
         return
@@ -234,7 +245,6 @@ function tryInject() {
         // New merge box
         var detailSection = document.querySelector("div.border:nth-child(2)")
         if (detailSection) {
-            console.log("Injecting Mergify section for new merge box")
             detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
         }
     }
