@@ -226,8 +226,9 @@ function tryInject() {
     if (!isGitHubPullRequestPage()) {
         return
     }
-    
-    var isMergifyEnabledOnTheRepo = document.querySelector('a[href="/apps/mergify"]')
+
+    const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
+    var isMergifyEnabledOnTheRepo = document.querySelector(`img[src^="${appIconUrl}?"]`)
     if (!isMergifyEnabledOnTheRepo) {
         return
     }
