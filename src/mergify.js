@@ -243,9 +243,10 @@ function tryInject() {
         // Classic merge box
         detailSection.insertBefore(buildMergifySectionForClassicMergeBox(), detailSection.firstChild)
     } else {
-        // New merge box
-        var detailSection = document.querySelector("div.border:nth-child(2)")
-        if (detailSection) {
+        // New merge box (parent div of the conflict section, which is always present)
+        var conflictSection = document.querySelector("section[aria-label=Conflicts")
+        if (conflictSection) {
+            var detailSection = conflictSection.parentElement
             detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
         }
     }
