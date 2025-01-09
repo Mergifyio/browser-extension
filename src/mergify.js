@@ -222,6 +222,25 @@ function isGitHubPullRequestPage() {
 }
 
 
+function findNewMergeBox() {
+    // NOTE(charly): we look for the new merge box by looking for one of the
+    // following sections: Conflicts, Reviews, Checks. The new merge box hasn't
+    // a distinct class or id.
+    var conflictSection = document.querySelector("section[aria-label=Conflicts")
+    if (conflictSection) {
+        return conflictSection.parentElement
+    }
+    var reviewSection = document.querySelector("section[aria-label=Reviews")
+    if (reviewSection) {
+        return reviewSection.parentElement
+    }
+    var checksSection = document.querySelector("section[aria-label=Checks")
+    if (checksSection) {
+        return checksSection.parentElement
+    }
+}
+
+
 function tryInject() {
     if (!isGitHubPullRequestPage()) {
         return
@@ -244,9 +263,8 @@ function tryInject() {
         detailSection.insertBefore(buildMergifySectionForClassicMergeBox(), detailSection.firstChild)
     } else {
         // New merge box (parent div of the conflict section, which is always present)
-        var conflictSection = document.querySelector("section[aria-label=Conflicts")
-        if (conflictSection) {
-            var detailSection = conflictSection.parentElement
+        var detailSection = findNewMergeBox()
+        if (detailSection) {
             detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
         }
     }
