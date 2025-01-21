@@ -247,7 +247,7 @@ function tryInject() {
     }
 
     const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
-    var isMergifyEnabledOnTheRepo = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"]`)
+    var isMergifyEnabledOnTheRepo = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
     if (!isMergifyEnabledOnTheRepo) {
         return
     }
