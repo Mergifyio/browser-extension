@@ -245,13 +245,13 @@ function tryInject() {
     if (!isGitHubPullRequestPage()) {
         return
     }
-
-    if (!isMergifyEnabledOnTheRepo()) {
-        return
-    }
     
     let isMergifySectionInjected = document.querySelector("#mergify")
     if (isMergifySectionInjected) {
+        return
+    }
+
+    if (!isMergifyEnabledOnTheRepo()) {
         return
     }
     
