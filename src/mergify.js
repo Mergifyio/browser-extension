@@ -246,17 +246,15 @@ function tryInject() {
         return
     }
 
-    const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
-    var isMergifyEnabledOnTheRepo = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
-    if (!isMergifyEnabledOnTheRepo) {
+    if (!isMergifyEnabledOnTheRepo()) {
         return
     }
-
+    
     var isMergifySectionInjected = document.querySelector("#mergify")
     if (isMergifySectionInjected) {
         return
     }
-
+    
     var detailSection = document.querySelector(".mergeability-details")
     if (detailSection) {
         // Classic merge box
@@ -270,6 +268,74 @@ function tryInject() {
     }
 }
 
+function isMergifyEnabledOnTheRepo() {
+    const mergifyCache = new MergifyCache();
+    const {org, repo} = getPullRequestData();
+    
+    const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
+    var enabled = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
+    
+    if (enabled) {
+        mergifyCache.update(org, repo, true);
+        return true;
+    }
+    return mergifyCache.get(org, repo);
+}
+
+
+class MergifyCache {
+    /**
+     * @param {number} expirationMs - Cache expiration time in milliseconds (defaults to 1 day)
+     */
+    constructor(expirationMs = 24 * 60 * 60 * 1000) {
+        this.CACHE_KEY_PREFIX = 'mergify_browser_extension';
+        this.expirationMs = expirationMs;
+    }
+
+    key(owner, repo) {
+        return `${this.CACHE_KEY_PREFIX}_${owner}_${repo}`;
+    }
+
+    update(owner, repo, isMergifyEnabled) {
+        const key = this.key(owner, repo);
+        const data = {
+            isMergifyEnabled,
+            timestamp: Date.now()
+        };
+
+        try {
+            localStorage.setItem(key, JSON.stringify(data));
+        } catch (error) {
+            console.error('Failed to store Mergify status in cache:', error);
+        }
+    }
+
+    get(owner, repo) {
+        const key = this.key(owner, repo);
+
+        try {
+            const cachedData = localStorage.getItem(key);
+            if (!cachedData) {
+                return null;
+            }
+
+            const data = JSON.parse(cachedData);
+
+            // Check if cache entry has expired
+            if (Date.now() - data.timestamp > this.expirationMs) {
+                localStorage.removeItem(key);
+                return null;
+            }
+
+            return data.isMergifyEnabled;
+        } catch (error) {
+            console.error('Failed to retrieve Mergify status from cache:', error);
+            return null;
+        }
+    }
+}
+
+
 (function() {
     'use strict';
     tryInject();
@@ -281,3 +347,4 @@ function tryInject() {
         subtree: true
     });
 }());
+
