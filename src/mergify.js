@@ -262,7 +262,7 @@ function tryInject() {
         // Classic merge box
         detailSection.insertBefore(buildMergifySectionForClassicMergeBox(), detailSection.firstChild)
     } else {
-        // New merge box (parent div of the conflict section, which is always present)
+        // New merge box
         var detailSection = findNewMergeBox()
         if (detailSection) {
             detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
