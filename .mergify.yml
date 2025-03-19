@@ -7,7 +7,6 @@ shared:
       {{ body }}
     allow_inplace_checks: true
     merge_method: squash
-    speculative_checks: 5
   CheckRuns: &CheckRuns
     - check-success=test
     - check-success=actionlint
