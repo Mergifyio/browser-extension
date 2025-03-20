@@ -348,3 +348,4 @@ class MergifyCache {
     });
 }());
 
+module.exports = { MergifyCache };
