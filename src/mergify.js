@@ -25,10 +25,10 @@ const LOGO_SVG = `<svg width="25" height="25" viewBox="0 0 25 25" fill="none" xm
 </svg>`
 
 function postCommand(command){
-    var input = document.querySelector("#new_comment_field")
+    let input = document.querySelector("#new_comment_field")
     input.removeAttribute('disabled')
     input.value = "@mergify " + command
-    var button = Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(
+    let button = Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(
         el => el.textContent.trim() === 'Comment'
     )
     button.removeAttribute('disabled')
@@ -36,8 +36,8 @@ function postCommand(command){
 }
 
 function buildBtn(command) {
-    var element = document.createElement("button");
-    var label = command.charAt(0).toUpperCase() + command.slice(1);
+    let element = document.createElement("button");
+    let label = command.charAt(0).toUpperCase() + command.slice(1);
     element.onclick = () => postCommand(command)
     element.className ="btn-sm btn"
     element.style.marginLeft = "10px"
@@ -46,8 +46,8 @@ function buildBtn(command) {
 }
 
 function getPullRequestData() {
-    var url = new URL(document.location.href)
-    var parts = url.pathname.split("/")
+    let url = new URL(document.location.href)
+    let parts = url.pathname.split("/")
     return {
         org: parts[1],
         repo: parts[2],
@@ -56,23 +56,23 @@ function getPullRequestData() {
 }
 
 function getEventLogLink() {
-    var data = getPullRequestData()
+    let data = getPullRequestData()
     return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`
 }
 
 function getMergeQueueLink() {
-    var data = getPullRequestData()
+    let data = getPullRequestData()
     return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main`
 }
 
 function buildMergifySectionForClassicMergeBox () {
-    var icon = document.createElement("div");
+    let icon = document.createElement("div");
     icon.className = "branch-action-item-icon"
     icon.innerHTML = LOGO_SVG
-    var title = document.createElement("div")
+    let title = document.createElement("div")
     title.innerHTML = '<h3 class="status-heading h4">Mergify</h3>'
 
-    var headline = document.createElement("span")
+    let headline = document.createElement("span")
     headline.className = "status-meta"
     headline.innerHTML = `
           This pull request is managed by Mergify.<br/>
@@ -80,7 +80,7 @@ function buildMergifySectionForClassicMergeBox () {
           <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
     `;
 
-    var btnbox = document.createElement("div");
+    let btnbox = document.createElement("div");
     btnbox.style.float = "right"
     btnbox.appendChild(buildBtn("queue"))
     btnbox.appendChild(buildBtn("requeue"))
@@ -89,13 +89,13 @@ function buildMergifySectionForClassicMergeBox () {
     btnbox.appendChild(buildBtn("rebase"))
     btnbox.appendChild(buildBtn("update"))
 
-    var element = document.createElement("div");
+    let element = document.createElement("div");
     element.appendChild(icon)
     element.appendChild(btnbox)
     element.appendChild(title)
     element.appendChild(headline)
 
-    var details = document.createElement("div");
+    let details = document.createElement("div");
     details.className = "branch-action-item js-details-container Details"
     details.id = "mergify"
     details.appendChild(element)
@@ -104,18 +104,18 @@ function buildMergifySectionForClassicMergeBox () {
 
 function buildLogoContainer() {
     // <div class="mr-2 flex-shrink-0">
-    var container = document.createElement("div")
+    let container = document.createElement("div")
     container.className = "mr-2 flex-shrink-0"
 
     // <div overflow="hidden" size="32" class="Box-sc-g0xbh4-0 iAmUFw">
-    var container2 = document.createElement("div")
+    let container2 = document.createElement("div")
     container2.setAttribute("overflow", "hidden")
     container2.setAttribute("size", "32")
     container2.className = "Box-sc-g0xbh4-0 iAmUFw"
     container.appendChild(container2)
 
     // <div display="flex" size="32" class="Box-sc-g0xbh4-0 jneZjk">
-    var container3 = document.createElement("div")
+    let container3 = document.createElement("div")
     container3.setAttribute("display", "flex")
     container3.setAttribute("size", "32")
     container3.className = "Box-sc-g0xbh4-0 jneZjk"
@@ -126,25 +126,25 @@ function buildLogoContainer() {
 }
 
 function buildTitleContainer () {
-    var container = document.createElement("div")
+    let container = document.createElement("div")
     container.className = "flex-1"
 
-    var title = document.createElement("h3")
+    let title = document.createElement("h3")
     title.className = "Box-sc-g0xbh4-0 isSOdJ prc-Heading-Heading-6CmGO"
     title.textContent = "Mergify"
     container.appendChild(title)
 
-    var subtitle = document.createElement("p")
+    let subtitle = document.createElement("p")
     subtitle.className = "fgColor-muted mb-0"
     subtitle.textContent = "This pull request is managed by Mergify."
     container.appendChild(subtitle)
 
-    var mergeQueueLink = document.createElement("p")
+    let mergeQueueLink = document.createElement("p")
     mergeQueueLink.className = "fgColor-muted mb-0"
     mergeQueueLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`
     container.appendChild(mergeQueueLink)
 
-    var eventLogLink = document.createElement("p")
+    let eventLogLink = document.createElement("p")
     eventLogLink.className = "fgColor-muted mb-0"
     eventLogLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`
     container.appendChild(eventLogLink)
@@ -153,10 +153,10 @@ function buildTitleContainer () {
 }
 
 function buildButton(command) {
-    var container = document.createElement("div")
+    let container = document.createElement("div")
     container.className = "Box-sc-g0xbh4-0"
 
-    var button = document.createElement("button")
+    let button = document.createElement("button")
     button.setAttribute("aria-disabled", "false")
     button.setAttribute("type", "button")
     button.className = "prc-Button-ButtonBase-c50BI flex-1"
@@ -166,7 +166,7 @@ function buildButton(command) {
     button.setAttribute("data-variant", "default")
     button.setAttribute("aria-describedby", ":r1o:-loading-announcement")
     button.onclick = () => postCommand(command)
-    var label = command.charAt(0).toUpperCase() + command.slice(1)
+    let label = command.charAt(0).toUpperCase() + command.slice(1)
     button.innerHTML = `<span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-HKbr-">
     <span data-component="text" class="prc-Button-Label-pTQ3x">${label}</span>
     </span>`
@@ -176,7 +176,7 @@ function buildButton(command) {
 }
 
 function buildTitleAndButtonsContainer() {
-    var container = document.createElement("div")
+    let container = document.createElement("div")
     container.className = "d-flex flex-1 flex-column flex-sm-row gap-2"
 
     container.appendChild(buildTitleContainer())
@@ -191,12 +191,12 @@ function buildTitleAndButtonsContainer() {
 }
 
 function buildMergifySectionForNewMergeBox () {
-    var section = document.createElement("section")
+    let section = document.createElement("section")
     section.className = "border-bottom borderColor-muted"
     section.id = "mergify"
     section.setAttribute("aria-label", "Mergify")
 
-    var container1 = document.createElement("div")
+    let container1 = document.createElement("div")
     container1.className = "d-flex flex-column width-full overflow-hidden"
     section.appendChild(container1)
 
@@ -204,7 +204,7 @@ function buildMergifySectionForNewMergeBox () {
     container2.className = "MergeBoxSectionHeader-module__wrapper--f99Ts flex-column flex-sm-row flex-items-center flex-sm-items-start flex-justify-between"
     container1.appendChild(container2)
 
-    var container3 = document.createElement("div")
+    let container3 = document.createElement("div")
     container3.className = "d-flex width-full"
     container2.appendChild(container3)
 
@@ -216,8 +216,8 @@ function buildMergifySectionForNewMergeBox () {
 
 
 function isGitHubPullRequestPage() {
-    var url = new URL(document.location.href);
-    var parts = url.pathname.split("/");
+    let url = new URL(document.location.href);
+    let parts = url.pathname.split("/");
     return parts.length >= 5 && parts[3] === 'pull';
 }
 
@@ -226,15 +226,15 @@ function findNewMergeBox() {
     // NOTE(charly): we look for the new merge box by looking for one of the
     // following sections: Conflicts, Reviews, Checks. The new merge box hasn't
     // a distinct class or id.
-    var conflictSection = document.querySelector("section[aria-label=Conflicts")
+    let conflictSection = document.querySelector("section[aria-label=Conflicts")
     if (conflictSection) {
         return conflictSection.parentElement
     }
-    var reviewSection = document.querySelector("section[aria-label=Reviews")
+    let reviewSection = document.querySelector("section[aria-label=Reviews")
     if (reviewSection) {
         return reviewSection.parentElement
     }
-    var checksSection = document.querySelector("section[aria-label=Checks")
+    let checksSection = document.querySelector("section[aria-label=Checks")
     if (checksSection) {
         return checksSection.parentElement
     }
@@ -250,18 +250,18 @@ function tryInject() {
         return
     }
     
-    var isMergifySectionInjected = document.querySelector("#mergify")
+    let isMergifySectionInjected = document.querySelector("#mergify")
     if (isMergifySectionInjected) {
         return
     }
     
-    var detailSection = document.querySelector(".mergeability-details")
+    let detailSection = document.querySelector(".mergeability-details")
     if (detailSection) {
         // Classic merge box
         detailSection.insertBefore(buildMergifySectionForClassicMergeBox(), detailSection.firstChild)
     } else {
         // New merge box
-        var detailSection = findNewMergeBox()
+        let detailSection = findNewMergeBox()
         if (detailSection) {
             detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
         }
@@ -273,7 +273,7 @@ function isMergifyEnabledOnTheRepo() {
     const {org, repo} = getPullRequestData();
     
     const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
-    var enabled = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
+    let enabled = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
     
     if (enabled) {
         mergifyCache.update(org, repo, true);
