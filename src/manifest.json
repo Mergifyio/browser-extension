@@ -1,34 +1,26 @@
 {
-  "manifest_version": 3,
-  "name": "Mergify",
-  "version": "#VERSION#",
-  "description": "Mergify extension for GitHub",
-  "icons": {
-    "48": "icon-48.png",
-    "128": "icon-128.png"
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "d1b33d6a57c463f0daef4abfb625edddd1c2d5d9@mergify.com",
-      "strict_min_version": "109.0"
-    }
-  },
-  "content_scripts": [
-    {
-      "js": [
-        "mergify.js"
-      ],
-      "matches": [
-        "https://github.com/*"
-      ]
+    "manifest_version": 3,
+    "name": "Mergify",
+    "version": "#VERSION#",
+    "description": "Mergify extension for GitHub",
+    "icons": {
+        "48": "icon-48.png",
+        "128": "icon-128.png"
     },
-    {
-      "js": [
-        "sendInstallState.js"
-      ],
-      "matches": [
-        "https://dashboard.mergify.com/*"
-      ]
-    }
-  ]
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "d1b33d6a57c463f0daef4abfb625edddd1c2d5d9@mergify.com",
+            "strict_min_version": "109.0"
+        }
+    },
+    "content_scripts": [
+        {
+            "js": ["mergify.js"],
+            "matches": ["https://github.com/*"]
+        },
+        {
+            "js": ["sendInstallState.js"],
+            "matches": ["https://dashboard.mergify.com/*"]
+        }
+    ]
 }
