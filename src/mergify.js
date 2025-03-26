@@ -27,7 +27,7 @@ const LOGO_SVG = `<svg width="25" height="25" viewBox="0 0 25 25" fill="none" xm
 function postCommand(command){
     let input = document.querySelector("#new_comment_field")
     input.removeAttribute('disabled')
-    input.value = "@mergify " + command
+    input.value = "@mergifyio " + command
     let button = Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(
         el => el.textContent.trim() === 'Comment'
     )
