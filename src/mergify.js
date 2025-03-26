@@ -200,7 +200,7 @@ function buildMergifySectionForNewMergeBox () {
     container1.className = "d-flex flex-column width-full overflow-hidden"
     section.appendChild(container1)
 
-    container2 = document.createElement("div")
+    let container2 = document.createElement("div")
     container2.className = "MergeBoxSectionHeader-module__wrapper--f99Ts flex-column flex-sm-row flex-items-center flex-sm-items-start flex-justify-between"
     container1.appendChild(container2)
 
