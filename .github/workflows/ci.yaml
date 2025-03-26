@@ -42,4 +42,5 @@ jobs:
       - name: Test
         run: |
           make
+          npm run lint
           npm run test

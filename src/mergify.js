@@ -22,7 +22,7 @@ const LOGO_WHITE_SVG = `<svg width="25" height="25" viewBox="0 0 25 25" fill="no
 <path d="M0 12.5C0 8.30236 0 6.20354 0.768086 4.57956C1.55942 2.90642 2.90642 1.55942 4.57956 0.768086C6.20354 0 8.30236 0 12.5 0V0C16.6976 0 18.7965 0 20.4204 0.768086C22.0936 1.55942 23.4406 2.90642 24.2319 4.57956C25 6.20354 25 8.30236 25 12.5V12.5C25 16.6976 25 18.7965 24.2319 20.4204C23.4406 22.0936 22.0936 23.4406 20.4204 24.2319C18.7965 25 16.6976 25 12.5 25V25C8.30236 25 6.20354 25 4.57956 24.2319C2.90642 23.4406 1.55942 22.0936 0.768086 20.4204C0 18.7965 0 16.6976 0 12.5V12.5Z" fill="white"/>
 </clipPath>
 </defs>
-</svg>`
+</svg>`;
 
 const LOGO_BLACK_SVG = `
 <svg width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -40,275 +40,291 @@ const LOGO_BLACK_SVG = `
 </defs>
 </svg>
 
-`
+`;
 
-function postCommand(command){
-    let input = document.querySelector("#new_comment_field")
-    input.removeAttribute('disabled')
-    input.value = "@mergifyio " + command
-    let button = Array.from(document.querySelectorAll("#partial-new-comment-form-actions button")).find(
-        el => el.textContent.trim() === 'Comment'
-    )
-    button.removeAttribute('disabled')
-    button.click()
+function postCommand(command) {
+    const input = document.querySelector("#new_comment_field");
+    input.removeAttribute("disabled");
+    input.value = `@mergifyio ${command}`;
+    const button = Array.from(
+        document.querySelectorAll("#partial-new-comment-form-actions button"),
+    ).find((el) => el.textContent.trim() === "Comment");
+    button.removeAttribute("disabled");
+    button.click();
 }
 
 function buildBtn(command) {
-    let element = document.createElement("button");
-    let label = command.charAt(0).toUpperCase() + command.slice(1);
-    element.onclick = () => postCommand(command)
-    element.className ="btn-sm btn"
-    element.style.marginLeft = "10px"
-    element.innerHTML = '<span class="Details-content--shown">' + label + '</span></span>'
-    return element
+    const element = document.createElement("button");
+    const label = command.charAt(0).toUpperCase() + command.slice(1);
+    element.onclick = () => postCommand(command);
+    element.className = "btn-sm btn";
+    element.style.marginLeft = "10px";
+    element.innerHTML = `<span class="Details-content--shown">${label}</span></span>`;
+    return element;
 }
 
 function getPullRequestData() {
-    let url = new URL(document.location.href)
-    let parts = url.pathname.split("/")
+    const url = new URL(document.location.href);
+    const parts = url.pathname.split("/");
     return {
         org: parts[1],
         repo: parts[2],
-        pull: parts[4]
-    }
+        pull: parts[4],
+    };
 }
 
 function getLogoSvg() {
-    const githubColorMode = document.documentElement.getAttribute('data-color-mode');
-    if (githubColorMode === 'auto') {
-        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const githubColorMode =
+        document.documentElement.getAttribute("data-color-mode");
+    if (githubColorMode === "auto") {
+        const isDark = window.matchMedia(
+            "(prefers-color-scheme: dark)",
+        ).matches;
         if (isDark) {
             return LOGO_WHITE_SVG;
-        } else {
-            return LOGO_BLACK_SVG;
         }
-    } else if (githubColorMode === 'dark') {
-        return LOGO_WHITE_SVG;
-    } else if (githubColorMode === 'light') {
         return LOGO_BLACK_SVG;
     }
+
+    if (githubColorMode === "dark") {
+        return LOGO_WHITE_SVG;
+    }
+
+    if (githubColorMode === "light") {
+        return LOGO_BLACK_SVG;
+    }
+    // fallback to black
+    return LOGO_BLACK_SVG;
 }
 
 function getEventLogLink() {
-    let data = getPullRequestData()
-    return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`
+    const data = getPullRequestData();
+    return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`;
 }
 
 function getMergeQueueLink() {
-    let data = getPullRequestData()
-    return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main`
+    const data = getPullRequestData();
+    return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main`;
 }
 
-function buildMergifySectionForClassicMergeBox () {
-    let icon = document.createElement("div");
-    icon.className = "branch-action-item-icon"
-    icon.innerHTML = getLogoSvg()
-    let title = document.createElement("div")
-    title.innerHTML = '<h3 class="status-heading h4">Mergify</h3>'
+function buildMergifySectionForClassicMergeBox() {
+    const icon = document.createElement("div");
+    icon.className = "branch-action-item-icon";
+    icon.innerHTML = getLogoSvg();
+    const title = document.createElement("div");
+    title.innerHTML = '<h3 class="status-heading h4">Mergify</h3>';
 
-    let headline = document.createElement("span")
-    headline.className = "status-meta"
+    const headline = document.createElement("span");
+    headline.className = "status-meta";
     headline.innerHTML = `
           This pull request is managed by Mergify.<br/>
           <a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a> —
           <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
     `;
 
-    let btnbox = document.createElement("div");
-    btnbox.style.float = "right"
-    btnbox.appendChild(buildBtn("queue"))
-    btnbox.appendChild(buildBtn("requeue"))
-    btnbox.appendChild(buildBtn("dequeue"))
-    btnbox.appendChild(buildBtn("refresh"))
-    btnbox.appendChild(buildBtn("rebase"))
-    btnbox.appendChild(buildBtn("update"))
+    const btnbox = document.createElement("div");
+    btnbox.style.float = "right";
+    btnbox.appendChild(buildBtn("queue"));
+    btnbox.appendChild(buildBtn("requeue"));
+    btnbox.appendChild(buildBtn("dequeue"));
+    btnbox.appendChild(buildBtn("refresh"));
+    btnbox.appendChild(buildBtn("rebase"));
+    btnbox.appendChild(buildBtn("update"));
 
-    let element = document.createElement("div");
-    element.appendChild(icon)
-    element.appendChild(btnbox)
-    element.appendChild(title)
-    element.appendChild(headline)
+    const element = document.createElement("div");
+    element.appendChild(icon);
+    element.appendChild(btnbox);
+    element.appendChild(title);
+    element.appendChild(headline);
 
-    let details = document.createElement("div");
-    details.className = "branch-action-item js-details-container Details"
-    details.id = "mergify"
-    details.appendChild(element)
+    const details = document.createElement("div");
+    details.className = "branch-action-item js-details-container Details";
+    details.id = "mergify";
+    details.appendChild(element);
     return details;
 }
 
 function buildLogoContainer() {
     // <div class="mr-2 flex-shrink-0">
-    let container = document.createElement("div")
-    container.className = "mr-2 flex-shrink-0"
+    const container = document.createElement("div");
+    container.className = "mr-2 flex-shrink-0";
 
     // <div overflow="hidden" size="32" class="Box-sc-g0xbh4-0 iAmUFw">
-    let container2 = document.createElement("div")
-    container2.setAttribute("overflow", "hidden")
-    container2.setAttribute("size", "32")
-    container2.className = "Box-sc-g0xbh4-0 iAmUFw"
-    container.appendChild(container2)
+    const container2 = document.createElement("div");
+    container2.setAttribute("overflow", "hidden");
+    container2.setAttribute("size", "32");
+    container2.className = "Box-sc-g0xbh4-0 iAmUFw";
+    container.appendChild(container2);
 
     // <div display="flex" size="32" class="Box-sc-g0xbh4-0 jneZjk">
-    let container3 = document.createElement("div")
-    container3.setAttribute("display", "flex")
-    container3.setAttribute("size", "32")
-    container3.className = "Box-sc-g0xbh4-0 jneZjk"
-    container3.innerHTML = getLogoSvg()
-    container2.appendChild(container3)
-    
-    return container
+    const container3 = document.createElement("div");
+    container3.setAttribute("display", "flex");
+    container3.setAttribute("size", "32");
+    container3.className = "Box-sc-g0xbh4-0 jneZjk";
+    container3.innerHTML = getLogoSvg();
+    container2.appendChild(container3);
+
+    return container;
 }
 
-function buildTitleContainer () {
-    let container = document.createElement("div")
-    container.className = "flex-1"
+function buildTitleContainer() {
+    const container = document.createElement("div");
+    container.className = "flex-1";
 
-    let title = document.createElement("h3")
-    title.className = "Box-sc-g0xbh4-0 isSOdJ prc-Heading-Heading-6CmGO"
-    title.textContent = "Mergify"
-    container.appendChild(title)
+    const title = document.createElement("h3");
+    title.className = "Box-sc-g0xbh4-0 isSOdJ prc-Heading-Heading-6CmGO";
+    title.textContent = "Mergify";
+    container.appendChild(title);
 
-    let subtitle = document.createElement("p")
-    subtitle.className = "fgColor-muted mb-0"
-    subtitle.textContent = "This pull request is managed by Mergify."
-    container.appendChild(subtitle)
+    const subtitle = document.createElement("p");
+    subtitle.className = "fgColor-muted mb-0";
+    subtitle.textContent = "This pull request is managed by Mergify.";
+    container.appendChild(subtitle);
 
-    let mergeQueueLink = document.createElement("p")
-    mergeQueueLink.className = "fgColor-muted mb-0"
-    mergeQueueLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`
-    container.appendChild(mergeQueueLink)
+    const mergeQueueLink = document.createElement("p");
+    mergeQueueLink.className = "fgColor-muted mb-0";
+    mergeQueueLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`;
+    container.appendChild(mergeQueueLink);
 
-    let eventLogLink = document.createElement("p")
-    eventLogLink.className = "fgColor-muted mb-0"
-    eventLogLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`
-    container.appendChild(eventLogLink)
+    const eventLogLink = document.createElement("p");
+    eventLogLink.className = "fgColor-muted mb-0";
+    eventLogLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`;
+    container.appendChild(eventLogLink);
 
-    return container
+    return container;
 }
 
 function buildButton(command) {
-    let container = document.createElement("div")
-    container.className = "Box-sc-g0xbh4-0"
+    const container = document.createElement("div");
+    container.className = "Box-sc-g0xbh4-0";
 
-    let button = document.createElement("button")
-    button.setAttribute("aria-disabled", "false")
-    button.setAttribute("type", "button")
-    button.className = "prc-Button-ButtonBase-c50BI flex-1"
-    button.setAttribute("data-loading", "false")
-    button.setAttribute("data-no-visuals", "true")
-    button.setAttribute("data-size", "small")
-    button.setAttribute("data-variant", "default")
-    button.setAttribute("aria-describedby", ":r1o:-loading-announcement")
-    button.onclick = () => postCommand(command)
-    let label = command.charAt(0).toUpperCase() + command.slice(1)
+    const button = document.createElement("button");
+    button.setAttribute("aria-disabled", "false");
+    button.setAttribute("type", "button");
+    button.className = "prc-Button-ButtonBase-c50BI flex-1";
+    button.setAttribute("data-loading", "false");
+    button.setAttribute("data-no-visuals", "true");
+    button.setAttribute("data-size", "small");
+    button.setAttribute("data-variant", "default");
+    button.setAttribute("aria-describedby", ":r1o:-loading-announcement");
+    button.onclick = () => postCommand(command);
+    const label = command.charAt(0).toUpperCase() + command.slice(1);
     button.innerHTML = `<span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-HKbr-">
     <span data-component="text" class="prc-Button-Label-pTQ3x">${label}</span>
-    </span>`
-    container.appendChild(button)
+    </span>`;
+    container.appendChild(button);
 
-    return container
+    return container;
 }
 
 function buildTitleAndButtonsContainer() {
-    let container = document.createElement("div")
-    container.className = "d-flex flex-1 flex-column flex-sm-row gap-2"
+    const container = document.createElement("div");
+    container.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
 
-    container.appendChild(buildTitleContainer())
-    container.appendChild(buildButton("queue"))
-    container.appendChild(buildButton("requeue"))
-    container.appendChild(buildButton("dequeue"))
-    container.appendChild(buildButton("refresh"))
-    container.appendChild(buildButton("rebase"))
-    container.appendChild(buildButton("update"))
+    container.appendChild(buildTitleContainer());
+    container.appendChild(buildButton("queue"));
+    container.appendChild(buildButton("requeue"));
+    container.appendChild(buildButton("dequeue"));
+    container.appendChild(buildButton("refresh"));
+    container.appendChild(buildButton("rebase"));
+    container.appendChild(buildButton("update"));
 
-    return container
+    return container;
 }
 
-function buildMergifySectionForNewMergeBox () {
-    let section = document.createElement("section")
-    section.className = "border-bottom borderColor-muted"
-    section.id = "mergify"
-    section.setAttribute("aria-label", "Mergify")
+function buildMergifySectionForNewMergeBox() {
+    const section = document.createElement("section");
+    section.className = "border-bottom borderColor-muted";
+    section.id = "mergify";
+    section.setAttribute("aria-label", "Mergify");
 
-    let container1 = document.createElement("div")
-    container1.className = "d-flex flex-column width-full overflow-hidden"
-    section.appendChild(container1)
+    const container1 = document.createElement("div");
+    container1.className = "d-flex flex-column width-full overflow-hidden";
+    section.appendChild(container1);
 
-    let container2 = document.createElement("div")
-    container2.className = "MergeBoxSectionHeader-module__wrapper--f99Ts flex-column flex-sm-row flex-items-center flex-sm-items-start flex-justify-between"
-    container1.appendChild(container2)
+    const container2 = document.createElement("div");
+    container2.className =
+        "MergeBoxSectionHeader-module__wrapper--f99Ts flex-column flex-sm-row flex-items-center flex-sm-items-start flex-justify-between";
+    container1.appendChild(container2);
 
-    let container3 = document.createElement("div")
-    container3.className = "d-flex width-full"
-    container2.appendChild(container3)
+    const container3 = document.createElement("div");
+    container3.className = "d-flex width-full";
+    container2.appendChild(container3);
 
-    container3.appendChild(buildLogoContainer())
-    container3.appendChild(buildTitleAndButtonsContainer())
+    container3.appendChild(buildLogoContainer());
+    container3.appendChild(buildTitleAndButtonsContainer());
 
-    return section
+    return section;
 }
-
 
 function isGitHubPullRequestPage() {
-    let url = new URL(document.location.href);
-    let parts = url.pathname.split("/");
-    return parts.length >= 5 && parts[3] === 'pull';
+    const url = new URL(document.location.href);
+    const parts = url.pathname.split("/");
+    return parts.length >= 5 && parts[3] === "pull";
 }
-
 
 function findNewMergeBox() {
     // NOTE(charly): we look for the new merge box by looking for one of the
     // following sections: Conflicts, Reviews, Checks. The new merge box hasn't
     // a distinct class or id.
-    let conflictSection = document.querySelector("section[aria-label=Conflicts")
+    const conflictSection = document.querySelector(
+        "section[aria-label=Conflicts",
+    );
     if (conflictSection) {
-        return conflictSection.parentElement
+        return conflictSection.parentElement;
     }
-    let reviewSection = document.querySelector("section[aria-label=Reviews")
+    const reviewSection = document.querySelector("section[aria-label=Reviews");
     if (reviewSection) {
-        return reviewSection.parentElement
+        return reviewSection.parentElement;
     }
-    let checksSection = document.querySelector("section[aria-label=Checks")
+    const checksSection = document.querySelector("section[aria-label=Checks");
     if (checksSection) {
-        return checksSection.parentElement
+        return checksSection.parentElement;
     }
 }
 
-
 function tryInject() {
     if (!isGitHubPullRequestPage()) {
-        return
+        return;
     }
-    
-    let isMergifySectionInjected = document.querySelector("#mergify")
+
+    const isMergifySectionInjected = document.querySelector("#mergify");
     if (isMergifySectionInjected) {
-        return
+        return;
     }
 
     if (!isMergifyEnabledOnTheRepo()) {
-        return
+        return;
     }
-    
-    let detailSection = document.querySelector(".mergeability-details")
+
+    const detailSection = document.querySelector(".mergeability-details");
     if (detailSection) {
         // Classic merge box
-        detailSection.insertBefore(buildMergifySectionForClassicMergeBox(), detailSection.firstChild)
+        detailSection.insertBefore(
+            buildMergifySectionForClassicMergeBox(),
+            detailSection.firstChild,
+        );
     } else {
         // New merge box
-        let detailSection = findNewMergeBox()
+        const detailSection = findNewMergeBox();
         if (detailSection) {
-            detailSection.insertBefore(buildMergifySectionForNewMergeBox(), detailSection.firstChild)
+            detailSection.insertBefore(
+                buildMergifySectionForNewMergeBox(),
+                detailSection.firstChild,
+            );
         }
     }
 }
 
 function isMergifyEnabledOnTheRepo() {
     const mergifyCache = new MergifyCache();
-    const {org, repo} = getPullRequestData();
-    
-    const appIconUrl = "https://avatars.githubusercontent.com/in/10562"
-    let enabled = document.querySelector(`img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`)
-    
+    const { org, repo } = getPullRequestData();
+
+    const appIconUrl = "https://avatars.githubusercontent.com/in/10562";
+    const enabled = document.querySelector(
+        `img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`,
+    );
+
     if (enabled) {
         mergifyCache.update(org, repo, true);
         return true;
@@ -316,13 +332,12 @@ function isMergifyEnabledOnTheRepo() {
     return mergifyCache.get(org, repo);
 }
 
-
 class MergifyCache {
     /**
      * @param {number} expirationMs - Cache expiration time in milliseconds (defaults to 1 day)
      */
     constructor(expirationMs = 24 * 60 * 60 * 1000) {
-        this.CACHE_KEY_PREFIX = 'mergify_browser_extension';
+        this.CACHE_KEY_PREFIX = "mergify_browser_extension";
         this.expirationMs = expirationMs;
     }
 
@@ -334,13 +349,13 @@ class MergifyCache {
         const key = this.key(owner, repo);
         const data = {
             isMergifyEnabled,
-            timestamp: Date.now()
+            timestamp: Date.now(),
         };
 
         try {
             localStorage.setItem(key, JSON.stringify(data));
         } catch (error) {
-            console.error('Failed to store Mergify status in cache:', error);
+            console.error("Failed to store Mergify status in cache:", error);
         }
     }
 
@@ -363,23 +378,24 @@ class MergifyCache {
 
             return data.isMergifyEnabled;
         } catch (error) {
-            console.error('Failed to retrieve Mergify status from cache:', error);
+            console.error(
+                "Failed to retrieve Mergify status from cache:",
+                error,
+            );
             return null;
         }
     }
 }
 
-
-(function() {
-    'use strict';
+(() => {
     tryInject();
-    const observer = new MutationObserver(mutations => {
+    const observer = new MutationObserver((mutations) => {
         tryInject();
     });
     observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
     });
-}());
+})();
 
 module.exports = { MergifyCache };
