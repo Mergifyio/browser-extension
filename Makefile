@@ -23,6 +23,7 @@ mergify-%-${VERSION}.zip: %
 	@echo "* Building $@..."
 	rm -rf build $@
 	cp -a src build
+	rm -rf build/__tests__
 	sed -i \
 		-e 's/#VERSION#/$(VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
