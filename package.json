@@ -1,10 +1,13 @@
 {
-  "name": "mergify-browser-extension",
-  "scripts": {
-    "test": "jest"
-  },
-  "devDependencies": {
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
-  }
+    "name": "mergify-browser-extension",
+    "scripts": {
+        "lint": "biome check",
+        "format": "biome check --write",
+        "test": "jest"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "1.9.4",
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0"
+    }
 }
