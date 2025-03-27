@@ -19,7 +19,7 @@ jobs:
       - name: Download actionlint
         id: get_actionlint
         # yamllint disable-line rule:line-length
-        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.6.15
+        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
 
       - name: Check workflow files
         run: ${{ steps.get_actionlint.outputs.executable }} -color
