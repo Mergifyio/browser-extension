@@ -41,23 +41,29 @@ mergify-safari-${VERSION}.zip: mergify-safariTMP-$(VERSION).zip
 	rm -rf safari
 	mkdir -p safari/src
 	(cd safari/src && unzip ../../$<)
-	xcrun /Applications/Xcode.app/Contents/Developer/usr/bin/safari-web-extension-converter \
+	xcrun safari-web-extension-converter \
 		--macos-only \
 		--project-location safari \
+		--bundle-identifier com.mergify.safari-extension \
 		--force \
 		--no-open \
 		--no-prompt \
+		--copy-resources \
 		--app-name mergify \
 	    safari/src
 
-	(cd safari/mergify && \
-		xcodebuild -scheme mergify -configuration Release && \
-	    xcodebuild -scheme mergify -archivePath ./build/mergify-safari-${VERSION}.xcarchive archive)
+	xcodebuild \
+		-project safari/mergify/mergify.xcodeproj \
+		-scheme mergify \
+		-configuration Release \
+	    -archivePath safari/build.xcarchive \
+	    archive
 
-	# TODO(sileht): sign the package
-	# xcodebuild -exportArchive -archivePath ./build/mergify-safari-${VERSION}.xcarchive -exportPath ./build -exportOptionsPlist ../../ExportOptions.plist 
-	cd safari/mergify/build/mergify-safari-${VERSION}.xcarchive ; zip ../../../../$@ *
+	ditto -c -k --sequesterRsrc --keepParent \
+		./safari/build.xcarchive/Products/Applications/mergify.app $@
 
 	rm -rf safari $<
 	@echo
 
+clean:
+	rm -rf build safari mergify-*-*.zip

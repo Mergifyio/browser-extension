@@ -29,7 +29,7 @@ jobs:
           VERSION: ${{ github.event.release.tag_name }}
         run: |
           set +e
-          for name in mergify-firefox-${VERSION}.zip mergify-chrome-${VERSION}.zip mergify-safari-${VERSION}.xcarchive; do
+          for name in mergify-firefox-${VERSION}.zip mergify-chrome-${VERSION}.zip mergify-safari-${VERSION}.zip; do
             curl -L \
               --fail \
               -X POST \
