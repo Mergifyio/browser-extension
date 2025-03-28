@@ -10,13 +10,18 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4.1.7
       - name: Build
         env:
           VERSION: ${{ github.event.release.tag_name }}
-        run:  make
+        run: |
+          brew install gnu-sed
+          echo "$(brew --prefix)/opt/gnu-sed/libexec/gnubin" >> "$GITHUB_PATH"
+
+          sudo xcode-select -s /Applications/Xcode.app
+          make
 
       - name: Upload to GitHub release assets
         env:
@@ -25,9 +30,7 @@ jobs:
           VERSION: ${{ github.event.release.tag_name }}
         run: |
           set +e
-          for variant in firefox chrome; do
-            name="mergify-${variant}-${VERSION}.zip"
-
+          for name in mergify-firefox-${VERSION}.zip mergify-chrome-${VERSION}.zip mergify-safari-${VERSION}.xcarchive; do
             curl -L \
               --fail \
               -X POST \

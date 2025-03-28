@@ -1,2 +1,4 @@
-mergify.zip
+mergify-*.zip
+mergify-*.xcarchive
 node_modules
+safari
