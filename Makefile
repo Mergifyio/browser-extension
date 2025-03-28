@@ -8,15 +8,18 @@ VERSION ?= $(VERSION_DEFAULT)
 GITHUB_DOMAIN ?= $(GITHUB_DOMAIN_DEFAULT)
 MERGIFY_DOMAIN ?= $(MERGIFY_DOMAIN_DEFAULT)
 
-TARGETS = mergify-firefox-$(VERSION).zip mergify-chrome-$(VERSION).zip
+TARGETS = mergify-firefox-$(VERSION).zip mergify-chrome-$(VERSION).zip mergify-safari-$(VERSION).zip
 
 all: $(TARGETS)
 	@ls -la $(TARGETS)
 
-
 firefox:
 
 chrome:
+
+safari:
+
+safariTMP:
 
 
 mergify-%-${VERSION}.zip: %
@@ -33,3 +36,28 @@ mergify-%-${VERSION}.zip: %
 	cd build ; zip ../$@ *
 	rm -rf build
 	@echo
+
+mergify-safari-${VERSION}.zip: mergify-safariTMP-$(VERSION).zip
+	rm -rf safari
+	mkdir -p safari/src
+	(cd safari/src && unzip ../../$<)
+	xcrun /Applications/Xcode.app/Contents/Developer/usr/bin/safari-web-extension-converter \
+		--macos-only \
+		--project-location safari \
+		--force \
+		--no-open \
+		--no-prompt \
+		--app-name mergify \
+	    safari/src
+
+	(cd safari/mergify && \
+		xcodebuild -scheme mergify -configuration Release && \
+	    xcodebuild -scheme mergify -archivePath ./build/mergify-safari-${VERSION}.xcarchive archive)
+
+	# TODO(sileht): sign the package
+	# xcodebuild -exportArchive -archivePath ./build/mergify-safari-${VERSION}.xcarchive -exportPath ./build -exportOptionsPlist ../../ExportOptions.plist 
+	cd safari/mergify/build/mergify-safari-${VERSION}.xcarchive ; zip ../../../../$@ *
+
+	rm -rf safari $<
+	@echo
+

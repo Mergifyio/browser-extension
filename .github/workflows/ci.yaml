@@ -19,14 +19,14 @@ jobs:
       - name: Download actionlint
         id: get_actionlint
         # yamllint disable-line rule:line-length
-        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.6.15
+        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
 
       - name: Check workflow files
         run: ${{ steps.get_actionlint.outputs.executable }} -color
 
   test:
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v4.1.7
@@ -37,10 +37,16 @@ jobs:
           node-version: '23'
         
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          brew install gnu-sed
+          echo "$(brew --prefix)/opt/gnu-sed/libexec/gnubin" >> "$GITHUB_PATH"
       
       - name: Test
         run: |
-          make
+
           npm run lint
           npm run test
+
+          sudo xcode-select -s /Applications/Xcode.app
+          make
