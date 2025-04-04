@@ -104,7 +104,7 @@ function getEventLogLink() {
 
 function getMergeQueueLink() {
     const data = getPullRequestData();
-    return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main`;
+    return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main&pull-request-number=${data.pull}`;
 }
 
 function buildMergifySectionForClassicMergeBox() {
