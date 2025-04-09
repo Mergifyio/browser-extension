@@ -18,7 +18,6 @@ jobs:
           VERSION: ${{ github.event.release.tag_name }}
         run: |
           brew install gnu-sed
-          echo "$(brew --prefix)/opt/gnu-sed/libexec/gnubin" >> "$GITHUB_PATH"
 
           sudo xcode-select -s /Applications/Xcode.app
           make
