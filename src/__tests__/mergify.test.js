@@ -1,4 +1,6 @@
-const { MergifyCache } = require("../mergify");
+const { MergifyCache, findNewMergeBox } = require("../mergify");
+const fs = require("node:fs");
+const path = require("node:path");
 
 describe("MergifyCache", () => {
     beforeEach(() => {
@@ -57,5 +59,41 @@ describe("MergifyCache", () => {
         expect(consoleSpy).toHaveBeenCalled();
 
         consoleSpy.mockRestore();
+    });
+});
+
+describe("findNewMergeBox", () => {
+    function loadFixture(name) {
+        const htmlPath = path.resolve(__dirname, `./fixtures/${name}.html`);
+        const htmlContent = fs.readFileSync(htmlPath, "utf8");
+
+        document.body.innerHTML = htmlContent;
+    }
+
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should find the new merge box on opened pull requests", () => {
+        loadFixture("github_pr_opened");
+
+        const mergeBox = findNewMergeBox();
+
+        expect(mergeBox).not.toBeUndefined();
+        expect(mergeBox.tagName).toBe("DIV");
+        expect(mergeBox.innerHTML).toMatch(/<section aria-label="Reviews"/);
+        expect(mergeBox.innerHTML).toMatch(/<section aria-label="Checks"/);
+    });
+
+    it("should find the new merge box on merged pull requests", () => {
+        loadFixture("github_pr_merged");
+
+        const mergeBox = findNewMergeBox();
+
+        expect(mergeBox).not.toBeUndefined();
+        expect(mergeBox.tagName).toBe("DIV");
+        expect(mergeBox.innerHTML).toMatch(
+            /Pull\s+request\s+successfully\s+merged\s+and\s+closed/,
+        );
     });
 });

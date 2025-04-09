@@ -264,22 +264,11 @@ function isGitHubPullRequestPage() {
 }
 
 function findNewMergeBox() {
-    // NOTE(charly): we look for the new merge box by looking for one of the
-    // following sections: Conflicts, Reviews, Checks. The new merge box hasn't
-    // a distinct class or id.
-    const conflictSection = document.querySelector(
-        "section[aria-label=Conflicts",
+    const mergeBoxDiv = document.querySelector(
+        "div[data-testid=mergebox-partial] > :last-child > :last-child",
     );
-    if (conflictSection) {
-        return conflictSection.parentElement;
-    }
-    const reviewSection = document.querySelector("section[aria-label=Reviews");
-    if (reviewSection) {
-        return reviewSection.parentElement;
-    }
-    const checksSection = document.querySelector("section[aria-label=Checks");
-    if (checksSection) {
-        return checksSection.parentElement;
+    if (mergeBoxDiv && mergeBoxDiv.tagName === "DIV") {
+        return mergeBoxDiv;
     }
 }
 
@@ -398,4 +387,4 @@ class MergifyCache {
     });
 })();
 
-module.exports = { MergifyCache };
+module.exports = { MergifyCache, findNewMergeBox };
