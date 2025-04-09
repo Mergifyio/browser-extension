@@ -40,7 +40,6 @@ jobs:
         run: |
           npm ci
           brew install gnu-sed
-          echo "$(brew --prefix)/opt/gnu-sed/libexec/gnubin" >> "$GITHUB_PATH"
       
       - name: Test
         run: |
