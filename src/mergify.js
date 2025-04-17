@@ -53,8 +53,25 @@ function postCommand(command) {
     button.click();
 }
 
-function buildBtn(command) {
+function getPullStatus() {
+    const status = document
+        .querySelector("span.State")
+        .getAttribute("title")
+        .replace("Status: ", "");
+    if (!status) {
+        console.warn("Can't find pull request status");
+        // Assume it's open if we can't find the status
+        return "Open";
+    }
+    // status can be "Open", "Merged" or "Closed"
+    return status;
+}
+
+function buildBtn(command, disabled) {
     const element = document.createElement("button");
+    if (disabled) {
+        element.setAttribute("disabled", "disabled");
+    }
     const label = command.charAt(0).toUpperCase() + command.slice(1);
     element.onclick = () => postCommand(command);
     element.className = "btn-sm btn";
@@ -122,14 +139,16 @@ function buildMergifySectionForClassicMergeBox() {
           <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
     `;
 
+    const pullIsClosed = getPullStatus() !== "Open";
+
     const btnbox = document.createElement("div");
     btnbox.style.float = "right";
-    btnbox.appendChild(buildBtn("queue"));
-    btnbox.appendChild(buildBtn("requeue"));
-    btnbox.appendChild(buildBtn("dequeue"));
+    btnbox.appendChild(buildBtn("queue", pullIsClosed));
+    btnbox.appendChild(buildBtn("requeue", pullIsClosed));
+    btnbox.appendChild(buildBtn("dequeue", pullIsClosed));
     btnbox.appendChild(buildBtn("refresh"));
-    btnbox.appendChild(buildBtn("rebase"));
-    btnbox.appendChild(buildBtn("update"));
+    btnbox.appendChild(buildBtn("rebase", pullIsClosed));
+    btnbox.appendChild(buildBtn("update", pullIsClosed));
 
     const element = document.createElement("div");
     element.appendChild(icon);
@@ -194,19 +213,22 @@ function buildTitleContainer() {
     return container;
 }
 
-function buildButton(command) {
+function buildButton(command, disabled) {
     const container = document.createElement("div");
     container.className = "Box-sc-g0xbh4-0";
 
     const button = document.createElement("button");
-    button.setAttribute("aria-disabled", "false");
     button.setAttribute("type", "button");
-    button.className = "prc-Button-ButtonBase-c50BI flex-1";
+    if (disabled) {
+        button.setAttribute("disabled", "disabled");
+    }
+    button.setAttribute("aria-disabled", disabled ? "true" : "false");
     button.setAttribute("data-loading", "false");
     button.setAttribute("data-no-visuals", "true");
     button.setAttribute("data-size", "small");
     button.setAttribute("data-variant", "default");
     button.setAttribute("aria-describedby", ":r1o:-loading-announcement");
+    button.className = "prc-Button-ButtonBase-c50BI flex-1";
     button.onclick = () => postCommand(command);
     const label = command.charAt(0).toUpperCase() + command.slice(1);
     button.innerHTML = `<span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-HKbr-">
@@ -218,16 +240,18 @@ function buildButton(command) {
 }
 
 function buildTitleAndButtonsContainer() {
+    const pullIsClosed = getPullStatus() !== "Open";
+
     const container = document.createElement("div");
     container.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
 
     container.appendChild(buildTitleContainer());
-    container.appendChild(buildButton("queue"));
-    container.appendChild(buildButton("requeue"));
-    container.appendChild(buildButton("dequeue"));
+    container.appendChild(buildButton("queue", pullIsClosed));
+    container.appendChild(buildButton("requeue", pullIsClosed));
+    container.appendChild(buildButton("dequeue", pullIsClosed));
     container.appendChild(buildButton("refresh"));
-    container.appendChild(buildButton("rebase"));
-    container.appendChild(buildButton("update"));
+    container.appendChild(buildButton("rebase", pullIsClosed));
+    container.appendChild(buildButton("update", pullIsClosed));
 
     return container;
 }
