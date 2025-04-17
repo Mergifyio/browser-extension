@@ -1,4 +1,5 @@
 mergify-*.zip
-mergify-*.xcarchive
+mergify-*.pkg
 node_modules
 safari
+private_keys/*
