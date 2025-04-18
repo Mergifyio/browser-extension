@@ -411,4 +411,7 @@ class MergifyCache {
     });
 })();
 
-module.exports = { MergifyCache, findNewMergeBox };
+// Required for testing only, module does not exists in an extension
+try {
+    module.exports = { MergifyCache, findNewMergeBox };
+} catch (e) {}
