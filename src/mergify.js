@@ -42,6 +42,45 @@ const LOGO_BLACK_SVG = `
 
 `;
 
+const BUTTONS = [
+    {
+        command: "queue",
+        label: "Queue",
+        tooltip: "Add the pull request to the merge queue",
+        disableOnClosedPR: true,
+    },
+    {
+        command: "requeue",
+        label: "Requeue",
+        tooltip: "Re-add the pull request to the merge queue",
+        disableOnClosedPR: true,
+    },
+    {
+        command: "dequeue",
+        label: "Dequeue",
+        tooltip: "Remove the pull request from the merge queue",
+        disableOnClosedPR: true,
+    },
+    {
+        command: "refresh",
+        label: "Refresh",
+        tooltip: "Trigger Mergify to reevaluate the pull request",
+        disableOnClosedPR: false,
+    },
+    {
+        command: "rebase",
+        label: "Rebase branch",
+        tooltip: "Rebase the pull request against its base branch",
+        disableOnClosedPR: true,
+    },
+    {
+        command: "update",
+        label: "Update branch",
+        tooltip: "Update the pull request with its base branch",
+        disableOnClosedPR: true,
+    },
+];
+
 function postCommand(command) {
     const input = document.querySelector("#new_comment_field");
     input.removeAttribute("disabled");
@@ -67,12 +106,12 @@ function getPullStatus() {
     return status;
 }
 
-function buildBtn(command, disabled) {
+function buildBtn(command, label, tooltip, disabled) {
     const element = document.createElement("button");
+    element.setAttribute("title", tooltip);
     if (disabled) {
         element.setAttribute("disabled", "disabled");
     }
-    const label = command.charAt(0).toUpperCase() + command.slice(1);
     element.onclick = () => postCommand(command);
     element.className = "btn-sm btn";
     element.style.marginLeft = "10px";
@@ -143,12 +182,17 @@ function buildMergifySectionForClassicMergeBox() {
 
     const btnbox = document.createElement("div");
     btnbox.style.float = "right";
-    btnbox.appendChild(buildBtn("queue", pullIsClosed));
-    btnbox.appendChild(buildBtn("requeue", pullIsClosed));
-    btnbox.appendChild(buildBtn("dequeue", pullIsClosed));
-    btnbox.appendChild(buildBtn("refresh"));
-    btnbox.appendChild(buildBtn("rebase", pullIsClosed));
-    btnbox.appendChild(buildBtn("update", pullIsClosed));
+
+    for (const button of BUTTONS) {
+        container.appendChild(
+            buildBtn(
+                button.command,
+                button.label,
+                button.tooltip,
+                button.disableOnClosedPR && pullIsClosed,
+            ),
+        );
+    }
 
     const element = document.createElement("div");
     element.appendChild(icon);
@@ -213,12 +257,13 @@ function buildTitleContainer() {
     return container;
 }
 
-function buildButton(command, disabled) {
+function buildButton(command, label, tooltip, disabled) {
     const container = document.createElement("div");
     container.className = "Box-sc-g0xbh4-0";
 
     const button = document.createElement("button");
     button.setAttribute("type", "button");
+    button.setAttribute("title", tooltip);
     if (disabled) {
         button.setAttribute("disabled", "disabled");
     }
@@ -230,7 +275,6 @@ function buildButton(command, disabled) {
     button.setAttribute("aria-describedby", ":r1o:-loading-announcement");
     button.className = "prc-Button-ButtonBase-c50BI flex-1";
     button.onclick = () => postCommand(command);
-    const label = command.charAt(0).toUpperCase() + command.slice(1);
     button.innerHTML = `<span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-HKbr-">
     <span data-component="text" class="prc-Button-Label-pTQ3x">${label}</span>
     </span>`;
@@ -246,12 +290,17 @@ function buildTitleAndButtonsContainer() {
     container.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
 
     container.appendChild(buildTitleContainer());
-    container.appendChild(buildButton("queue", pullIsClosed));
-    container.appendChild(buildButton("requeue", pullIsClosed));
-    container.appendChild(buildButton("dequeue", pullIsClosed));
-    container.appendChild(buildButton("refresh"));
-    container.appendChild(buildButton("rebase", pullIsClosed));
-    container.appendChild(buildButton("update", pullIsClosed));
+
+    for (const button of BUTTONS) {
+        container.appendChild(
+            buildButton(
+                button.command,
+                button.label,
+                button.tooltip,
+                button.disableOnClosedPR && pullIsClosed,
+            ),
+        );
+    }
 
     return container;
 }
