@@ -95,14 +95,14 @@ function postCommand(command) {
 function getPullStatus() {
     const status = document
         .querySelector("span.State")
-        .getAttribute("title")
-        .replace("Status: ", "");
+        .getAttribute("class")
+        .split("--")[1];
     if (!status) {
         console.warn("Can't find pull request status");
         // Assume it's open if we can't find the status
-        return "Open";
+        return "open";
     }
-    // status can be "Open", "Merged" or "Closed"
+    // status can be "open", "merged" or "closed"
     return status;
 }
 
@@ -178,7 +178,7 @@ function buildMergifySectionForClassicMergeBox() {
           <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
     `;
 
-    const pullIsClosed = getPullStatus() !== "Open";
+    const pullIsClosed = getPullStatus() !== "open";
 
     const btnbox = document.createElement("div");
     btnbox.style.float = "right";
@@ -284,7 +284,7 @@ function buildButton(command, label, tooltip, disabled) {
 }
 
 function buildTitleAndButtonsContainer() {
-    const pullIsClosed = getPullStatus() !== "Open";
+    const pullIsClosed = getPullStatus() !== "open";
 
     const container = document.createElement("div");
     container.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
@@ -462,5 +462,5 @@ class MergifyCache {
 
 // Required for testing only, module does not exists in an extension
 try {
-    module.exports = { MergifyCache, findNewMergeBox };
+    module.exports = { MergifyCache, findNewMergeBox, getPullStatus };
 } catch (e) {}
