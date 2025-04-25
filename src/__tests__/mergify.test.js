@@ -1,6 +1,5 @@
-const { MergifyCache, findNewMergeBox } = require("../mergify");
-const fs = require("node:fs");
-const path = require("node:path");
+const { MergifyCache, findNewMergeBox, getPullStatus } = require("../mergify");
+const { loadFixture } = require("./utils");
 
 describe("MergifyCache", () => {
     beforeEach(() => {
@@ -63,13 +62,6 @@ describe("MergifyCache", () => {
 });
 
 describe("findNewMergeBox", () => {
-    function loadFixture(name) {
-        const htmlPath = path.resolve(__dirname, `./fixtures/${name}.html`);
-        const htmlContent = fs.readFileSync(htmlPath, "utf8");
-
-        document.body.innerHTML = htmlContent;
-    }
-
     afterEach(() => {
         document.body.innerHTML = "";
     });
@@ -95,5 +87,27 @@ describe("findNewMergeBox", () => {
         expect(mergeBox.innerHTML).toMatch(
             /Pull\s+request\s+successfully\s+merged\s+and\s+closed/,
         );
+    });
+});
+
+describe("getPullStatus", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should get opened pull request status", () => {
+        loadFixture("github_pr_opened");
+
+        const status = getPullStatus();
+
+        expect(status).toBe("open");
+    });
+
+    it("should get opened pull request status", () => {
+        loadFixture("github_pr_merged");
+
+        const status = getPullStatus();
+
+        expect(status).toBe("merged");
     });
 });
