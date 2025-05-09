@@ -5,7 +5,9 @@ function sendInstallState() {
             // For backward compatibility
             isMergifyChromeExtensionInstalled: true,
         },
-        "*",
+        // This is very important security thing, otherwise we leak the installation
+        // of Mergify extension to any site.
+        "https://dashboard.mergify.com",
     );
 }
 
