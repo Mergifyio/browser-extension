@@ -120,7 +120,7 @@ function buildBtn(command, label, tooltip, disabled) {
 }
 
 function getPullRequestData() {
-    const url = new URL(document.location.href);
+    const url = new URL(window.location.href);
     const parts = url.pathname.split("/");
     return {
         org: parts[1],
@@ -331,7 +331,7 @@ function buildMergifySectionForNewMergeBox() {
 }
 
 function isGitHubPullRequestPage() {
-    const url = new URL(document.location.href);
+    const url = new URL(window.location.href);
     const parts = url.pathname.split("/");
     return parts.length >= 5 && parts[3] === "pull";
 }
@@ -387,11 +387,35 @@ function isMergifyEnabledOnTheRepo() {
         `img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`,
     );
 
+    const cachedValue = mergifyCache.get(org, repo);
+
     if (enabled) {
-        mergifyCache.update(org, repo, true);
+        // Mergify is detected - update cache if it differs
+        if (cachedValue !== true) {
+            mergifyCache.update(org, repo, true);
+        }
         return true;
     }
-    return mergifyCache.get(org, repo);
+
+    // Mergify is not detected - only update cache if we're confident the page is loaded
+    // Check if we can find typical GitHub PR page elements to ensure the page is ready
+    const prPageElements = document.querySelector(
+        ".gh-header-title, .js-issue-title",
+    );
+    const statusChecks = document.querySelector(
+        '.merge-status-list, .mergeability-details, [data-testid="mergebox-partial"]',
+    );
+
+    if (prPageElements && statusChecks) {
+        // Page seems loaded, safe to cache negative result if it differs from cache
+        if (cachedValue !== false) {
+            mergifyCache.update(org, repo, false);
+        }
+        return false;
+    }
+
+    // Page might still be loading, fall back to cache
+    return cachedValue || false;
 }
 
 class MergifyCache {
@@ -462,5 +486,11 @@ class MergifyCache {
 
 // Required for testing only, module does not exists in an extension
 try {
-    module.exports = { MergifyCache, findNewMergeBox, getPullStatus };
+    module.exports = {
+        MergifyCache,
+        findNewMergeBox,
+        getPullStatus,
+        isMergifyEnabledOnTheRepo,
+        getPullRequestData,
+    };
 } catch (e) {}
