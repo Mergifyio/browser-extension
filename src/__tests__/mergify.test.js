@@ -1,4 +1,9 @@
-const { MergifyCache, findNewMergeBox, getPullStatus } = require("../mergify");
+const {
+    MergifyCache,
+    findNewMergeBox,
+    getPullStatus,
+    isMergifyEnabledOnTheRepo,
+} = require("../mergify");
 const { loadFixture } = require("./utils");
 
 describe("MergifyCache", () => {
@@ -109,5 +114,53 @@ describe("getPullStatus", () => {
         const status = getPullStatus();
 
         expect(status).toBe("merged");
+    });
+});
+
+describe("isMergifyEnabledOnTheRepo caching behavior", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        // Mock document.location
+
+        // biome-ignore lint/performance/noDelete: <explanation>
+        delete window.location;
+        window.location = new URL(
+            "https://github.com/cypress-io/cypress/pull/32277",
+        );
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = "";
+        localStorage.clear();
+    });
+
+    it("should return true if Mergify is enabled on the repo", () => {
+        loadFixture("github_pr_opened");
+        const isEnabled = isMergifyEnabledOnTheRepo();
+        expect(isEnabled).toBe(true);
+    });
+
+    it("should return false if Mergify is not enabled on the repo", () => {
+        loadFixture("github_pr_no_mergify");
+        const isEnabled = isMergifyEnabledOnTheRepo();
+        expect(isEnabled).toBe(false);
+    });
+
+    it("should still return false if cache have true but the repo is not enabled", () => {
+        loadFixture("github_pr_no_mergify");
+        const cache = new MergifyCache();
+        cache.update("cypress-io", "cypress", true);
+
+        const isEnabled = isMergifyEnabledOnTheRepo();
+        expect(isEnabled).toBe(false);
+    });
+
+    it("should still return true if cache have false and the repo is enabled", () => {
+        loadFixture("github_pr_opened");
+        const cache = new MergifyCache();
+        cache.update("cypress-io", "cypress", false);
+
+        const isEnabled = isMergifyEnabledOnTheRepo();
+        expect(isEnabled).toBe(true);
     });
 });
