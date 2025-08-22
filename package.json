@@ -3,11 +3,17 @@
     "scripts": {
         "lint": "biome check",
         "format": "biome check --write",
-        "test": "jest"
+        "test": "jest",
+        "start": "npm run dev",
+        "dev": "npm run dev:build && npm run dev:watch",
+        "dev:build": "make dev-build",
+        "dev:watch": "nodemon --watch src --ext js,json,png --exec \"make dev-build\"",
+        "dev:clean": "make dev-clean"
     },
     "devDependencies": {
         "@biomejs/biome": "1.9.4",
         "jest": "^29.7.0",
-        "jest-environment-jsdom": "^29.7.0"
+        "jest-environment-jsdom": "^29.7.0",
+        "nodemon": "^3.1.10"
     }
 }

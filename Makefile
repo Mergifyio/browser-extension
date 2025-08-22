@@ -1,6 +1,7 @@
 
 APPLE_TEAM_ID=995U2925WN
 VERSION_DEFAULT = dev
+DEV_VERSION = 999.0.0
 GITHUB_DOMAIN_DEFAULT = github.com
 MERGIFY_DOMAIN_DEFAULT = dashboard.mergify.com
 BROWSER_INSTALLATION_TEMPLATE = unknown-browser
@@ -10,17 +11,58 @@ GITHUB_DOMAIN ?= $(GITHUB_DOMAIN_DEFAULT)
 MERGIFY_DOMAIN ?= $(MERGIFY_DOMAIN_DEFAULT)
 
 TARGETS = mergify-firefox-$(VERSION).zip mergify-chrome-$(VERSION).zip mergify-safari-$(VERSION).pkg
+DEV_TARGETS = dev dev-build dev-watch dev-clean
 
+.PHONY: all
 all: $(TARGETS)
 	@ls -la $(TARGETS)
 
-firefox:
+.PHONY: help
+help: ## Show this help.
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "%-15s %s\n", $$1, $$2}'
 
-chrome:
+.PHONY: firefox
+firefox: ## Build Firefox extension
 
-safari:
+.PHONY: chrome
+chrome: ## Build Chrome extension
 
+.PHONY: safari
+safari: ## Build Safari extension
+
+.PHONY: safariTMP
 safariTMP:
+
+# Development targets
+.PHONY: dev
+dev: ## Create development build and start watching for changes
+	@echo "Starting development mode via npm..."
+	npm start
+
+.PHONY: dev-build
+dev-build: ## Build development folder only (no watch)
+	@echo "* Creating development build..."
+	rm -rf dev-build
+	cp -a src dev-build
+	rm -rf dev-build/__tests__
+	gsed -i \
+		-e 's/#VERSION#/$(DEV_VERSION)/g' \
+		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
+		-e 's/$(MERGIFY_DOMAIN_DEFAULT)/$(MERGIFY_DOMAIN)/g' \
+		-e "s/$(BROWSER_INSTALLATION_TEMPLATE)/chrome/g" \
+		dev-build/mergify.js dev-build/manifest.json dev-build/sendInstallState.js
+	@echo "Development build created in ./dev-build/"
+
+.PHONY: dev-watch
+dev-watch: ## Start watching for changes (build must exist)
+	@echo "Starting file watcher via npm..."
+	npm run dev:watch
+
+.PHONY: dev-clean
+dev-clean: ## Clean development build
+	rm -rf dev-build
+	@echo "Development build cleaned"
 
 
 mergify-%-${VERSION}.zip: %
@@ -115,5 +157,6 @@ endif
 	rm -rf safari $<
 	@echo
 
+.PHONY: clean
 clean:
 	rm -rf build safari mergify-*-*.zip mergify-safari-*.pkg
