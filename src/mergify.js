@@ -208,53 +208,10 @@ function buildMergifySectionForClassicMergeBox() {
 }
 
 function buildLogoContainer() {
-    // <div class="mr-2 flex-shrink-0">
     const container = document.createElement("div");
-    container.className = "mr-2 flex-shrink-0";
-    container.style.marginTop = "12px";
-
-    // <div overflow="hidden" size="32" class="Box-sc-g0xbh4-0 iAmUFw">
-    const container2 = document.createElement("div");
-    container2.setAttribute("overflow", "hidden");
-    container2.setAttribute("size", "32");
-    container2.className = "Box-sc-g0xbh4-0 iAmUFw";
-    container.appendChild(container2);
-
-    // <div display="flex" size="32" class="Box-sc-g0xbh4-0 jneZjk">
-    const container3 = document.createElement("div");
-    container3.setAttribute("display", "flex");
-    container3.setAttribute("size", "32");
-    container3.className = "Box-sc-g0xbh4-0 jneZjk";
-    container3.innerHTML = getLogoSvg();
-    container2.appendChild(container3);
-
-    return container;
-}
-
-function buildTitleContainer() {
-    const container = document.createElement("div");
-    container.className = "flex-1 pt-1";
-
-    const title = document.createElement("h3");
-    title.className = "Box-sc-g0xbh4-0 isSOdJ prc-Heading-Heading-6CmGO";
-    title.textContent = "Mergify";
-    container.appendChild(title);
-
-    const subtitle = document.createElement("p");
-    subtitle.className = "fgColor-muted mb-0";
-    subtitle.textContent = "This pull request is managed by Mergify.";
-    container.appendChild(subtitle);
-
-    const mergeQueueLink = document.createElement("p");
-    mergeQueueLink.className = "fgColor-muted mb-0";
-    mergeQueueLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`;
-    container.appendChild(mergeQueueLink);
-
-    const eventLogLink = document.createElement("p");
-    eventLogLink.className = "fgColor-muted mb-0";
-    eventLogLink.innerHTML = `<a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`;
-    container.appendChild(eventLogLink);
-
+    container.className =
+        "float-left branch-action-item-icon completeness-indicator circle color-fg-muted border";
+    container.innerHTML = getLogoSvg();
     return container;
 }
 
@@ -284,16 +241,12 @@ function buildButton(command, label, tooltip, disabled) {
     return container;
 }
 
-function buildTitleAndButtonsContainer() {
+function buildButtons() {
     const pullIsClosed = getPullStatus() !== "open";
-
-    const container = document.createElement("div");
-    container.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
-
-    container.appendChild(buildTitleContainer());
-
+    const containerButtons = document.createElement("div");
+    containerButtons.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
     for (const button of BUTTONS) {
-        container.appendChild(
+        containerButtons.appendChild(
             buildButton(
                 button.command,
                 button.label,
@@ -302,33 +255,53 @@ function buildTitleAndButtonsContainer() {
             ),
         );
     }
+    return containerButtons;
+}
+
+function buildLinks() {
+    const container = document.createElement("div");
+    container.className = "float-right";
+    container.style = "text-align: right";
+
+    const eventLogLink = document.createElement("p");
+    eventLogLink.className = "fgColor-muted mb-0";
+    eventLogLink.innerHTML = `<a class="Button Button--link Button--medium" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`;
+    container.appendChild(eventLogLink);
+
+    const mergeQueueLink = document.createElement("p");
+    mergeQueueLink.className = "fgColor-muted mb-0";
+    mergeQueueLink.innerHTML = `<a class="Button Button--link Button--medium" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`;
+    container.appendChild(mergeQueueLink);
 
     return container;
 }
 
-function buildMergifySectionForNewMergeBox() {
-    const section = document.createElement("section");
-    section.className = "border-bottom borderColor-muted pl-3 pb-3 pr-3";
-    section.id = "mergify";
-    section.setAttribute("aria-label", "Mergify");
-
+function buildMergifySectionForTimelineActions() {
     const container1 = document.createElement("div");
-    container1.className = "d-flex flex-column width-full overflow-hidden";
-    section.appendChild(container1);
+    container1.className = "branch-action py-0 my-3 pl-0 pl-md-3 ml-md-6";
+    container1.id = "mergify";
+    container1.setAttribute("aria-label", "Mergify");
 
     const container2 = document.createElement("div");
     container2.className =
-        "MergeBoxSectionHeader-module__wrapper--f99Ts flex-column flex-sm-row flex-items-center flex-sm-items-start flex-justify-between";
+        "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable";
     container1.appendChild(container2);
 
-    const container3 = document.createElement("div");
-    container3.className = "d-flex width-full";
-    container2.appendChild(container3);
+    const title = document.createElement("h3");
+    title.className = "h4 status-heading";
+    title.textContent = "Mergify";
 
-    container3.appendChild(buildLogoContainer());
-    container3.appendChild(buildTitleAndButtonsContainer());
+    const subtitle = document.createElement("span");
+    subtitle.className = "status-meta";
+    subtitle.textContent = "This pull request is managed by Mergify.";
 
-    return section;
+    container2.appendChild(buildLogoContainer());
+    container2.appendChild(buildLinks());
+    container2.appendChild(title);
+    container2.appendChild(subtitle);
+    container2.appendChild(buildButtons());
+
+    return container1;
 }
 
 function isGitHubPullRequestPage() {
@@ -339,7 +312,7 @@ function isGitHubPullRequestPage() {
 
 function findNewMergeBox() {
     const mergeBoxDiv = document.querySelector(
-        "div[data-testid=mergebox-partial] > :last-child > :last-child",
+        "div[class=discussion-timeline-actions] > :first-child",
     );
     if (mergeBoxDiv && mergeBoxDiv.tagName === "DIV") {
         return mergeBoxDiv;
@@ -372,7 +345,7 @@ function tryInject() {
         const detailSection = findNewMergeBox();
         if (detailSection) {
             detailSection.insertBefore(
-                buildMergifySectionForNewMergeBox(),
+                buildMergifySectionForTimelineActions(),
                 detailSection.firstChild,
             );
         }
