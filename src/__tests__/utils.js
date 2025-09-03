@@ -4,10 +4,15 @@ const path = require("node:path");
 function loadFixture(name) {
     const htmlPath = path.resolve(__dirname, `./fixtures/${name}.html`);
     const htmlContent = fs.readFileSync(htmlPath, "utf8");
+    return htmlContent;
+}
 
+function injectFixtureInDOM(name) {
+    const htmlContent = loadFixture(name);
     document.body.innerHTML = htmlContent;
 }
 
 module.exports = {
     loadFixture,
+    injectFixtureInDOM,
 };
