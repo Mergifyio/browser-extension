@@ -310,7 +310,7 @@ function isGitHubPullRequestPage() {
     return parts.length >= 5 && parts[3] === "pull";
 }
 
-function findNewMergeBox() {
+function findTimelineActions() {
     const mergeBoxDiv = document.querySelector(
         "div[class=discussion-timeline-actions] > :first-child",
     );
@@ -319,17 +319,13 @@ function findNewMergeBox() {
     }
 }
 
-function tryInject() {
-    if (!isGitHubPullRequestPage()) {
-        return;
-    }
-
+function tryInject(hasMergifyConfiguration) {
     const isMergifySectionInjected = document.querySelector("#mergify");
     if (isMergifySectionInjected) {
         return;
     }
 
-    if (!isMergifyEnabledOnTheRepo()) {
+    if (!isMergifyEnabledOnTheRepo(hasMergifyConfiguration)) {
         return;
     }
 
@@ -342,7 +338,7 @@ function tryInject() {
         );
     } else {
         // New merge box
-        const detailSection = findNewMergeBox();
+        const detailSection = findTimelineActions();
         if (detailSection) {
             detailSection.insertBefore(
                 buildMergifySectionForTimelineActions(),
@@ -352,44 +348,57 @@ function tryInject() {
     }
 }
 
-function isMergifyEnabledOnTheRepo() {
-    const mergifyCache = new MergifyCache();
-    const { org, repo } = getPullRequestData();
-
+function isMergifyEnabledOnTheRepo(hasMergifyConfiguration) {
     const appIconUrl = "https://avatars.githubusercontent.com/in/10562";
-    const enabled = document.querySelector(
-        `img[src^="${appIconUrl}?"][alt="Summary"], img[src^="${appIconUrl}?"][alt="Mergify Merge Protections"], a[href="/apps/mergify"] img[src^="${appIconUrl}?"]`,
-    );
-
-    const cachedValue = mergifyCache.get(org, repo);
-
-    if (enabled) {
+    const appIconFound = document.querySelector(`img[src^="${appIconUrl}?"]`);
+    if (appIconFound) {
+        const { org, repo } = getPullRequestData();
+        const mergifyCache = new MergifyCache();
+        const cachedValue = mergifyCache.get(org, repo);
         // Mergify is detected - update cache if it differs
         if (cachedValue !== true) {
             mergifyCache.update(org, repo, true);
         }
         return true;
     }
+    return hasMergifyConfiguration;
+}
 
-    // Mergify is not detected - only update cache if we're confident the page is loaded
-    // Check if we can find typical GitHub PR page elements to ensure the page is ready
-    const prPageElements = document.querySelector(
-        ".gh-header-title, .js-issue-title",
-    );
-    const statusChecks = document.querySelector(
-        '.merge-status-list, .mergeability-details, [data-testid="mergebox-partial"]',
-    );
-
-    if (prPageElements && statusChecks) {
-        // Page seems loaded, safe to cache negative result if it differs from cache
-        if (cachedValue !== false) {
-            mergifyCache.update(org, repo, false);
-        }
-        return false;
+async function getMergifyConfigurationStatus() {
+    const mergifyCache = new MergifyCache();
+    const { org, repo } = getPullRequestData();
+    const cachedValue = mergifyCache.get(org, repo);
+    if (cachedValue) {
+        return true;
     }
 
-    // Page might still be loading, fall back to cache
-    return cachedValue || false;
+    const response = await fetch(
+        `/search?q=repo%3A${org}%2F${repo}+%28.mergify.yml+OR+.mergify%2Fconfig.yml+OR+.github%2Fmergify.yml%29&type=code`,
+    );
+    const html = await response.text();
+
+    // Parse into a DOM
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const h2 = doc.querySelector("h2#search-results-count");
+    console.log(h2?.textContent.trim());
+
+    // Find and match the <h2>
+    const match = doc
+        .querySelector("h2#search-results-count")
+        ?.textContent.trim()
+        .match(/^(?<count>\d+) files?$/);
+
+    console.log(match);
+    const found = Boolean(match && Number.parseInt(match.groups.count) > 0);
+    console.log(found);
+    console.log(cachedValue);
+
+    if (cachedValue !== found) {
+        console.log("update");
+        mergifyCache.update(org, repo, found);
+    }
+    return found;
 }
 
 class MergifyCache {
@@ -447,10 +456,16 @@ class MergifyCache {
     }
 }
 
-(() => {
-    tryInject();
+(async () => {
+    if (!isGitHubPullRequestPage()) {
+        return false;
+    }
+
+    const hasMergifyConfiguration = await getMergifyConfigurationStatus();
+
+    tryInject(hasMergifyConfiguration);
     const observer = new MutationObserver((mutations) => {
-        tryInject();
+        tryInject(hasMergifyConfiguration);
     });
     observer.observe(document.body, {
         childList: true,
@@ -462,9 +477,10 @@ class MergifyCache {
 try {
     module.exports = {
         MergifyCache,
-        findNewMergeBox,
+        findTimelineActions,
         getPullStatus,
         isMergifyEnabledOnTheRepo,
         getPullRequestData,
+        getMergifyConfigurationStatus,
     };
 } catch (e) {}
