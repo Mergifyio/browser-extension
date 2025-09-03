@@ -1,10 +1,11 @@
 const {
     MergifyCache,
-    findNewMergeBox,
+    findTimelineActions,
     getPullStatus,
     isMergifyEnabledOnTheRepo,
+    getMergifyConfigurationStatus,
 } = require("../mergify");
-const { loadFixture } = require("./utils");
+const { loadFixture, injectFixtureInDOM } = require("./utils");
 
 describe("MergifyCache", () => {
     beforeEach(() => {
@@ -66,15 +67,15 @@ describe("MergifyCache", () => {
     });
 });
 
-describe("findNewMergeBox", () => {
+describe("findTimelineActions", () => {
     afterEach(() => {
         document.body.innerHTML = "";
     });
 
     it("should find the new merge box on opened pull requests", () => {
-        loadFixture("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened");
 
-        const mergeBox = findNewMergeBox();
+        const mergeBox = findTimelineActions();
 
         expect(mergeBox).not.toBeUndefined();
         expect(mergeBox.tagName).toBe("DIV");
@@ -83,9 +84,9 @@ describe("findNewMergeBox", () => {
     });
 
     it("should find the new merge box on merged pull requests", () => {
-        loadFixture("github_pr_merged");
+        injectFixtureInDOM("github_pr_merged");
 
-        const mergeBox = findNewMergeBox();
+        const mergeBox = findTimelineActions();
 
         expect(mergeBox).not.toBeUndefined();
         expect(mergeBox.tagName).toBe("DIV");
@@ -101,7 +102,7 @@ describe("getPullStatus", () => {
     });
 
     it("should get opened pull request status", () => {
-        loadFixture("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened");
 
         const status = getPullStatus();
 
@@ -109,7 +110,7 @@ describe("getPullStatus", () => {
     });
 
     it("should get opened pull request status", () => {
-        loadFixture("github_pr_merged");
+        injectFixtureInDOM("github_pr_merged");
 
         const status = getPullStatus();
 
@@ -134,33 +135,144 @@ describe("isMergifyEnabledOnTheRepo caching behavior", () => {
         localStorage.clear();
     });
 
-    it("should return true if Mergify is enabled on the repo", () => {
-        loadFixture("github_pr_opened");
-        const isEnabled = isMergifyEnabledOnTheRepo();
+    it("should return true if Mergify is enabled on the repo with config", () => {
+        injectFixtureInDOM("github_pr_opened");
+        const isEnabled = isMergifyEnabledOnTheRepo(true);
+        expect(isEnabled).toBe(true);
+    });
+
+    it("should return true if Mergify is enabled on the repo with no config", () => {
+        injectFixtureInDOM("github_pr_opened");
+        const isEnabled = isMergifyEnabledOnTheRepo(false);
         expect(isEnabled).toBe(true);
     });
 
     it("should return false if Mergify is not enabled on the repo", () => {
-        loadFixture("github_pr_no_mergify");
-        const isEnabled = isMergifyEnabledOnTheRepo();
-        expect(isEnabled).toBe(false);
-    });
-
-    it("should still return false if cache have true but the repo is not enabled", () => {
-        loadFixture("github_pr_no_mergify");
-        const cache = new MergifyCache();
-        cache.update("cypress-io", "cypress", true);
-
-        const isEnabled = isMergifyEnabledOnTheRepo();
+        injectFixtureInDOM("github_pr_no_mergify");
+        const isEnabled = isMergifyEnabledOnTheRepo(false);
         expect(isEnabled).toBe(false);
     });
 
     it("should still return true if cache have false and the repo is enabled", () => {
-        loadFixture("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened");
         const cache = new MergifyCache();
         cache.update("cypress-io", "cypress", false);
 
-        const isEnabled = isMergifyEnabledOnTheRepo();
+        const isEnabled = isMergifyEnabledOnTheRepo(true);
         expect(isEnabled).toBe(true);
+    });
+});
+
+describe("getMergifyConfigurationStatus", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        // Mock window.location for pull request data
+        //
+        // biome-ignore lint/performance/noDelete: <explanation>
+        delete window.location;
+        window.location = new URL(
+            "https://github.com/test-org/test-repo/pull/123",
+        );
+    });
+
+    afterEach(() => {
+        localStorage.clear();
+        jest.restoreAllMocks();
+    });
+
+    it("should return true if configuration is found in cache", async () => {
+        const cache = new MergifyCache();
+        cache.update("test-org", "test-repo", true);
+
+        const result = await getMergifyConfigurationStatus();
+        expect(result).toBe(true);
+    });
+
+    it("should return false if configuration is not found in cache and no config files exist", async () => {
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest
+                .fn()
+                .mockResolvedValue(loadFixture("searchConfigNotFound")),
+        });
+        global.fetch = mockFetch;
+
+        const result = await getMergifyConfigurationStatus();
+
+        expect(result).toBe(false);
+        expect(mockFetch).toHaveBeenCalledWith(
+            "/search?q=repo%3Atest-org%2Ftest-repo+%28.mergify.yml+OR+.mergify%2Fconfig.yml+OR+.github%2Fmergify.yml%29&type=code",
+        );
+    });
+
+    it("should return true if configuration files are found via search", async () => {
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
+        });
+        global.fetch = mockFetch;
+
+        const result = await getMergifyConfigurationStatus();
+
+        expect(result).toBe(true);
+        expect(mockFetch).toHaveBeenCalledWith(
+            "/search?q=repo%3Atest-org%2Ftest-repo+%28.mergify.yml+OR+.mergify%2Fconfig.yml+OR+.github%2Fmergify.yml%29&type=code",
+        );
+    });
+
+    it("should update cache when search result differs from cached value", async () => {
+        const cache = new MergifyCache();
+        cache.update("test-org", "test-repo", false);
+
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
+        });
+        global.fetch = mockFetch;
+
+        const result = await getMergifyConfigurationStatus();
+
+        expect(result).toBe(true);
+        expect(cache.get("test-org", "test-repo")).toBe(true);
+    });
+
+    it("should handle malformed HTML response gracefully", async () => {
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest.fn().mockResolvedValue("<html><body></body></html>"),
+        });
+        global.fetch = mockFetch;
+
+        const result = await getMergifyConfigurationStatus();
+
+        expect(result).toBe(false);
+    });
+
+    it("should handle fetch errors gracefully", async () => {
+        const mockFetch = jest
+            .fn()
+            .mockRejectedValue(new Error("Network error"));
+        global.fetch = mockFetch;
+
+        await expect(getMergifyConfigurationStatus()).rejects.toThrow(
+            "Network error",
+        );
+    });
+
+    it("should not update cache if cached value matches search result", async () => {
+        const cache = new MergifyCache();
+        cache.update("test-org", "test-repo", true);
+        const cacheSpy = jest.spyOn(cache, "update");
+
+        // Mock MergifyCache constructor to return our spy
+        jest.spyOn(require("../mergify"), "MergifyCache").mockImplementation(
+            () => cache,
+        );
+
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
+        });
+        global.fetch = mockFetch;
+
+        const result = await getMergifyConfigurationStatus();
+
+        expect(result).toBe(true);
+        expect(cacheSpy).not.toHaveBeenCalled();
     });
 });
