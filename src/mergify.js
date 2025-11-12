@@ -99,18 +99,18 @@ function postCommand(command) {
     button.click();
 }
 
-function getPullStatus() {
+function isPullRequestOpen() {
     const status = document
         .querySelector("span.State")
-        .getAttribute("class")
-        .split("--")[1];
+        .getAttribute("title")
+        .split(": ")[1];
     if (!status) {
         console.warn("Can't find pull request status");
         // Assume it's open if we can't find the status
         return "open";
     }
-    // status can be "open", "merged" or "closed"
-    return status;
+    // status can be "open", "draft", "merged" or "closed"
+    return ["open", "draft"].includes(status.toLowerCase());
 }
 
 function buildBtn(command, label, tooltip, disabled) {
@@ -185,7 +185,7 @@ function buildMergifySectionForClassicMergeBox() {
           <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
     `;
 
-    const pullIsClosed = getPullStatus() !== "open";
+    const pullIsOpen = isPullRequestOpen();
 
     const btnbox = document.createElement("div");
     btnbox.style.float = "right";
@@ -196,7 +196,7 @@ function buildMergifySectionForClassicMergeBox() {
                 button.command,
                 button.label,
                 button.tooltip,
-                button.disableOnClosedPR && pullIsClosed,
+                button.disableOnClosedPR && !pullIsOpen,
             ),
         );
     }
@@ -249,7 +249,7 @@ function buildButton(command, label, tooltip, disabled) {
 }
 
 function buildButtons() {
-    const pullIsClosed = getPullStatus() !== "open";
+    const pullIsOpen = isPullRequestOpen();
     const containerButtons = document.createElement("div");
     containerButtons.className = "d-flex flex-1 flex-column flex-sm-row gap-2";
     for (const button of BUTTONS) {
@@ -258,7 +258,7 @@ function buildButtons() {
                 button.command,
                 button.label,
                 button.tooltip,
-                button.disableOnClosedPR && pullIsClosed,
+                button.disableOnClosedPR && !pullIsOpen,
             ),
         );
     }
@@ -528,7 +528,7 @@ try {
     module.exports = {
         MergifyCache,
         findTimelineActions,
-        getPullStatus,
+        isPullRequestOpen,
         isMergifyEnabledOnTheRepo,
         getPullRequestData,
         getMergifyConfigurationStatus,
