@@ -1,7 +1,7 @@
 const {
     MergifyCache,
     findTimelineActions,
-    getPullStatus,
+    isPullRequestOpen,
     isMergifyEnabledOnTheRepo,
     getMergifyConfigurationStatus,
 } = require("../mergify");
@@ -101,7 +101,7 @@ describe("findTimelineActions", () => {
     });
 });
 
-describe("getPullStatus", () => {
+describe("isPullRequestOpen", () => {
     afterEach(() => {
         document.body.innerHTML = "";
     });
@@ -109,17 +109,17 @@ describe("getPullStatus", () => {
     it("should get opened pull request status", () => {
         injectFixtureInDOM("github_pr_opened");
 
-        const status = getPullStatus();
+        const status = isPullRequestOpen();
 
-        expect(status).toBe("open");
+        expect(status).toBe(true);
     });
 
     it("should get opened pull request status", () => {
         injectFixtureInDOM("github_pr_merged");
 
-        const status = getPullStatus();
+        const status = isPullRequestOpen();
 
-        expect(status).toBe("merged");
+        expect(status).toBe(false);
     });
 });
 
