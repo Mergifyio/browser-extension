@@ -47,6 +47,7 @@ dev-build: ## Build development folder only (no watch)
 	cp -a src dev-build
 	rm -rf dev-build/__tests__
 	gsed -i \
+		-e 's/__MERGIFY_DEBUG__ = false;/__MERGIFY_DEBUG__ = true;/g' \
 		-e 's/#VERSION#/$(DEV_VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
 		-e 's/$(MERGIFY_DOMAIN_DEFAULT)/$(MERGIFY_DOMAIN)/g' \
