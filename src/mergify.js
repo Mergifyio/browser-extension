@@ -42,6 +42,13 @@ const LOGO_BLACK_SVG = `
 
 `;
 
+__MERGIFY_DEBUG__ = false;
+
+function debug(...args) {
+    if (!__MERGIFY_DEBUG__) return;
+    console.log(...args);
+}
+
 const BUTTONS = [
     {
         command: "queue",
@@ -321,16 +328,19 @@ function findTimelineActions() {
 
 async function _tryInject() {
     if (!isGitHubPullRequestPage()) {
+        debug("Not a pull request page");
         return;
     }
 
     const isMergifySectionInjected = document.querySelector("#mergify");
     if (isMergifySectionInjected) {
+        debug("Mergify section is already injected");
         return;
     }
 
     const hasMergifyConfiguration = await getMergifyConfigurationStatus();
     if (!isMergifyEnabledOnTheRepo(hasMergifyConfiguration)) {
+        debug("Mergify is not enabled on the repo");
         return;
     }
 
@@ -341,6 +351,7 @@ async function _tryInject() {
             buildMergifySectionForTimelineActions(),
             detailSection.firstChild,
         );
+        debug("Mergify section injected in new merge box");
         return;
     }
     // Classic merge box
@@ -350,14 +361,17 @@ async function _tryInject() {
             buildMergifySectionForClassicMergeBox(),
             detailSection.firstChild,
         );
+        debug("Mergify section injected in classic merge box");
         return;
     }
+    debug("No merge box found");
 }
 
 let injecting = false;
 let pendingInjection = false;
 
 function tryInject() {
+    debug(`Mergify extension injecting: ${injecting} / ${pendingInjection}`);
     if (injecting) {
         pendingInjection = true;
         return;
@@ -405,7 +419,7 @@ async function getMergifyConfigurationStatus() {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, "text/html");
     const h2 = doc.querySelector("h2#search-results-count");
-    console.log(h2?.textContent.trim());
+    debug(h2?.textContent.trim());
 
     // Find and match the <h2>
     const match = doc
@@ -413,13 +427,13 @@ async function getMergifyConfigurationStatus() {
         ?.textContent.trim()
         .match(/^(?<count>\d+) files?$/);
 
-    console.log(match);
+    debug(match);
     const found = Boolean(match && Number.parseInt(match.groups.count) > 0);
-    console.log(found);
-    console.log(cachedValue);
+    debug(found);
+    debug(cachedValue);
 
     if (cachedValue !== found) {
-        console.log("update");
+        debug("update");
         mergifyCache.update(org, repo, found);
     }
     return found;
