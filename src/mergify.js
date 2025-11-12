@@ -319,33 +319,57 @@ function findTimelineActions() {
     }
 }
 
-function tryInject(hasMergifyConfiguration) {
+async function _tryInject() {
+    if (!isGitHubPullRequestPage()) {
+        return;
+    }
+
     const isMergifySectionInjected = document.querySelector("#mergify");
     if (isMergifySectionInjected) {
         return;
     }
 
+    const hasMergifyConfiguration = await getMergifyConfigurationStatus();
     if (!isMergifyEnabledOnTheRepo(hasMergifyConfiguration)) {
         return;
     }
 
-    const detailSection = document.querySelector(".mergeability-details");
+    let detailSection = findTimelineActions();
     if (detailSection) {
-        // Classic merge box
+        // New merge box
+        detailSection.insertBefore(
+            buildMergifySectionForTimelineActions(),
+            detailSection.firstChild,
+        );
+        return;
+    }
+    // Classic merge box
+    detailSection = document.querySelector(".mergeability-details");
+    if (detailSection) {
         detailSection.insertBefore(
             buildMergifySectionForClassicMergeBox(),
             detailSection.firstChild,
         );
-    } else {
-        // New merge box
-        const detailSection = findTimelineActions();
-        if (detailSection) {
-            detailSection.insertBefore(
-                buildMergifySectionForTimelineActions(),
-                detailSection.firstChild,
-            );
-        }
+        return;
     }
+}
+
+let injecting = false;
+let pendingInjection = false;
+
+function tryInject() {
+    if (injecting) {
+        pendingInjection = true;
+        return;
+    }
+    injecting = true;
+    _tryInject().finally(() => {
+        injecting = false;
+        if (pendingInjection) {
+            pendingInjection = false;
+            tryInject();
+        }
+    });
 }
 
 function isMergifyEnabledOnTheRepo(hasMergifyConfiguration) {
@@ -457,15 +481,27 @@ class MergifyCache {
 }
 
 (async () => {
-    if (!isGitHubPullRequestPage()) {
-        return false;
-    }
+    // For SPA application page is not reloaded so we need to listen to history changes
+    // Patch history methods
+    const _push = history.pushState;
+    history.pushState = function (...args) {
+        _push.apply(this, args);
+        tryInject();
+    };
+    const _replace = history.replaceState;
+    history.replaceState = function (...args) {
+        _replace.apply(this, args);
+        tryInject();
+    };
+    // Back/forward navigation
+    window.addEventListener("popstate", tryInject);
 
-    const hasMergifyConfiguration = await getMergifyConfigurationStatus();
+    // On Page load
+    tryInject();
 
-    tryInject(hasMergifyConfiguration);
+    // On DOM change
     const observer = new MutationObserver((mutations) => {
-        tryInject(hasMergifyConfiguration);
+        tryInject();
     });
     observer.observe(document.body, {
         childList: true,

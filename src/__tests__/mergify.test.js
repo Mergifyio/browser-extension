@@ -11,6 +11,11 @@ describe("MergifyCache", () => {
     beforeEach(() => {
         localStorage.clear();
         jest.spyOn(Date, "now").mockImplementation(() => 1000);
+
+        const mockFetch = jest.fn().mockResolvedValue({
+            text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
+        });
+        global.fetch = mockFetch;
     });
 
     afterEach(() => {
