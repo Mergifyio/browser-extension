@@ -238,10 +238,10 @@ function buildButton(command, label, tooltip, disabled) {
     button.setAttribute("data-size", "small");
     button.setAttribute("data-variant", "default");
     button.setAttribute("aria-describedby", ":r1o:-loading-announcement");
-    button.className = "prc-Button-ButtonBase-c50BI flex-1";
+    button.className = "Button--secondary Button--small Button flex-1";
     button.onclick = () => postCommand(command);
-    button.innerHTML = `<span data-component="buttonContent" data-align="center" class="prc-Button-ButtonContent-HKbr-">
-    <span data-component="text" class="prc-Button-Label-pTQ3x">${label}</span>
+    button.innerHTML = `<span data-component="buttonContent" data-align="center" class="Button-content">
+    <span data-component="text" class="Button-label">${label}</span>
     </span>`;
     container.appendChild(button);
 
