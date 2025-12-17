@@ -127,8 +127,6 @@ describe("isMergifyEnabledOnTheRepo caching behavior", () => {
     beforeEach(() => {
         localStorage.clear();
         // Mock document.location
-
-        // biome-ignore lint/performance/noDelete: <explanation>
         delete window.location;
         window.location = new URL(
             "https://github.com/cypress-io/cypress/pull/32277",
@@ -173,7 +171,6 @@ describe("getMergifyConfigurationStatus", () => {
         localStorage.clear();
         // Mock window.location for pull request data
         //
-        // biome-ignore lint/performance/noDelete: <explanation>
         delete window.location;
         window.location = new URL(
             "https://github.com/test-org/test-repo/pull/123",
