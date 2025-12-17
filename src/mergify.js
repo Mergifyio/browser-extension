@@ -428,7 +428,7 @@ async function getMergifyConfigurationStatus() {
         .match(/^(?<count>\d+) files?$/);
 
     debug(match);
-    const found = Boolean(match && Number.parseInt(match.groups.count) > 0);
+    const found = Boolean(match && Number.parseInt(match.groups.count, 10) > 0);
     debug(found);
     debug(cachedValue);
 
@@ -514,7 +514,7 @@ class MergifyCache {
     tryInject();
 
     // On DOM change
-    const observer = new MutationObserver((mutations) => {
+    const observer = new MutationObserver((_mutations) => {
         tryInject();
     });
     observer.observe(document.body, {
@@ -533,4 +533,4 @@ try {
         getPullRequestData,
         getMergifyConfigurationStatus,
     };
-} catch (e) {}
+} catch (_error) {}
