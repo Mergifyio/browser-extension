@@ -106,7 +106,7 @@ describe("isPullRequestOpen", () => {
         document.body.innerHTML = "";
     });
 
-    it("should get opened pull request status", () => {
+    it("should detect open PR via legacy span.State (fixture)", () => {
         injectFixtureInDOM("github_pr_opened");
 
         const status = isPullRequestOpen();
@@ -114,12 +114,61 @@ describe("isPullRequestOpen", () => {
         expect(status).toBe(true);
     });
 
-    it("should get opened pull request status", () => {
+    it("should detect merged PR via legacy span.State (fixture)", () => {
         injectFixtureInDOM("github_pr_merged");
 
         const status = isPullRequestOpen();
 
         expect(status).toBe(false);
+    });
+
+    it("should detect open PR via data-status=pullOpened attribute", () => {
+        document.body.innerHTML = '<span data-status="pullOpened">Open</span>';
+
+        expect(isPullRequestOpen()).toBe(true);
+    });
+
+    it("should detect draft PR via data-status=draft attribute", () => {
+        document.body.innerHTML = '<span data-status="draft">Draft</span>';
+
+        expect(isPullRequestOpen()).toBe(true);
+    });
+
+    it("should prefer data-status over legacy span.State", () => {
+        document.body.innerHTML =
+            '<span data-status="pullOpened">Open</span>' +
+            '<span class="State" title="Status: Closed">Closed</span>';
+
+        expect(isPullRequestOpen()).toBe(true);
+    });
+
+    it("should detect closed PR via legacy span.State when no data-status", () => {
+        document.body.innerHTML =
+            '<span class="State" title="Status: Closed">Closed</span>';
+
+        expect(isPullRequestOpen()).toBe(false);
+    });
+
+    it("should assume open when no status element is found", () => {
+        document.body.innerHTML = "<div>No status here</div>";
+
+        expect(isPullRequestOpen()).toBe(true);
+    });
+
+    it("should assume open when legacy span.State has no parseable title", () => {
+        const consoleSpy = jest
+            .spyOn(console, "warn")
+            .mockImplementation(() => {});
+
+        document.body.innerHTML =
+            '<span class="State" title="Malformed">Badge</span>';
+
+        expect(isPullRequestOpen()).toBe(true);
+        expect(consoleSpy).toHaveBeenCalledWith(
+            "Can't find pull request status",
+        );
+
+        consoleSpy.mockRestore();
     });
 });
 
