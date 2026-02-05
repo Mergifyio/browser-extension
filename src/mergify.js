@@ -100,17 +100,24 @@ function postCommand(command) {
 }
 
 function isPullRequestOpen() {
-    const status = document
-        .querySelector("span.State")
-        .getAttribute("title")
-        .split(": ")[1];
-    if (!status) {
-        console.warn("Can't find pull request status");
-        // Assume it's open if we can't find the status
-        return "open";
+    const opened = document.querySelector("span[data-status=pullOpened]");
+    const draft = document.querySelector("span[data-status=draft]");
+    if (opened || draft) return true;
+
+    const oldStatusBadge = document.querySelector("span.State");
+    if (oldStatusBadge) {
+        const status = oldStatusBadge.getAttribute("title").split(": ")[1];
+        if (!status) {
+            console.warn("Can't find pull request status");
+            // Assume it's open if we can't find the status
+            return true;
+        }
+        // status can be "open", "draft", "merged" or "closed"
+        return ["open", "draft"].includes(status.toLowerCase());
     }
-    // status can be "open", "draft", "merged" or "closed"
-    return ["open", "draft"].includes(status.toLowerCase());
+
+    // Assume it's open if we can't find the status
+    return true;
 }
 
 function buildBtn(command, label, tooltip, disabled) {
@@ -285,14 +292,10 @@ function buildLinks() {
 
 function buildMergifySectionForTimelineActions() {
     const container1 = document.createElement("div");
-    container1.className = "branch-action py-0 my-3 pl-0 pl-md-3 ml-md-6";
     container1.id = "mergify";
     container1.setAttribute("aria-label", "Mergify");
-
-    const container2 = document.createElement("div");
-    container2.className =
-        "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable";
-    container1.appendChild(container2);
+    container1.className =
+        "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable mb-3";
 
     const title = document.createElement("h3");
     title.className = "h4 status-heading";
@@ -302,11 +305,11 @@ function buildMergifySectionForTimelineActions() {
     subtitle.className = "status-meta";
     subtitle.textContent = "This pull request is managed by Mergify.";
 
-    container2.appendChild(buildLogoContainer());
-    container2.appendChild(buildLinks());
-    container2.appendChild(title);
-    container2.appendChild(subtitle);
-    container2.appendChild(buildButtons());
+    container1.appendChild(buildLogoContainer());
+    container1.appendChild(buildLinks());
+    container1.appendChild(title);
+    container1.appendChild(subtitle);
+    container1.appendChild(buildButtons());
 
     return container1;
 }
