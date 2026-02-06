@@ -102,7 +102,10 @@ function postCommand(command) {
 function isPullRequestOpen() {
     const opened = document.querySelector("span[data-status=pullOpened]");
     const draft = document.querySelector("span[data-status=draft]");
+    const closed = document.querySelector("span[data-status=pullClosed]");
+    const merged = document.querySelector("span[data-status=pullMerged]");
     if (opened || draft) return true;
+    if (closed || merged) return false;
 
     const oldStatusBadge = document.querySelector("span.State");
     if (oldStatusBadge) {
