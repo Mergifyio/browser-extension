@@ -11,6 +11,21 @@ shared:
     - check-success=actionlint
 
 queue_rules:
+  - name: automated updates
+    <<: *DefaultQueueOptions
+    autoqueue: true
+    queue_conditions:
+      - base = main
+      - author = dependabot[bot]
+      - and: *CheckRuns
+    merge_conditions:
+      - and: *CheckRuns
+    merge_method: merge
+    batch_size: 7
+    batch_max_wait_time: 5min
+    commit_message_template:
+    queue_branch_merge_method: fast-forward
+
   - name: default
     autoqueue: true
     <<: *DefaultQueueOptions
