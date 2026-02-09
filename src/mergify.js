@@ -298,7 +298,7 @@ function buildMergifySectionForTimelineActions() {
     container1.id = "mergify";
     container1.setAttribute("aria-label", "Mergify");
     container1.className =
-        "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable mb-3";
+        "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable my-3";
 
     const title = document.createElement("h3");
     title.className = "h4 status-heading";
@@ -325,7 +325,7 @@ function isGitHubPullRequestPage() {
 
 function findTimelineActions() {
     const mergeBoxDiv = document.querySelector(
-        "div[class=discussion-timeline-actions] > :first-child",
+        "div[class=discussion-timeline-actions]",
     );
     if (mergeBoxDiv && mergeBoxDiv.tagName === "DIV") {
         return mergeBoxDiv;
