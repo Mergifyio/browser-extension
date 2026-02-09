@@ -77,6 +77,16 @@ describe("findTimelineActions", () => {
         document.body.innerHTML = "";
     });
 
+    it("should find the new merge box on pull requests without any timeline actions items", () => {
+        injectFixtureInDOM("github_pr_no_timeline_actions");
+
+        const mergeBox = findTimelineActions();
+
+        expect(mergeBox).not.toBeUndefined();
+        expect(mergeBox.tagName).toBe("DIV");
+        expect(mergeBox.innerHTML).toBe(" ");
+    });
+
     it("should find the new merge box on opened pull requests", () => {
         injectFixtureInDOM("github_pr_opened");
 
