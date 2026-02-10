@@ -297,7 +297,10 @@ function buildMergifySectionForTimelineActions() {
     const container1 = document.createElement("div");
     container1.id = "mergify";
     container1.setAttribute("aria-label", "Mergify");
-    container1.className =
+    container1.className = "branch-action py-0 my-3 pl-0 pl-md-3 ml-md-6";
+
+    const container2 = document.createElement("div");
+    container2.className =
         "border color-border-default rounded-2 branch-action-item js-details-container js-transitionable my-3";
 
     const title = document.createElement("h3");
@@ -308,11 +311,13 @@ function buildMergifySectionForTimelineActions() {
     subtitle.className = "status-meta";
     subtitle.textContent = "This pull request is managed by Mergify.";
 
-    container1.appendChild(buildLogoContainer());
-    container1.appendChild(buildLinks());
-    container1.appendChild(title);
-    container1.appendChild(subtitle);
-    container1.appendChild(buildButtons());
+    container2.appendChild(buildLogoContainer());
+    container2.appendChild(buildLinks());
+    container2.appendChild(title);
+    container2.appendChild(subtitle);
+    container2.appendChild(buildButtons());
+
+    container1.appendChild(container2);
 
     return container1;
 }
