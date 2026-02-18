@@ -57,12 +57,6 @@ const BUTTONS = [
         disableOnClosedPR: true,
     },
     {
-        command: "requeue",
-        label: "Requeue",
-        tooltip: "Re-add the pull request to the merge queue",
-        disableOnClosedPR: true,
-    },
-    {
         command: "dequeue",
         label: "Dequeue",
         tooltip: "Remove the pull request from the merge queue",
