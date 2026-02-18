@@ -297,7 +297,7 @@ function buildMergifySectionForTimelineActions() {
     const container1 = document.createElement("div");
     container1.id = "mergify";
     container1.setAttribute("aria-label", "Mergify");
-    container1.className = "branch-action py-0 my-3 pl-0 pl-md-3 ml-md-6";
+    container1.className = "branch-action py-0 my-3 pl-0";
 
     const container2 = document.createElement("div");
     container2.className =
