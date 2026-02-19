@@ -49,6 +49,12 @@ function debug(...args) {
     console.log(...args);
 }
 
+function parseSvg(svgString) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    return doc.documentElement;
+}
+
 const BUTTONS = [
     {
         command: "queue",
@@ -126,7 +132,10 @@ function buildBtn(command, label, tooltip, disabled) {
     element.onclick = () => postCommand(command);
     element.className = "btn-sm btn";
     element.style.marginLeft = "10px";
-    element.innerHTML = `<span class="Details-content--shown">${label}</span></span>`;
+    const span = document.createElement("span");
+    span.className = "Details-content--shown";
+    span.textContent = label;
+    element.appendChild(span);
     return element;
 }
 
@@ -177,17 +186,30 @@ function getMergeQueueLink() {
 function buildMergifySectionForClassicMergeBox() {
     const icon = document.createElement("div");
     icon.className = "branch-action-item-icon";
-    icon.innerHTML = getLogoSvg();
+    icon.appendChild(parseSvg(getLogoSvg()));
     const title = document.createElement("div");
-    title.innerHTML = '<h3 class="status-heading h4">Mergify</h3>';
+    const h3 = document.createElement("h3");
+    h3.className = "status-heading h4";
+    h3.textContent = "Mergify";
+    title.appendChild(h3);
 
     const headline = document.createElement("span");
     headline.className = "status-meta";
-    headline.innerHTML = `
-          This pull request is managed by Mergify.<br/>
-          <a class="Link--inTextBlock btn-link" href="${getMergeQueueLink()}" target="_blank">View merge queue</a> —
-          <a class="Link--inTextBlock btn-link" href="${getEventLogLink()}" target="_blank">View event logs of the pull request.</a>
-    `;
+    headline.append(
+        "This pull request is managed by Mergify.",
+        document.createElement("br"),
+    );
+    const queueLink = document.createElement("a");
+    queueLink.className = "Link--inTextBlock btn-link";
+    queueLink.href = getMergeQueueLink();
+    queueLink.target = "_blank";
+    queueLink.textContent = "View merge queue";
+    const eventLink = document.createElement("a");
+    eventLink.className = "Link--inTextBlock btn-link";
+    eventLink.href = getEventLogLink();
+    eventLink.target = "_blank";
+    eventLink.textContent = "View event logs of the pull request.";
+    headline.append(queueLink, " \u2014 ", eventLink);
 
     const pullIsOpen = isPullRequestOpen();
 
@@ -222,7 +244,7 @@ function buildLogoContainer() {
     const container = document.createElement("div");
     container.className =
         "float-left branch-action-item-icon completeness-indicator circle color-fg-muted border";
-    container.innerHTML = getLogoSvg();
+    container.appendChild(parseSvg(getLogoSvg()));
     return container;
 }
 
@@ -244,9 +266,16 @@ function buildButton(command, label, tooltip, disabled) {
     button.setAttribute("aria-describedby", ":r1o:-loading-announcement");
     button.className = "Button--secondary Button--small Button flex-1";
     button.onclick = () => postCommand(command);
-    button.innerHTML = `<span data-component="buttonContent" data-align="center" class="Button-content">
-    <span data-component="text" class="Button-label">${label}</span>
-    </span>`;
+    const btnContent = document.createElement("span");
+    btnContent.setAttribute("data-component", "buttonContent");
+    btnContent.setAttribute("data-align", "center");
+    btnContent.className = "Button-content";
+    const btnLabel = document.createElement("span");
+    btnLabel.setAttribute("data-component", "text");
+    btnLabel.className = "Button-label";
+    btnLabel.textContent = label;
+    btnContent.appendChild(btnLabel);
+    button.appendChild(btnContent);
     container.appendChild(button);
 
     return container;
@@ -276,12 +305,22 @@ function buildLinks() {
 
     const eventLogLink = document.createElement("p");
     eventLogLink.className = "fgColor-muted mb-0";
-    eventLogLink.innerHTML = `<a class="Button Button--link Button--medium" href="${getEventLogLink()}" target="_blank">View event logs of the pull request</a>`;
+    const eventLogAnchor = document.createElement("a");
+    eventLogAnchor.className = "Button Button--link Button--medium";
+    eventLogAnchor.href = getEventLogLink();
+    eventLogAnchor.target = "_blank";
+    eventLogAnchor.textContent = "View event logs of the pull request";
+    eventLogLink.appendChild(eventLogAnchor);
     container.appendChild(eventLogLink);
 
     const mergeQueueLink = document.createElement("p");
     mergeQueueLink.className = "fgColor-muted mb-0";
-    mergeQueueLink.innerHTML = `<a class="Button Button--link Button--medium" href="${getMergeQueueLink()}" target="_blank">View merge queue</a>`;
+    const mergeQueueAnchor = document.createElement("a");
+    mergeQueueAnchor.className = "Button Button--link Button--medium";
+    mergeQueueAnchor.href = getMergeQueueLink();
+    mergeQueueAnchor.target = "_blank";
+    mergeQueueAnchor.textContent = "View merge queue";
+    mergeQueueLink.appendChild(mergeQueueAnchor);
     container.appendChild(mergeQueueLink);
 
     return container;
