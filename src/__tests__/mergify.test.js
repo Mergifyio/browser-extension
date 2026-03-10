@@ -199,10 +199,12 @@ describe("isPullRequestOpen", () => {
 describe("isMergifyEnabledOnTheRepo caching behavior", () => {
     beforeEach(() => {
         localStorage.clear();
-        // Mock document.location
-        delete window.location;
-        window.location = new URL(
-            "https://github.com/cypress-io/cypress/pull/32277",
+        // Set URL path for pull request data
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/cypress-io/cypress/pull/32277",
         );
     });
 
@@ -242,11 +244,12 @@ describe("isMergifyEnabledOnTheRepo caching behavior", () => {
 describe("getMergifyConfigurationStatus", () => {
     beforeEach(() => {
         localStorage.clear();
-        // Mock window.location for pull request data
-        //
-        delete window.location;
-        window.location = new URL(
-            "https://github.com/test-org/test-repo/pull/123",
+        // Set URL path for pull request data
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/test-org/test-repo/pull/123",
         );
     });
 
