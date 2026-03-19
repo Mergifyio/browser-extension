@@ -160,11 +160,13 @@ function postCommand(command) {
 function togglePrListFilter() {
     debug("Applying PR list filter");
     const url = new URL(window.location.href);
-    // url.pathname = url.pathname.replace(/\/pulls$/, "/issues");
     const oldQuery = url.searchParams.get("q")?.trim() || "";
-    const components = new Set(oldQuery.split(" "));
+    const rawComponents = oldQuery.split(/\s+/);
+    const components = new Set(rawComponents);
+    // https://github.com/[owner]/[repo]/pulls without `?q` implicitly defaults to "is:pr is:open"
+    // Otherwise, we would end up with a raw "-author:app/mergify" query that also shows closed pull requests.
     components.add("is:pr");
-    if (!components.has("is:closed") && !components.has("is:open")) {
+    if (!rawComponents.some((c) => c.startsWith("is:"))) {
         components.add("is:open");
     }
     if (components.has("-author:app/mergify")) {
@@ -435,20 +437,21 @@ function buildMergifySectionForTimelineActions() {
 
 function buildPRListMergifyFilterButton() {
     const container = document.createElement("button");
-    container.setAttribute(
-        "title",
-        "Filter out pull requests managed by Mergify",
-    );
+    const label = "Filter out pull requests managed by Mergify";
+    container.setAttribute("title", label);
+    container.setAttribute("aria-label", label);
     container.type = "button";
     container.id = "mergify-pr-list-filter";
     container.className = "mr-1 border rounded-md";
     const params = new URLSearchParams(window.location.search);
-    if (params.get("q")?.includes("-author:app/mergify")) {
+    const isActive = !!params.get("q")?.includes("-author:app/mergify");
+    if (isActive) {
         container.style.backgroundColor =
             "var(--button-default-bgColor-active)";
     } else {
         container.style.backgroundColor = "var(--button-default-bgColor-rest)";
     }
+    container.setAttribute("aria-pressed", `${isActive}`);
     const logo = parseSvg(getLogoSvg());
     logo.setAttribute("width", "22");
     logo.setAttribute("height", "22");
@@ -718,5 +721,7 @@ try {
         convertMergifyTimestamps,
         isMergifyBotComment,
         formatLocalTime,
+        buildPRListMergifyFilterButton,
+        togglePrListFilter,
     };
 } catch (_error) {}
