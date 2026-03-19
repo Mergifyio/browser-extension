@@ -1,3 +1,4 @@
+const mergify = require("../mergify");
 const {
     MergifyCache,
     findTimelineActions,
@@ -7,7 +8,9 @@ const {
     convertMergifyTimestamps,
     isMergifyBotComment,
     formatLocalTime,
-} = require("../mergify");
+    buildPRListMergifyFilterButton,
+    togglePrListFilter,
+} = mergify;
 const { loadFixture, injectFixtureInDOM } = require("./utils");
 
 describe("MergifyCache", () => {
@@ -336,6 +339,7 @@ describe("getMergifyConfigurationStatus", () => {
         );
     });
 
+
     it("should not update cache if cached value matches search result", async () => {
         const cache = new MergifyCache();
         cache.update("test-org", "test-repo", true);
@@ -458,5 +462,127 @@ describe("convertMergifyTimestamps", () => {
 
         const code = document.querySelector("code");
         expect(code.textContent).toBe("9999-99-99 99:99 UTC");
+    });
+});
+
+describe("togglePrListFilter", () => {
+    beforeEach(() => {
+        jest.spyOn(console, "error").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    function setURL(path) {
+        History.prototype.pushState.call(window.history, {}, "", path);
+    }
+
+    function navigatedQuery() {
+        return new URL(mergify._navigation).searchParams.get("q");
+    }
+
+    it("should add -author:app/mergify, is:pr, and is:open when no query exists", () => {
+        setURL("/org/repo/pulls");
+        togglePrListFilter();
+        const q = navigatedQuery();
+        expect(q).toContain("-author:app/mergify");
+        expect(q).toContain("is:pr");
+        expect(q).toContain("is:open");
+    });
+
+    it("should remove -author:app/mergify when already present", () => {
+        setURL("/org/repo/pulls?q=is%3Apr+is%3Aopen+-author%3Aapp%2Fmergify");
+        togglePrListFilter();
+        expect(navigatedQuery()).not.toContain("-author:app/mergify");
+    });
+
+    it("should not add is:open when is:open is already in the query", () => {
+        setURL("/org/repo/pulls?q=is%3Aopen+label%3Abug");
+        togglePrListFilter();
+        const q = navigatedQuery();
+        expect((q.match(/is:open/g) || []).length).toBe(1);
+        expect(q).toContain("-author:app/mergify");
+    });
+
+    it("should not add is:open when is:closed is already in the query", () => {
+        setURL("/org/repo/pulls?q=is%3Aclosed");
+        togglePrListFilter();
+        const q = navigatedQuery();
+        expect(q).not.toContain("is:open");
+        expect(q).toContain("is:closed");
+        expect(q).toContain("-author:app/mergify");
+    });
+
+    it("should always add is:pr to the query", () => {
+        setURL("/org/repo/pulls?q=label%3Abug");
+        togglePrListFilter();
+        expect(navigatedQuery()).toContain("is:pr");
+    });
+
+    it("should preserve existing query terms when toggling on", () => {
+        setURL("/org/repo/pulls?q=is%3Aopen+label%3Abug");
+        togglePrListFilter();
+        const q = navigatedQuery();
+        expect(q).toContain("label:bug");
+        expect(q).toContain("-author:app/mergify");
+    });
+
+    it("should preserve existing query terms when toggling off", () => {
+        setURL("/org/repo/pulls?q=is%3Aopen+label%3Abug+-author%3Aapp%2Fmergify");
+        togglePrListFilter();
+        const q = navigatedQuery();
+        expect(q).toContain("label:bug");
+        expect(q).not.toContain("-author:app/mergify");
+    });
+});
+
+describe("buildPRListMergifyFilterButton", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should create a button with the correct id", () => {
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pulls",
+        );
+        const btn = buildPRListMergifyFilterButton();
+        expect(btn.id).toBe("mergify-pr-list-filter");
+    });
+
+    it("should set aria-pressed=false when filter is inactive", () => {
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pulls",
+        );
+        const btn = buildPRListMergifyFilterButton();
+        expect(btn.getAttribute("aria-pressed")).toBe("false");
+    });
+
+    it("should set aria-pressed=true when filter is active", () => {
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pulls?q=-author%3Aapp%2Fmergify",
+        );
+        const btn = buildPRListMergifyFilterButton();
+        expect(btn.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("should wire onclick to togglePrListFilter", () => {
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pulls",
+        );
+        const btn = buildPRListMergifyFilterButton();
+        expect(btn.onclick).toBe(togglePrListFilter);
     });
 });

@@ -157,6 +157,13 @@ function postCommand(command) {
     button.click();
 }
 
+let _navigation = window.location.href;
+
+function navigate(href) {
+    _navigation = href;
+    window.location.href = href;
+}
+
 function togglePrListFilter() {
     debug("Applying PR list filter");
     const url = new URL(window.location.href);
@@ -176,7 +183,7 @@ function togglePrListFilter() {
     }
     debug("New query components:", components);
     url.searchParams.set("q", Array.from(components).join(" "));
-    window.location.href = url.href;
+    navigate(url.href);
 }
 
 function isPullRequestOpen() {
@@ -723,5 +730,6 @@ try {
         formatLocalTime,
         buildPRListMergifyFilterButton,
         togglePrListFilter,
+        get _navigation() { return _navigation; },
     };
 } catch (_error) {}
