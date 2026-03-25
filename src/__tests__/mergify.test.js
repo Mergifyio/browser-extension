@@ -4,6 +4,9 @@ const {
     isPullRequestOpen,
     isMergifyEnabledOnTheRepo,
     getMergifyConfigurationStatus,
+    convertMergifyTimestamps,
+    isMergifyBotComment,
+    formatLocalTime,
 } = require("../mergify");
 const { loadFixture, injectFixtureInDOM } = require("./utils");
 
@@ -352,5 +355,108 @@ describe("getMergifyConfigurationStatus", () => {
 
         expect(result).toBe(true);
         expect(cacheSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe("formatLocalTime", () => {
+    it("should format a date using Intl.DateTimeFormat", () => {
+        const date = new Date("2025-06-15T14:30:00Z");
+        const result = formatLocalTime(date);
+
+        expect(typeof result).toBe("string");
+        expect(result.length).toBeGreaterThan(0);
+    });
+});
+
+describe("isMergifyBotComment", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should return true for a Mergify bot comment", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        const container = document.querySelector(".TimelineItem");
+        expect(isMergifyBotComment(container)).toBe(true);
+    });
+
+    it("should return false for a non-Mergify comment", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        const containers = document.querySelectorAll(".TimelineItem");
+        // Second container is from "someuser".
+        expect(isMergifyBotComment(containers[1])).toBe(false);
+    });
+});
+
+describe("convertMergifyTimestamps", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should convert UTC timestamps in Mergify bot comments", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        convertMergifyTimestamps();
+
+        const mergifyComment = document.querySelector(".TimelineItem");
+        const codes = mergifyComment.querySelectorAll(
+            "code[data-mergify-local-time]",
+        );
+
+        expect(codes.length).toBe(2);
+        expect(codes[0].textContent).not.toBe("2025-06-15 14:30 UTC");
+        expect(codes[0].getAttribute("title")).toBe("2025-06-15 14:30 UTC");
+        expect(codes[1].getAttribute("title")).toBe("2025-06-15 16:00 UTC");
+        expect(codes[1].style.cursor).toBe("help");
+    });
+
+    it("should not convert timestamps in non-Mergify comments", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        convertMergifyTimestamps();
+
+        const containers = document.querySelectorAll(".TimelineItem");
+        const userCode = containers[1].querySelector("code");
+
+        expect(userCode.textContent).toBe("2025-06-15 14:30 UTC");
+        expect(userCode.hasAttribute("data-mergify-local-time")).toBe(false);
+    });
+
+    it("should not re-process already converted timestamps", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        convertMergifyTimestamps();
+
+        const code = document.querySelector("code[data-mergify-local-time]");
+        const firstConversion = code.textContent;
+
+        convertMergifyTimestamps();
+
+        expect(code.textContent).toBe(firstConversion);
+        expect(code.getAttribute("title")).toBe("2025-06-15 14:30 UTC");
+    });
+
+    it("should ignore non-matching code elements", () => {
+        injectFixtureInDOM("github_pr_mergify_timestamp");
+        convertMergifyTimestamps();
+
+        const mergifyComment = document.querySelector(".TimelineItem");
+        const allCodes = mergifyComment.querySelectorAll("code");
+        const ruleCode = Array.from(allCodes).find(
+            (c) => c.textContent === "default",
+        );
+
+        expect(ruleCode).toBeDefined();
+        expect(ruleCode.hasAttribute("data-mergify-local-time")).toBe(false);
+    });
+
+    it("should handle invalid dates gracefully", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem js-comment-container">
+                <a class="author" href="/apps/mergify">mergify</a>
+                <div class="comment-body"><code>9999-99-99 99:99 UTC</code></div>
+            </div>
+        `;
+
+        expect(() => convertMergifyTimestamps()).not.toThrow();
+
+        const code = document.querySelector("code");
+        expect(code.textContent).toBe("9999-99-99 99:99 UTC");
     });
 });
