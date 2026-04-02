@@ -20,12 +20,10 @@ queue_rules:
       - and: *CheckRuns
     merge_conditions:
       - and: *CheckRuns
-    merge_method: merge
+    merge_method: fast-forward
     batch_size: 7
     batch_max_wait_time: 5min
     commit_message_template:
-    queue_branch_merge_method: fast-forward
-
   - name: default
     autoqueue: true
     <<: *DefaultQueueOptions
@@ -58,8 +56,8 @@ merge_protections:
     if: []
     success_conditions:
       - or:
-        - "#approved-reviews-by >= 2"
-        - author = dependabot[bot]
+          - "#approved-reviews-by >= 2"
+          - author = dependabot[bot]
 
 merge_protections_settings:
   reporting_method: deployments
