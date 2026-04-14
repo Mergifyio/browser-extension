@@ -157,6 +157,35 @@ function postCommand(command) {
     button.click();
 }
 
+let _navigation = window.location.href;
+
+function navigate(href) {
+    _navigation = href;
+    window.location.href = href;
+}
+
+function togglePrListFilter() {
+    debug("Applying PR list filter");
+    const url = new URL(window.location.href);
+    const oldQuery = url.searchParams.get("q")?.trim() || "";
+    const rawComponents = oldQuery.split(/\s+/);
+    const components = new Set(rawComponents);
+    // https://github.com/[owner]/[repo]/pulls without `?q` implicitly defaults to "is:pr is:open"
+    // Otherwise, we would end up with a raw "-author:app/mergify" query that also shows closed pull requests.
+    components.add("is:pr");
+    if (!rawComponents.some((c) => c.startsWith("is:"))) {
+        components.add("is:open");
+    }
+    if (components.has("-author:app/mergify")) {
+        components.delete("-author:app/mergify");
+    } else {
+        components.add("-author:app/mergify");
+    }
+    debug("New query components:", components);
+    url.searchParams.set("q", Array.from(components).join(" "));
+    navigate(url.href);
+}
+
 function isPullRequestOpen() {
     const opened = document.querySelector("span[data-status=pullOpened]");
     const draft = document.querySelector("span[data-status=draft]");
@@ -413,10 +442,42 @@ function buildMergifySectionForTimelineActions() {
     return container1;
 }
 
+function buildPRListMergifyFilterButton() {
+    const container = document.createElement("button");
+    const label = "Filter out pull requests managed by Mergify";
+    container.setAttribute("title", label);
+    container.setAttribute("aria-label", label);
+    container.type = "button";
+    container.id = "mergify-pr-list-filter";
+    container.className = "mr-1 border rounded-md";
+    const params = new URLSearchParams(window.location.search);
+    const isActive = !!params.get("q")?.includes("-author:app/mergify");
+    if (isActive) {
+        container.style.backgroundColor =
+            "var(--button-default-bgColor-active)";
+    } else {
+        container.style.backgroundColor = "var(--button-default-bgColor-rest)";
+    }
+    container.setAttribute("aria-pressed", `${isActive}`);
+    const logo = parseSvg(getLogoSvg());
+    logo.setAttribute("width", "22");
+    logo.setAttribute("height", "22");
+    logo.style.verticalAlign = "top";
+    container.appendChild(logo);
+    container.onclick = togglePrListFilter;
+    return container;
+}
+
 function isGitHubPullRequestPage() {
     const url = new URL(window.location.href);
     const parts = url.pathname.split("/");
     return parts.length >= 5 && parts[3] === "pull";
+}
+
+function isGitHubPullRequestListingPage() {
+    const url = new URL(window.location.href);
+    const path = url.pathname;
+    return path.split("/").length === 4 && !!path.match(/\/pulls$/);
 }
 
 function findTimelineActions() {
@@ -428,21 +489,41 @@ function findTimelineActions() {
     }
 }
 
-async function _tryInject() {
-    if (!isGitHubPullRequestPage()) {
-        debug("Not a pull request page");
-        return;
-    }
+function findNewPrButton() {
+    return document.querySelector('[data-hotkey="c"]');
+}
 
-    const isMergifySectionInjected = document.querySelector("#mergify");
-    if (isMergifySectionInjected) {
-        debug("Mergify section is already injected");
+async function _tryInject() {
+    if (!isGitHubPullRequestPage() && !isGitHubPullRequestListingPage()) {
+        debug("Not a pull request related page");
         return;
     }
 
     const hasMergifyConfiguration = await getMergifyConfigurationStatus();
     if (!isMergifyEnabledOnTheRepo(hasMergifyConfiguration)) {
         debug("Mergify is not enabled on the repo");
+        return;
+    }
+
+    if (isGitHubPullRequestListingPage()) {
+        const existingBtn = document.querySelector("#mergify-pr-list-filter");
+        if (existingBtn) {
+            debug("Mergify PR list filter button is already injected");
+            return;
+        }
+        debug("Injecting Mergify PR list filter button");
+        const btn = buildPRListMergifyFilterButton();
+        const newPrButton = findNewPrButton();
+        if (newPrButton) {
+            const parent = newPrButton.parentElement;
+            parent.parentElement.insertBefore(btn, parent);
+        }
+        return;
+    }
+
+    const isMergifySectionInjected = document.querySelector("#mergify");
+    if (isMergifySectionInjected) {
+        debug("Mergify section is already injected");
         return;
     }
 
@@ -647,5 +728,8 @@ try {
         convertMergifyTimestamps,
         isMergifyBotComment,
         formatLocalTime,
+        buildPRListMergifyFilterButton,
+        togglePrListFilter,
+        get _navigation() { return _navigation; },
     };
 } catch (_error) {}
