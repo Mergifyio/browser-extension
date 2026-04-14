@@ -2,6 +2,11 @@ const {
     MergifyCache,
     findTimelineActions,
     isPullRequestOpen,
+    isPullRequestQueued,
+    resetQueueState,
+    wasMergedByMergify,
+    getMergedMessage,
+    MERGED_MESSAGES,
     isMergifyEnabledOnTheRepo,
     getMergifyConfigurationStatus,
     convertMergifyTimestamps,
@@ -196,6 +201,180 @@ describe("isPullRequestOpen", () => {
         );
 
         consoleSpy.mockRestore();
+    });
+});
+
+describe("isPullRequestQueued", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+        resetQueueState();
+    });
+
+    it("should return false when no Checks section exists", () => {
+        document.body.innerHTML = "<div>No checks here</div>";
+        expect(isPullRequestQueued()).toBe(false);
+    });
+
+    it("should return true when check says 'In merge queue'", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <span>Mergify Merge Queue</span>
+                        <span>— In merge queue</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(true);
+    });
+
+    it("should return true when check says 'Running merge queue checks'", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <span>Mergify Merge Queue</span>
+                        <span>— Running merge queue checks</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(true);
+    });
+
+    it("should return true when check says 'Queued for merge'", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <span>Mergify Merge Queue</span>
+                        <span>— Queued for merge</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(true);
+    });
+
+    it("should return false when check says 'conditions are under evaluation'", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <svg class="prc-Spinner-SpinnerAnimation-tutJZ"></svg>
+                        <span>Mergify Merge Queue</span>
+                        <span>— Your merge queue conditions are under evaluation</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(false);
+    });
+
+    it("should return false when check says 'Waiting for queue conditions to match'", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <svg class="octicon octicon-square-fill"></svg>
+                        <span>Mergify Merge Queue</span>
+                        <span>— Waiting for queue conditions to match</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(false);
+    });
+
+    it("should return false when no Mergify Merge Queue check exists", () => {
+        document.body.innerHTML = `
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <svg class="octicon octicon-check-circle-fill"></svg>
+                        <span>CI / build</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(isPullRequestQueued()).toBe(false);
+    });
+});
+
+describe("wasMergedByMergify", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should return true when mergify bot merged the PR", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <a href="/apps/mergify">mergify</a>
+                <span>merged commit abc123 into main</span>
+            </div>
+        `;
+        expect(wasMergedByMergify()).toBe(true);
+    });
+
+    it("should return false when a human merged the PR", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <a href="/users/jd">jd</a>
+                <span>merged commit abc123 into main</span>
+            </div>
+        `;
+        expect(wasMergedByMergify()).toBe(false);
+    });
+
+    it("should return false when PR is not merged", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <span>Some other timeline event</span>
+            </div>
+        `;
+        expect(wasMergedByMergify()).toBe(false);
+    });
+
+    it("should return false when no timeline items exist", () => {
+        document.body.innerHTML = "<div>Empty page</div>";
+        expect(wasMergedByMergify()).toBe(false);
+    });
+});
+
+describe("getMergedMessage", () => {
+    beforeEach(() => {
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pull/42",
+        );
+    });
+
+    it("should return a message from the MERGED_MESSAGES list", () => {
+        const message = getMergedMessage();
+        expect(MERGED_MESSAGES).toContain(message);
+    });
+
+    it("should return a consistent message for the same PR number", () => {
+        const message1 = getMergedMessage();
+        const message2 = getMergedMessage();
+        expect(message1).toBe(message2);
+    });
+
+    it("should return different messages for different PR numbers", () => {
+        const message1 = getMergedMessage();
+
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pull/43",
+        );
+        const message2 = getMergedMessage();
+
+        expect(message1).not.toBe(message2);
     });
 });
 
