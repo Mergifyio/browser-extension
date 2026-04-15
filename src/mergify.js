@@ -220,6 +220,10 @@ function resetQueueState() {
     lastKnownQueueState = false;
     queueStateInitialized = false;
     lastPullRequestUrl = null;
+    if (queuePollTimer) {
+        clearTimeout(queuePollTimer);
+        queuePollTimer = null;
+    }
 }
 
 function isPullRequestQueued() {
@@ -248,28 +252,51 @@ function isPullRequestQueued() {
 async function fetchQueueState() {
     const urlAtFetch = window.location.pathname;
     const data = getPullRequestData();
+    debug("fetchQueueState: starting for", data.org, data.repo, data.pull);
     try {
-        const response = await fetch(
+        // Step 1: Fetch the checks page to find the Mergify Merge Queue check run ID
+        const checksResponse = await fetch(
             `/${data.org}/${data.repo}/pull/${data.pull}/checks`,
         );
-        // Discard result if user navigated away during fetch
         if (window.location.pathname !== urlAtFetch) return;
-        if (!response.ok) return;
-
-        const html = await response.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-
-        // Find the Mergify Merge Queue check and its description
-        const items = doc.querySelectorAll(
-            ".merge-status-item, li, [class*='check']",
-        );
-        for (const item of items) {
-            if (!item.textContent.includes("Mergify Merge Queue")) continue;
-            lastKnownQueueState = isMergifyQueueCheckQueued(item.textContent);
+        if (!checksResponse.ok) {
+            debug(
+                "fetchQueueState: checks page returned",
+                checksResponse.status,
+            );
             return;
         }
-        lastKnownQueueState = false;
+
+        const checksHtml = await checksResponse.text();
+        debug(
+            "fetchQueueState: checks page loaded,",
+            checksHtml.length,
+            "chars",
+        );
+        const match = checksHtml.match(
+            /check_run_id=(\d+)[^>]*>\s*<span>Mergify Merge Queue/,
+        );
+        if (!match) {
+            debug("fetchQueueState: no Mergify Merge Queue check run found");
+            lastKnownQueueState = false;
+            return;
+        }
+
+        debug("fetchQueueState: found check_run_id", match[1]);
+
+        // Step 2: Fetch the specific check run page to get the description
+        const runResponse = await fetch(
+            `/${data.org}/${data.repo}/runs/${match[1]}`,
+        );
+        if (window.location.pathname !== urlAtFetch) return;
+        if (!runResponse.ok) {
+            debug("fetchQueueState: run page returned", runResponse.status);
+            return;
+        }
+
+        const runHtml = await runResponse.text();
+        lastKnownQueueState = isMergifyQueueCheckQueued(runHtml);
+        debug("fetchQueueState: result =", lastKnownQueueState);
     } catch (error) {
         debug("Failed to fetch queue state:", error);
     }
@@ -352,60 +379,139 @@ function buildMergeBoxButton(command, label, tooltip, disabled, variant) {
     return button;
 }
 
-function buildQueueButton(pullIsOpen, pullIsQueued) {
-    const btn = pullIsQueued
-        ? buildMergeBoxButton(
-              "dequeue",
-              "Dequeue",
-              "Remove the pull request from the merge queue",
-              false,
-              "danger",
-          )
-        : buildMergeBoxButton(
-              "queue",
-              "Queue",
-              "Add the pull request to the merge queue",
-              !pullIsOpen,
-              "primary",
-          );
-    btn.setAttribute("data-mergify-queue-btn", "true");
+let queuePollTimer = null;
+const QUEUE_POLL_INTERVAL = 15000;
 
-    // Wrap onclick to optimistically flip state after posting the command
-    const originalOnclick = btn.onclick;
-    btn.onclick = () => {
-        originalOnclick();
-        lastKnownQueueState = !pullIsQueued;
-        const row = document.querySelector("#mergify");
-        if (row) updateMergifyQueueButton(row);
-    };
+function scheduleQueueStatePoll() {
+    if (queuePollTimer) return;
+    queuePollTimer = setTimeout(async () => {
+        queuePollTimer = null;
+        if (!isGitHubPullRequestPage()) return;
+        const previousState = lastKnownQueueState;
+        await fetchQueueState();
+        if (previousState !== lastKnownQueueState) {
+            const row = document.querySelector("#mergify");
+            if (row) updateMergifyRow(row);
+        }
+        if (isGitHubPullRequestPage()) scheduleQueueStatePoll();
+    }, QUEUE_POLL_INTERVAL);
+}
 
+function findLastMergifyCommand() {
+    const comments = document.querySelectorAll(
+        ".TimelineItem, .js-comment-container",
+    );
+    for (let i = comments.length - 1; i >= 0; i--) {
+        const body = comments[i].querySelector(".comment-body");
+        if (!body) continue;
+        // Only match short command comments (e.g. "@Mergifyio queue"),
+        // not Mergify's own long status reports that mention the command.
+        const text = body.textContent.trim();
+        if (text.length > 100) continue;
+        const lower = text.toLowerCase();
+        for (const cmd of ["dequeue", "queue"]) {
+            if (
+                lower.includes(`@mergifyio ${cmd}`) ||
+                lower.includes(`@mergify ${cmd}`)
+            ) {
+                const acknowledged = !!comments[i].querySelector(
+                    'button.social-reaction-summary-item[value^="THUMBS_UP"]',
+                );
+                return { command: cmd, acknowledged };
+            }
+        }
+    }
+    return null;
+}
+
+function deriveQueueButtonState() {
+    if (!isPullRequestOpen()) {
+        return wasMergedByMergify() ? "merged" : "closed";
+    }
+    const checkRunQueued = isPullRequestQueued();
+    const lastCmd = findLastMergifyCommand();
+    // Only show pending state when the command hasn't been acknowledged yet.
+    // Once Mergify thumbs-ups the comment, it was processed — trust the check run.
+    if (lastCmd && !lastCmd.acknowledged) {
+        if (lastCmd.command === "queue" && !checkRunQueued) return "queuing";
+        if (lastCmd.command === "dequeue" && checkRunQueued) return "dequeuing";
+    }
+    return checkRunQueued ? "queued" : "unqueued";
+}
+
+function postCommandAndUpdate(command) {
+    postCommand(command);
+    const row = document.querySelector("#mergify");
+    if (row) updateMergifyRow(row);
+}
+
+function buildQueueButton(state) {
+    let btn;
+    switch (state) {
+        case "queuing":
+        case "dequeuing":
+            btn = buildMergeBoxButton(
+                state === "queuing" ? "queue" : "dequeue",
+                state === "queuing" ? "Queuing\u2026" : "Dequeuing\u2026",
+                "Waiting for Mergify to process\u2026",
+                true,
+                "secondary",
+            );
+            break;
+        case "queued":
+            btn = buildMergeBoxButton(
+                "dequeue",
+                "Dequeue",
+                "Remove the pull request from the merge queue",
+                false,
+                "danger",
+            );
+            btn.onclick = () => postCommandAndUpdate("dequeue");
+            break;
+        default:
+            btn = buildMergeBoxButton(
+                "queue",
+                "Queue",
+                "Add the pull request to the merge queue",
+                false,
+                "primary",
+            );
+            btn.onclick = () => postCommandAndUpdate("queue");
+            break;
+    }
+    btn.setAttribute("data-mergify-queue-btn", state);
     return btn;
 }
 
-function updateMergifyQueueButton(row) {
-    const pullIsOpen = isPullRequestOpen();
-    const pullIsQueued = isPullRequestQueued();
+function updateMergifyRow(row) {
+    const state = deriveQueueButtonState();
     const oldBtn = row.querySelector("[data-mergify-queue-btn]");
+
+    if (state === "merged" || state === "closed") {
+        if (oldBtn) {
+            // PR was open, now merged/closed — rebuild entire row
+            const newRow = buildMergifyRow();
+            row.replaceWith(newRow);
+            debug("Mergify row rebuilt for state:", state);
+        }
+        return;
+    }
+
     if (!oldBtn) return;
-
-    const isCurrentlyDequeue = oldBtn.textContent.trim() === "Dequeue";
-    if (isCurrentlyDequeue === pullIsQueued) return;
-
-    const newBtn = buildQueueButton(pullIsOpen, pullIsQueued);
+    if (oldBtn.getAttribute("data-mergify-queue-btn") === state) return;
+    const newBtn = buildQueueButton(state);
     oldBtn.replaceWith(newBtn);
-    debug("Mergify queue button updated:", pullIsQueued ? "Dequeue" : "Queue");
+    debug("Queue button state:", state);
 }
 
 function buildMergifyRow() {
-    const pullIsOpen = isPullRequestOpen();
-    const pullIsQueued = isPullRequestQueued();
+    const state = deriveQueueButtonState();
 
     const row = document.createElement("div");
     row.id = "mergify";
     row.style.cssText =
         "padding:10px 16px;border-top:1px solid var(--borderColor-default, #30363d);display:flex;align-items:center;gap:10px;";
 
-    // Left side: logo + label + links
     const logo = document.createElement("div");
     logo.style.cssText = "flex-shrink:0;display:flex;";
     const svgEl = parseSvg(getLogoSvg());
@@ -423,42 +529,41 @@ function buildMergifyRow() {
     label.textContent = "Mergify";
     info.appendChild(label);
 
-    const dot1 = document.createElement("span");
-    dot1.style.color = "var(--fgColor-muted, #7d8590)";
-    dot1.textContent = "\u00b7";
-    info.appendChild(dot1);
+    function appendDot() {
+        const dot = document.createElement("span");
+        dot.style.color = "var(--fgColor-muted, #7d8590)";
+        dot.textContent = "\u00b7";
+        info.appendChild(dot);
+    }
 
-    const queueLink = document.createElement("a");
-    queueLink.href = getMergeQueueLink();
-    queueLink.target = "_blank";
-    queueLink.rel = "noopener noreferrer";
-    queueLink.textContent = "queue";
-    queueLink.style.cssText =
-        "color:var(--fgColor-accent, #58a6ff);text-decoration:none;font-size:12px;";
-    info.appendChild(queueLink);
+    function appendLink(href, text) {
+        appendDot();
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = text;
+        link.style.cssText =
+            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;font-size:12px;";
+        info.appendChild(link);
+    }
 
-    const dot2 = document.createElement("span");
-    dot2.style.color = "var(--fgColor-muted, #7d8590)";
-    dot2.textContent = "\u00b7";
-    info.appendChild(dot2);
-
-    const logsLink = document.createElement("a");
-    logsLink.href = getEventLogLink();
-    logsLink.target = "_blank";
-    logsLink.rel = "noopener noreferrer";
-    logsLink.textContent = "logs";
-    logsLink.style.cssText =
-        "color:var(--fgColor-accent, #58a6ff);text-decoration:none;font-size:12px;";
-    info.appendChild(logsLink);
+    appendLink(getMergeQueueLink(), "queue");
+    appendLink(getEventLogLink(), "logs");
 
     row.appendChild(info);
 
-    if (pullIsOpen) {
-        // Right side: buttons (only for open PRs)
+    if (state === "merged") {
+        const status = document.createElement("span");
+        status.style.cssText =
+            "color:var(--fgColor-muted, #7d8590);font-size:13px;";
+        status.textContent = getMergedMessage();
+        row.appendChild(status);
+    } else if (state !== "closed") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
 
-        buttons.appendChild(buildQueueButton(pullIsOpen, pullIsQueued));
+        buttons.appendChild(buildQueueButton(state));
 
         for (const btn of BUTTONS) {
             buttons.appendChild(
@@ -466,19 +571,13 @@ function buildMergifyRow() {
                     btn.command,
                     btn.label,
                     btn.tooltip,
-                    btn.disableOnClosedPR && !pullIsOpen,
+                    false,
                     "secondary",
                 ),
             );
         }
 
         row.appendChild(buttons);
-    } else if (wasMergedByMergify()) {
-        const status = document.createElement("span");
-        status.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);font-size:13px;";
-        status.textContent = getMergedMessage();
-        row.appendChild(status);
     }
 
     return row;
@@ -494,9 +593,7 @@ function findTimelineActions() {
     const mergeBoxDiv = document.querySelector(
         "div[class=discussion-timeline-actions]",
     );
-    if (mergeBoxDiv && mergeBoxDiv.tagName === "DIV") {
-        return mergeBoxDiv;
-    }
+    return mergeBoxDiv;
 }
 
 async function _tryInject() {
@@ -505,17 +602,15 @@ async function _tryInject() {
         return;
     }
 
-    // Reset queue state when navigating to a different PR
     const currentUrl = window.location.pathname;
     if (currentUrl !== lastPullRequestUrl) {
+        resetQueueState();
         lastPullRequestUrl = currentUrl;
-        lastKnownQueueState = false;
-        queueStateInitialized = false;
     }
 
     const existingRow = document.querySelector("#mergify");
     if (existingRow) {
-        updateMergifyQueueButton(existingRow);
+        updateMergifyRow(existingRow);
         return;
     }
 
@@ -543,6 +638,7 @@ async function _tryInject() {
         if (mergeBoxContainer) {
             mergeBoxContainer.appendChild(buildMergifyRow());
             debug("Mergify section injected inside merge box container");
+            scheduleQueueStatePoll();
             return;
         }
     }
@@ -556,6 +652,7 @@ async function _tryInject() {
         if (mergeBoxContainer) {
             mergeBoxContainer.appendChild(buildMergifyRow());
             debug("Mergify section injected inside merge-pr container");
+            scheduleQueueStatePoll();
         } else {
             debug("Merge box container not found yet, waiting for render");
         }
@@ -566,6 +663,7 @@ async function _tryInject() {
     if (detailSection) {
         detailSection.insertBefore(buildMergifyRow(), detailSection.firstChild);
         debug("Mergify section injected in classic merge box");
+        scheduleQueueStatePoll();
         return;
     }
     debug("No merge box found");
@@ -745,6 +843,8 @@ try {
         isPullRequestOpen,
         isPullRequestQueued,
         resetQueueState,
+        findLastMergifyCommand,
+        deriveQueueButtonState,
         wasMergedByMergify,
         getMergedMessage,
         MERGED_MESSAGES,

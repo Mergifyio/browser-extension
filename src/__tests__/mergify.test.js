@@ -4,6 +4,8 @@ const {
     isPullRequestOpen,
     isPullRequestQueued,
     resetQueueState,
+    findLastMergifyCommand,
+    deriveQueueButtonState,
     wasMergedByMergify,
     getMergedMessage,
     MERGED_MESSAGES,
@@ -299,6 +301,162 @@ describe("isPullRequestQueued", () => {
             </section>
         `;
         expect(isPullRequestQueued()).toBe(false);
+    });
+});
+
+describe("findLastMergifyCommand", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should return null when no command comments exist", () => {
+        document.body.innerHTML = "<div>No comments</div>";
+        expect(findLastMergifyCommand()).toBeNull();
+    });
+
+    it("should find @Mergifyio queue command", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">@Mergifyio queue</div>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.command).toBe("queue");
+    });
+
+    it("should find @mergifyio dequeue command", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio dequeue</div>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.command).toBe("dequeue");
+    });
+
+    it("should return the most recent command", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+            </div>
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio dequeue</div>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.command).toBe("dequeue");
+    });
+
+    it("should detect acknowledged (thumbs up) state", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+                <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.command).toBe("queue");
+        expect(result.acknowledged).toBe(true);
+    });
+
+    it("should detect unacknowledged state", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.acknowledged).toBe(false);
+    });
+
+    it("should skip long comments like Mergify status reports", () => {
+        const longText =
+            "Merge Queue Status\n" +
+            "x".repeat(200) +
+            "\n@mergifyio queue comment.";
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">${longText}</div>
+            </div>
+        `;
+        expect(findLastMergifyCommand()).toBeNull();
+    });
+
+    it("should match short command even with long report before it", () => {
+        const longText =
+            "Merge Queue Status\n" +
+            "x".repeat(200) +
+            "\n@mergifyio queue comment.";
+        document.body.innerHTML = `
+            <div class="TimelineItem">
+                <div class="comment-body">${longText}</div>
+            </div>
+            <div class="TimelineItem">
+                <div class="comment-body">@Mergifyio queue</div>
+            </div>
+        `;
+        const result = findLastMergifyCommand();
+        expect(result.command).toBe("queue");
+    });
+});
+
+describe("deriveQueueButtonState", () => {
+    beforeEach(() => {
+        resetQueueState();
+        History.prototype.pushState.call(
+            window.history,
+            {},
+            "",
+            "/org/repo/pull/42",
+        );
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = "";
+        resetQueueState();
+    });
+
+    it("should return 'unqueued' with no commands and no check run", () => {
+        document.body.innerHTML = '<span data-status="pullOpened">Open</span>';
+        expect(deriveQueueButtonState()).toBe("unqueued");
+    });
+
+    it("should return 'queuing' when queue command posted without thumbs up", () => {
+        document.body.innerHTML = `
+            <span data-status="pullOpened">Open</span>
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+            </div>
+        `;
+        expect(deriveQueueButtonState()).toBe("queuing");
+    });
+
+    it("should return 'unqueued' when queue command has thumbs up but check run says not queued", () => {
+        document.body.innerHTML = `
+            <span data-status="pullOpened">Open</span>
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+                <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
+            </div>
+        `;
+        expect(deriveQueueButtonState()).toBe("unqueued");
+    });
+
+    it("should return 'merged' when PR merged by Mergify", () => {
+        document.body.innerHTML = `
+            <span data-status="pullMerged">Merged</span>
+            <div class="TimelineItem">
+                <a href="/apps/mergify">mergify</a>
+                <span>merged commit abc123 into main</span>
+            </div>
+        `;
+        expect(deriveQueueButtonState()).toBe("merged");
+    });
+
+    it("should return 'closed' when PR closed by non-Mergify", () => {
+        document.body.innerHTML =
+            '<span data-status="pullClosed">Closed</span>';
+        expect(deriveQueueButtonState()).toBe("closed");
     });
 });
 
