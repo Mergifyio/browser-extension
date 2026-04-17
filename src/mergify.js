@@ -354,19 +354,37 @@ function buildMergeBoxButton(command, label, tooltip, disabled, variant) {
         button.setAttribute("disabled", "disabled");
     }
     button.onclick = () => postCommand(command);
-    button.style.cssText =
-        "border:none;border-radius:6px;padding:0 12px;font-size:14px;line-height:21px;height:32px;cursor:pointer;font-family:inherit;font-weight:600;";
+    button.style.cssText = `
+        border: none;
+        border-radius: 6px;
+        box-sizing: border-box;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        height: 32px;
+        line-height: 21px;
+        padding: 0 12px;
+    `;
 
     if (variant === "primary") {
-        button.style.backgroundColor = "#238636";
-        button.style.color = "white";
+        button.style.backgroundColor =
+            "var(--button-primary-bgColor-rest, #238636)";
+        button.style.color = "var(--button-primary-fgColor-rest, #ffffff)";
+        button.style.border =
+            "1px solid var(--button-primary-borderColor-rest, transparent)";
     } else if (variant === "danger") {
-        button.style.backgroundColor = "#da3633";
-        button.style.color = "white";
+        button.style.backgroundColor =
+            "var(--button-danger-bgColor-rest, #da3633)";
+        button.style.color = "var(--button-danger-fgColor-rest, #ffffff)";
+        button.style.border =
+            "1px solid var(--button-danger-borderColor-rest, transparent)";
     } else {
-        button.style.backgroundColor = "#21262d";
-        button.style.color = "#e6edf3";
-        button.style.border = "1px solid #30363d";
+        button.style.backgroundColor =
+            "var(--button-default-bgColor-rest, #21262d)";
+        button.style.color = "var(--button-default-fgColor-rest, #e6edf3)";
+        button.style.border =
+            "1px solid var(--button-default-borderColor-rest, #30363d)";
         button.style.fontWeight = "normal";
     }
 
