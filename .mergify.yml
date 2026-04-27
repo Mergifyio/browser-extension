@@ -13,7 +13,6 @@ shared:
 queue_rules:
   - name: automated updates
     <<: *DefaultQueueOptions
-    autoqueue: true
     queue_conditions:
       - base = main
       - author = dependabot[bot]
@@ -25,7 +24,6 @@ queue_rules:
     batch_max_wait_time: 5min
     commit_message_template:
   - name: default
-    autoqueue: true
     <<: *DefaultQueueOptions
     queue_conditions:
       - and: *CheckRuns
@@ -61,3 +59,4 @@ merge_protections:
 
 merge_protections_settings:
   reporting_method: deployments
+  auto_merge: true
