@@ -691,12 +691,6 @@ describe("getMergifyConfigurationStatus", () => {
     it("should not update cache if cached value matches search result", async () => {
         const cache = new MergifyCache();
         cache.update("test-org", "test-repo", true);
-        const cacheSpy = jest.spyOn(cache, "update");
-
-        // Mock MergifyCache constructor to return our spy
-        jest.spyOn(require("../mergify"), "MergifyCache").mockImplementation(
-            () => cache,
-        );
 
         const mockFetch = jest.fn().mockResolvedValue({
             text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
@@ -706,7 +700,8 @@ describe("getMergifyConfigurationStatus", () => {
         const result = await getMergifyConfigurationStatus();
 
         expect(result).toBe(true);
-        expect(cacheSpy).not.toHaveBeenCalled();
+        // fetch should not be called when the cache already holds a value
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });
 
@@ -1169,6 +1164,33 @@ describe("PrStatusCache", () => {
         // 61 minutes — expired
         Date.now.mockImplementation(() => 1000 + 61 * 60 * 1000);
         expect(cache.get("o", "r", 1, "h")).toBeNull();
+    });
+
+    it("clears localStorage entries on a page reload at module load", () => {
+        jest.resetModules();
+        localStorage.clear();
+        localStorage.setItem(
+            "mergify_browser_extension_pr_status_o_r_1_h",
+            JSON.stringify({ status: "open", timestamp: Date.now() }),
+        );
+        localStorage.setItem("unrelated_key", "keep me");
+        const originalGetEntries = performance.getEntriesByType;
+        performance.getEntriesByType = jest.fn(() => [{ type: "reload" }]);
+        try {
+            // Re-importing the orchestrator triggers its module-load reload-
+            // clear path. With the bug (PrStatusCache reference out of scope),
+            // the try/catch swallows the ReferenceError and the cache is
+            // never cleared. With the fix, the entry is gone.
+            jest.isolateModules(() => {
+                require("../mergify");
+            });
+        } finally {
+            performance.getEntriesByType = originalGetEntries;
+        }
+        expect(
+            localStorage.getItem("mergify_browser_extension_pr_status_o_r_1_h"),
+        ).toBeNull();
+        expect(localStorage.getItem("unrelated_key")).toBe("keep me");
     });
 });
 
