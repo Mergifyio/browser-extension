@@ -1276,6 +1276,35 @@ describe("gatherPrStatuses", () => {
         await gatherPrStatuses(items, cache, () => {}, 3);
         expect(peak).toBeLessThanOrEqual(3);
     });
+
+    it("dedupes concurrent fetches for the same PR (org/repo/num/head_sha)", async () => {
+        const cache = new PrStatusCache();
+        let resolveFetch;
+        let fetchCallCount = 0;
+        global.fetch = jest.fn(() => {
+            fetchCallCount += 1;
+            return new Promise((res) => {
+                resolveFetch = () =>
+                    res({
+                        ok: true,
+                        text: () =>
+                            Promise.resolve(
+                                '<span data-status="pullOpened"></span>',
+                            ),
+                    });
+            });
+        });
+        const items = [{ org: "o", repo: "r", num: 1, head_sha: "h" }];
+        const p1 = gatherPrStatuses(items, cache, () => {});
+        const p2 = gatherPrStatuses(items, cache, () => {});
+        await Promise.resolve();
+        await Promise.resolve();
+        // Two concurrent gathers for the same PR → only one network fetch.
+        expect(fetchCallCount).toBe(1);
+        resolveFetch();
+        await p1;
+        await p2;
+    });
 });
 
 describe("buildContextPanel", () => {
@@ -2052,6 +2081,93 @@ describe("renderMergifyContext", () => {
         expect(document.querySelector("#mergify-context")).toBeNull();
     });
 
+    it("backs off after an edit_form failure (negative cache)", async () => {
+        document.body.innerHTML =
+            '<div id="discussion_bucket"></div>' +
+            '<div class="TimelineItem">' +
+            '<div id="issuecomment-1"></div>' +
+            '<div class="comment-body">Mergify stack</div>' +
+            "</div>";
+        const fetchSpy = jest.fn(() =>
+            Promise.resolve({ ok: false, status: 404 }),
+        );
+        global.fetch = fetchSpy;
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        // Second tick: the failure is cached, no extra fetch fired.
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("removes a stale panel/nav when bodies become empty", async () => {
+        const stackPayload = {
+            schema_version: 1,
+            stack_id: "x",
+            pulls: [
+                {
+                    number: 122,
+                    change_id: "i1",
+                    head_sha: "h1",
+                    base_branch: "main",
+                    dest_branch: "x",
+                    is_current: true,
+                },
+                {
+                    number: 123,
+                    change_id: "i2",
+                    head_sha: "h2",
+                    base_branch: "x",
+                    dest_branch: "x",
+                    is_current: false,
+                },
+            ],
+        };
+        const stackBody =
+            "Stack:\n" +
+            "| 0 | T1 | [#122](https://x/122) | 👈 |\n" +
+            "| 1 | T2 | [#123](https://x/123) |  |\n" +
+            `<!-- mergify-stack-data: ${JSON.stringify(stackPayload)} -->`;
+        document.body.innerHTML =
+            '<div id="discussion_bucket"></div>' +
+            '<section class="use-sticky-header-module__stickyHeader__abc PullRequestFilesToolbar-module__toolbar__def"></section>' +
+            '<div class="TimelineItem">' +
+            '<div id="issuecomment-1"></div>' +
+            '<div class="comment-body">Mergify stack</div>' +
+            "</div>";
+        const escaped = stackBody
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        global.fetch = jest.fn((url) => {
+            if (
+                typeof url === "string" &&
+                /\/issue_comments\/\d+\/edit_form$/.test(url)
+            ) {
+                return Promise.resolve({
+                    ok: true,
+                    text: () =>
+                        Promise.resolve(
+                            `<html><body><textarea>${escaped}</textarea></body></html>`,
+                        ),
+                });
+            }
+            return Promise.resolve({
+                ok: true,
+                text: () => Promise.resolve(""),
+            });
+        });
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
+        // Now the comments disappear.
+        for (const el of document.querySelectorAll(".TimelineItem")) {
+            el.remove();
+        }
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).toBeNull();
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+    });
+
     it("resetQueueState removes any existing #mergify-context panel", () => {
         document.body.innerHTML =
             '<div id="discussion_bucket"><div id="mergify-context"></div></div>';
@@ -2322,6 +2438,42 @@ describe("injectStackNav", () => {
             "</section>";
         injectStackNav(null, { org: "o", repo: "r", number: 1 });
         expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+    });
+
+    it("resets toolbar overrides when null even if our nav is already gone", () => {
+        // React may have replaced the sticky element after we tweaked its
+        // inline styles: the nav node is gone but flexWrap and padding-bottom
+        // we set linger. injectStackNav(null, ...) must restore them.
+        document.body.innerHTML =
+            '<section class="use-sticky-header-module__stickyHeader__abc"></section>';
+        const sticky = document.querySelector(
+            '[class*="use-sticky-header-module__stickyHeader"]',
+        );
+        sticky.style.flexWrap = "wrap";
+        sticky.style.setProperty("padding-bottom", "0", "important");
+        injectStackNav(null, { org: "o", repo: "r", number: 1 });
+        expect(sticky.style.flexWrap).toBe("");
+        expect(sticky.style.getPropertyValue("padding-bottom")).toBe("");
+    });
+
+    it("injects a sticky-offset CSS rule and removes it on null", () => {
+        document.body.innerHTML =
+            '<section class="use-sticky-header-module__stickyHeader__abc PullRequestFilesToolbar-module__toolbar__def"></section>';
+        const stack = {
+            schema_version: 1,
+            stack_id: "x",
+            pulls: [pull(1, { is_current: true }), pull(2)],
+        };
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        const style = document.getElementById("mergify-sticky-offset-fix");
+        expect(style).not.toBeNull();
+        // Rule targets GitHub's lower sticky pane and has !important.
+        expect(style.textContent).toMatch(
+            /\[class\*="DiffComparisonViewer-module__Pane"\]\s*\{\s*top:\s*\d+px\s*!important;\s*\}/,
+        );
+        // Removing the nav removes the style.
+        injectStackNav(null, { org: "o", repo: "r", number: 1 });
+        expect(document.getElementById("mergify-sticky-offset-fix")).toBeNull();
     });
 
     it("no-ops when no sticky target is found", () => {

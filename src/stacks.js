@@ -180,18 +180,24 @@ export async function fetchCommentBodies(org, repo, _prNumber) {
         while (queue.length > 0) {
             const id = queue.shift();
             const cached = _commentBodyCache.get(id);
-            if (
-                cached &&
-                Date.now() - cached.timestamp < COMMENTS_CACHE_TTL_MS
-            ) {
-                bodies.push(cached.body);
-                continue;
+            if (cached) {
+                const age = Date.now() - cached.timestamp;
+                if (cached.body && age < COMMENTS_CACHE_TTL_MS) {
+                    bodies.push(cached.body);
+                    continue;
+                }
+                // Negative cache: a recent failure is remembered for a short
+                // back-off window so we don't refetch on every tryInject tick.
+                if (!cached.body && age < COMMENTS_NEGATIVE_CACHE_TTL_MS) {
+                    continue;
+                }
             }
             const body = await fetchCommentBodyMarkdown(org, repo, id);
-            if (body) {
-                _commentBodyCache.set(id, { body, timestamp: Date.now() });
-                bodies.push(body);
-            }
+            _commentBodyCache.set(id, {
+                body: body || null,
+                timestamp: Date.now(),
+            });
+            if (body) bodies.push(body);
         }
     });
     await Promise.all(workers);
@@ -212,6 +218,10 @@ export async function fetchPrStatus(org, repo, num) {
     } catch (_e) {
         return "unknown";
     }
+}
+
+function _statusKey(item) {
+    return `${item.org}/${item.repo}/${item.num}/${item.head_sha}`;
 }
 
 export async function gatherPrStatuses(
@@ -235,7 +245,17 @@ export async function gatherPrStatuses(
                 onResolve(item, cached);
                 continue;
             }
-            const status = await fetchPrStatus(item.org, item.repo, item.num);
+            // Dedupe concurrent fetches for the same PR — multiple tryInject
+            // ticks during React reconciliation can otherwise spawn the same
+            // request many times before the first response lands.
+            const key = _statusKey(item);
+            let promise = _inflightStatusFetches.get(key);
+            if (!promise) {
+                promise = fetchPrStatus(item.org, item.repo, item.num);
+                _inflightStatusFetches.set(key, promise);
+                promise.finally(() => _inflightStatusFetches.delete(key));
+            }
+            const status = await promise;
             // Don't cache "unknown" — it usually means a transient fetch
             // failure, and we want the next tick to retry rather than serve
             // gray for the full TTL.
@@ -640,6 +660,11 @@ export function injectContextPanel(panel) {
     target.insertBefore(panel, target.firstChild);
 }
 
+export function removeContextSurfaces(currentPull) {
+    document.querySelector("#mergify-context")?.remove();
+    injectStackNav(null, currentPull);
+}
+
 export async function renderMergifyContext(currentPull) {
     const generation = ++_contextRenderGeneration;
     const bodies = await fetchCommentBodies(
@@ -648,12 +673,18 @@ export async function renderMergifyContext(currentPull) {
         currentPull.number,
     );
     if (generation !== _contextRenderGeneration) return;
-    if (bodies.length === 0) return;
+    if (bodies.length === 0) {
+        removeContextSurfaces(currentPull);
+        return;
+    }
 
     const stackData = parseStackMarker(bodies, currentPull.number);
     const revisionData = parseRevisionMarker(bodies, currentPull.number);
     const panel = buildContextPanel(stackData, revisionData, currentPull);
-    if (!panel) return;
+    if (!panel) {
+        removeContextSurfaces(currentPull);
+        return;
+    }
     injectContextPanel(panel);
     injectStackNav(stackData, currentPull);
 
@@ -805,17 +836,43 @@ export function buildStackNav(stackData, currentPull) {
     return root;
 }
 
+// GitHub's diff-view file-tree pane is a separate `position: sticky` element
+// with a hardcoded `top: 60px` (the toolbar's original height). Once we grow
+// the toolbar with our nav row, the pane sticks UNDER our nav and disappears.
+// Override its top via a `<style>` rule whose value tracks the toolbar's
+// actual current height. Selector is class-substring so it survives the
+// random suffix Primer's CSS modules append.
+const STICKY_OFFSET_STYLE_ID = "mergify-sticky-offset-fix";
+const STICKY_OFFSET_SELECTOR = '[class*="DiffComparisonViewer-module__Pane"]';
+
+function updateStickyOffsetFix(target) {
+    const newTop = Math.max(0, target.offsetHeight - 1);
+    let style = document.getElementById(STICKY_OFFSET_STYLE_ID);
+    if (!style) {
+        style = document.createElement("style");
+        style.id = STICKY_OFFSET_STYLE_ID;
+        document.head.appendChild(style);
+    }
+    style.textContent = `${STICKY_OFFSET_SELECTOR} { top: ${newTop}px !important; }`;
+}
+
+function clearStickyOffsetFix() {
+    document.getElementById(STICKY_OFFSET_STYLE_ID)?.remove();
+}
+
 export function injectStackNav(stackData, currentPull) {
     const target = findStackNavTarget();
     if (!target) return;
     const existing = document.querySelector("#mergify-stack-nav");
     const fresh = buildStackNav(stackData, currentPull);
     if (!fresh) {
-        if (existing) {
-            existing.remove();
-            target.style.flexWrap = "";
-            target.style.removeProperty("padding-bottom");
-        }
+        // Always reset our toolbar overrides — React may have replaced the
+        // sticky element while our nav node was the only thing left holding
+        // the override identity. Run unconditionally.
+        target.style.flexWrap = "";
+        target.style.removeProperty("padding-bottom");
+        if (existing) existing.remove();
+        clearStickyOffsetFix();
         return;
     }
     // The toolbar is a flex-row. Force flex-wrap so our 100%-width child
@@ -826,11 +883,9 @@ export function injectStackNav(stackData, currentPull) {
     // the bottom edge of the sticky bar.
     target.style.flexWrap = "wrap";
     target.style.setProperty("padding-bottom", "0", "important");
-    if (existing) {
-        existing.replaceWith(fresh);
-        return;
-    }
-    target.appendChild(fresh);
+    if (existing) existing.replaceWith(fresh);
+    else target.appendChild(fresh);
+    updateStickyOffsetFix(target);
 }
 
 export function resetStackState() {
