@@ -137,9 +137,9 @@ export function parseRevisionMarker(commentBodies, pullNumber) {
     return latest;
 }
 
-export function findMergifyCommentIds() {
+function findMergifyCommentIdsIn(scope) {
     const ids = new Set();
-    const containers = document.querySelectorAll(
+    const containers = scope.querySelectorAll(
         ".TimelineItem, .js-comment-container, .timeline-comment",
     );
     for (const c of containers) {
@@ -152,6 +152,38 @@ export function findMergifyCommentIds() {
         if (m) ids.add(m[1]);
     }
     return [...ids];
+}
+
+export function findMergifyCommentIds() {
+    return findMergifyCommentIdsIn(document);
+}
+
+// On the Files tab, GitHub doesn't render the conversation timeline at all,
+// so the local DOM scan returns nothing. Fall back to fetching the
+// Conversation page's HTML and searching there. Result is cached per-PR
+// with a short TTL so subsequent ticks don't re-fetch the ~500KB page.
+const _remoteCommentIdsCache = new Map();
+
+export async function findMergifyCommentIdsRemote(org, repo, prNumber) {
+    const key = `${org}/${repo}/${prNumber}`;
+    const cached = _remoteCommentIdsCache.get(key);
+    if (cached && Date.now() - cached.timestamp < COMMENTS_CACHE_TTL_MS) {
+        return cached.ids;
+    }
+    try {
+        const r = await fetch(`/${org}/${repo}/pull/${prNumber}`);
+        if (!r.ok) return [];
+        const html = await r.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const ids = findMergifyCommentIdsIn(doc);
+        if (ids.length > 0) {
+            _remoteCommentIdsCache.set(key, { ids, timestamp: Date.now() });
+        }
+        return ids;
+    } catch (e) {
+        debug("findMergifyCommentIdsRemote failed", e);
+        return [];
+    }
 }
 
 export async function fetchCommentBodyMarkdown(org, repo, commentId) {
@@ -170,8 +202,13 @@ export async function fetchCommentBodyMarkdown(org, repo, commentId) {
     }
 }
 
-export async function fetchCommentBodies(org, repo, _prNumber) {
-    const ids = findMergifyCommentIds();
+export async function fetchCommentBodies(org, repo, prNumber) {
+    let ids = findMergifyCommentIds();
+    if (ids.length === 0) {
+        // The Files tab doesn't render conversation comments — fall back to
+        // the Conversation page HTML to discover Mergify-related comment IDs.
+        ids = await findMergifyCommentIdsRemote(org, repo, prNumber);
+    }
     if (ids.length === 0) return [];
     const bodies = [];
     const queue = ids.slice();
@@ -180,18 +217,24 @@ export async function fetchCommentBodies(org, repo, _prNumber) {
         while (queue.length > 0) {
             const id = queue.shift();
             const cached = _commentBodyCache.get(id);
-            if (
-                cached &&
-                Date.now() - cached.timestamp < COMMENTS_CACHE_TTL_MS
-            ) {
-                bodies.push(cached.body);
-                continue;
+            if (cached) {
+                const age = Date.now() - cached.timestamp;
+                if (cached.body && age < COMMENTS_CACHE_TTL_MS) {
+                    bodies.push(cached.body);
+                    continue;
+                }
+                // Negative cache: a recent failure is remembered for a short
+                // back-off window so we don't refetch on every tryInject tick.
+                if (!cached.body && age < COMMENTS_NEGATIVE_CACHE_TTL_MS) {
+                    continue;
+                }
             }
             const body = await fetchCommentBodyMarkdown(org, repo, id);
-            if (body) {
-                _commentBodyCache.set(id, { body, timestamp: Date.now() });
-                bodies.push(body);
-            }
+            _commentBodyCache.set(id, {
+                body: body || null,
+                timestamp: Date.now(),
+            });
+            if (body) bodies.push(body);
         }
     });
     await Promise.all(workers);
@@ -200,6 +243,7 @@ export async function fetchCommentBodies(org, repo, _prNumber) {
 
 export function clearCommentsCache() {
     _commentBodyCache.clear();
+    _remoteCommentIdsCache.clear();
 }
 
 export async function fetchPrStatus(org, repo, num) {
@@ -212,6 +256,10 @@ export async function fetchPrStatus(org, repo, num) {
     } catch (_e) {
         return "unknown";
     }
+}
+
+function _statusKey(item) {
+    return `${item.org}/${item.repo}/${item.num}/${item.head_sha}`;
 }
 
 export async function gatherPrStatuses(
@@ -235,7 +283,17 @@ export async function gatherPrStatuses(
                 onResolve(item, cached);
                 continue;
             }
-            const status = await fetchPrStatus(item.org, item.repo, item.num);
+            // Dedupe concurrent fetches for the same PR — multiple tryInject
+            // ticks during React reconciliation can otherwise spawn the same
+            // request many times before the first response lands.
+            const key = _statusKey(item);
+            let promise = _inflightStatusFetches.get(key);
+            if (!promise) {
+                promise = fetchPrStatus(item.org, item.repo, item.num);
+                _inflightStatusFetches.set(key, promise);
+                promise.finally(() => _inflightStatusFetches.delete(key));
+            }
+            const status = await promise;
             // Don't cache "unknown" — it usually means a transient fetch
             // failure, and we want the next tick to retry rather than serve
             // gray for the full TTL.
@@ -640,6 +698,11 @@ export function injectContextPanel(panel) {
     target.insertBefore(panel, target.firstChild);
 }
 
+export function removeContextSurfaces(currentPull) {
+    document.querySelector("#mergify-context")?.remove();
+    injectStackNav(null, currentPull);
+}
+
 export async function renderMergifyContext(currentPull) {
     const generation = ++_contextRenderGeneration;
     const bodies = await fetchCommentBodies(
@@ -648,12 +711,18 @@ export async function renderMergifyContext(currentPull) {
         currentPull.number,
     );
     if (generation !== _contextRenderGeneration) return;
-    if (bodies.length === 0) return;
+    if (bodies.length === 0) {
+        removeContextSurfaces(currentPull);
+        return;
+    }
 
     const stackData = parseStackMarker(bodies, currentPull.number);
     const revisionData = parseRevisionMarker(bodies, currentPull.number);
     const panel = buildContextPanel(stackData, revisionData, currentPull);
-    if (!panel) return;
+    if (!panel) {
+        removeContextSurfaces(currentPull);
+        return;
+    }
     injectContextPanel(panel);
     injectStackNav(stackData, currentPull);
 
@@ -806,17 +875,73 @@ export function buildStackNav(stackData, currentPull) {
     return root;
 }
 
+// GitHub's diff view has multiple `position: sticky` elements with their
+// `top` hardcoded to the toolbar's original height (e.g., the file-tree pane
+// at top:60px, and per-file headers that pin while you read a long file).
+// Once we grow the toolbar with our nav row, those elements stick UNDER our
+// nav and disappear. We rewrite their `top` two ways:
+//   - A class-substring CSS rule (cheap, survives React re-renders within
+//     a known class).
+//   - A runtime walk that catches anything else with `top > 0` inside the
+//     diff content area, setting an inline `top` with !important. Originals
+//     are tracked in a WeakMap so we can restore on cleanup.
+const STICKY_OFFSET_STYLE_ID = "mergify-sticky-offset-fix";
+const STICKY_OFFSET_KNOWN_SELECTORS = [
+    '[class*="DiffComparisonViewer-module__Pane"]',
+];
+const STICKY_OFFSET_WALK_SCOPES = [
+    '[class*="DiffComparisonViewer"]',
+    '[class*="PullRequestDiffsList"]',
+];
+const _stickyOffsetPatched = new Set();
+
+function updateStickyOffsetFix(target) {
+    const newTop = Math.max(0, target.offsetHeight - 1);
+    let style = document.getElementById(STICKY_OFFSET_STYLE_ID);
+    if (!style) {
+        style = document.createElement("style");
+        style.id = STICKY_OFFSET_STYLE_ID;
+        document.head.appendChild(style);
+    }
+    style.textContent = `${STICKY_OFFSET_KNOWN_SELECTORS.join(", ")} { top: ${newTop}px !important; }`;
+    // Also patch any other sticky descendants with top > 0 that the CSS
+    // selector doesn't catch (e.g., per-file diff headers when scrolled
+    // into a long file).
+    for (const sel of STICKY_OFFSET_WALK_SCOPES) {
+        for (const root of document.querySelectorAll(sel)) {
+            for (const el of root.querySelectorAll("*")) {
+                const cs = getComputedStyle(el);
+                if (cs.position !== "sticky") continue;
+                const t = Number.parseInt(cs.top, 10);
+                if (!t || t <= 0) continue;
+                el.style.setProperty("top", `${newTop}px`, "important");
+                _stickyOffsetPatched.add(el);
+            }
+        }
+    }
+}
+
+function clearStickyOffsetFix() {
+    document.getElementById(STICKY_OFFSET_STYLE_ID)?.remove();
+    for (const el of _stickyOffsetPatched) {
+        el.style.removeProperty("top");
+    }
+    _stickyOffsetPatched.clear();
+}
+
 export function injectStackNav(stackData, currentPull) {
     const target = findStackNavTarget();
     if (!target) return;
     const existing = document.querySelector("#mergify-stack-nav");
     const fresh = buildStackNav(stackData, currentPull);
     if (!fresh) {
-        if (existing) {
-            existing.remove();
-            target.style.flexWrap = "";
-            target.style.removeProperty("padding-bottom");
-        }
+        // Always reset our toolbar overrides — React may have replaced the
+        // sticky element while our nav node was the only thing left holding
+        // the override identity. Run unconditionally.
+        target.style.flexWrap = "";
+        target.style.removeProperty("padding-bottom");
+        if (existing) existing.remove();
+        clearStickyOffsetFix();
         return;
     }
     // The toolbar is a flex-row. Force flex-wrap so our 100%-width child
@@ -827,11 +952,9 @@ export function injectStackNav(stackData, currentPull) {
     // the bottom edge of the sticky bar.
     target.style.flexWrap = "wrap";
     target.style.setProperty("padding-bottom", "0", "important");
-    if (existing) {
-        existing.replaceWith(fresh);
-        return;
-    }
-    target.appendChild(fresh);
+    if (existing) existing.replaceWith(fresh);
+    else target.appendChild(fresh);
+    updateStickyOffsetFix(target);
 }
 
 export function resetStackState() {
