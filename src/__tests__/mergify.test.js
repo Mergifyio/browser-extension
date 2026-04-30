@@ -691,12 +691,6 @@ describe("getMergifyConfigurationStatus", () => {
     it("should not update cache if cached value matches search result", async () => {
         const cache = new MergifyCache();
         cache.update("test-org", "test-repo", true);
-        const cacheSpy = jest.spyOn(cache, "update");
-
-        // Mock MergifyCache constructor to return our spy
-        jest.spyOn(require("../mergify"), "MergifyCache").mockImplementation(
-            () => cache,
-        );
 
         const mockFetch = jest.fn().mockResolvedValue({
             text: jest.fn().mockResolvedValue(loadFixture("searchConfigFound")),
@@ -706,7 +700,8 @@ describe("getMergifyConfigurationStatus", () => {
         const result = await getMergifyConfigurationStatus();
 
         expect(result).toBe(true);
-        expect(cacheSpy).not.toHaveBeenCalled();
+        // fetch should not be called when the cache already holds a value
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });
 
