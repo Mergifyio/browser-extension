@@ -2251,6 +2251,26 @@ describe("buildStackNav", () => {
             el.querySelector('[data-mergify-stack-nav="next-empty"]'),
         ).not.toBeNull();
     });
+
+    it("preserves the current subpath in prev/next links", () => {
+        const stack = stackOf(pull(1), pull(2, { is_current: true }), pull(3));
+        const el = buildStackNav(stack, {
+            org: "o",
+            repo: "r",
+            number: 2,
+            subpath: "changes",
+        });
+        expect(
+            el
+                .querySelector('[data-mergify-stack-nav="prev"]')
+                .getAttribute("href"),
+        ).toBe("/o/r/pull/1/changes");
+        expect(
+            el
+                .querySelector('[data-mergify-stack-nav="next"]')
+                .getAttribute("href"),
+        ).toBe("/o/r/pull/3/changes");
+    });
 });
 
 describe("injectStackNav", () => {
