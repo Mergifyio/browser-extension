@@ -504,6 +504,7 @@ function getPullRequestData() {
         org: parts[1],
         repo: parts[2],
         pull: parts[4],
+        subpath: parts[5] || "",
     };
 }
 
@@ -832,6 +833,7 @@ async function _tryInject() {
         org: _data.org,
         repo: _data.repo,
         number: Number.parseInt(_data.pull, 10),
+        subpath: _data.subpath,
     });
 
     const existingRow = document.querySelector("#mergify");
@@ -1704,7 +1706,8 @@ function buildStackNav(stackData, currentPull) {
         const a = document.createElement("a");
         a.setAttribute("data-mergify-stack-nav", direction);
         a.setAttribute("data-mergify-stack-nav-num", String(pull.number));
-        a.href = `/${currentPull.org}/${currentPull.repo}/pull/${pull.number}`;
+        const tail = currentPull.subpath ? `/${currentPull.subpath}` : "";
+        a.href = `/${currentPull.org}/${currentPull.repo}/pull/${pull.number}${tail}`;
         a.title = `Open #${pull.number}: ${pull.title}`;
         a.style.cssText =
             "display:flex;align-items:center;gap:6px;" +
