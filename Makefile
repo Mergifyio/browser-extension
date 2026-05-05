@@ -44,10 +44,11 @@ dev: ## Create development build and start watching for changes
 dev-build: ## Build development folder only (no watch)
 	@echo "* Creating development build..."
 	rm -rf dev-build
-	cp -a src dev-build
-	rm -rf dev-build/__tests__
+	mkdir -p dev-build
+	cp src/manifest.json src/icon-128.png src/icon-48.png src/sendInstallState.js dev-build/
+	npx esbuild src/mergify.js --bundle --format=iife --target=es2020 --outfile=dev-build/mergify.js
 	gsed -i \
-		-e 's/__MERGIFY_DEBUG__ = false;/__MERGIFY_DEBUG__ = true;/g' \
+		-e 's/window\.__MERGIFY_DEBUG__ ?? (window\.__MERGIFY_DEBUG__ = false)/window.__MERGIFY_DEBUG__ ?? (window.__MERGIFY_DEBUG__ = true)/g' \
 		-e 's/#VERSION#/$(DEV_VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
 		-e 's/$(MERGIFY_DOMAIN_DEFAULT)/$(MERGIFY_DOMAIN)/g' \
@@ -69,8 +70,9 @@ dev-clean: ## Clean development build
 mergify-%-${VERSION}.zip: %
 	@echo "* Building $@..."
 	rm -rf build $@
-	cp -a src build
-	rm -rf build/__tests__
+	mkdir -p build
+	cp src/manifest.json src/icon-128.png src/icon-48.png src/sendInstallState.js build/
+	npx esbuild src/mergify.js --bundle --format=iife --target=es2020 --outfile=build/mergify.js
 	gsed -i \
 		-e 's/#VERSION#/$(VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \

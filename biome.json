@@ -7,7 +7,7 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "includes": ["**/*.js", "**/*.json"]
+        "includes": ["src/**/*.js", "src/**/*.json", "*.json", "jest.config.js"]
     },
     "formatter": {
         "enabled": true,
