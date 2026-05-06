@@ -12,7 +12,7 @@
     },
     "devDependencies": {
         "@biomejs/biome": "2.4.14",
-        "@swc/core": "^1.15.32",
+        "@swc/core": "^1.15.33",
         "@swc/jest": "^0.2.39",
         "esbuild": "^0.28.0",
         "jest": "^30.3.0",
