@@ -16,7 +16,7 @@
         "@swc/jest": "^0.2.39",
         "esbuild": "^0.28.0",
         "jest": "^30.3.0",
-        "jest-environment-jsdom": "^30.3.0",
+        "jest-environment-jsdom": "^30.4.0",
         "nodemon": "^3.1.14"
     }
 }
