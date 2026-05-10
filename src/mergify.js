@@ -64,6 +64,14 @@ export function resetForNavigation() {
 
 async function _tryInject() {
     if (!isGitHubPullRequestPage()) {
+        // SPA-navigated away from a PR (e.g., back to /pulls). The
+        // floating stack-nav pill is body-fixed and outside Turbo's
+        // tree, so Turbo won't sweep it for us — clean up our own
+        // surfaces. Guarded so MutationObserver re-firing on the new
+        // page doesn't churn cleanup work.
+        if (lastPullRequestUrl !== null) {
+            resetForNavigation();
+        }
         debug("Not a pull request page");
         return;
     }
