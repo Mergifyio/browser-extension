@@ -2445,19 +2445,19 @@ describe("buildStackNav", () => {
         expect(labels.some((t) => t === "2/5")).toBe(true);
     });
 
-    it("mutes prev when at the base of the stack", () => {
+    it("omits the prev side entirely when at the base of the stack", () => {
         const stack = stackOf(pull(1, { is_current: true }), pull(2));
         const el = buildStackNav(stack, ctx(1));
         expect(el.querySelector('[data-mergify-stack-nav="prev"]')).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="prev-empty"]'),
-        ).not.toBeNull();
+        ).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="next"]'),
         ).not.toBeNull();
     });
 
-    it("mutes next when at the tip of the stack", () => {
+    it("omits the next side entirely when at the tip of the stack", () => {
         const stack = stackOf(pull(1), pull(2, { is_current: true }));
         const el = buildStackNav(stack, ctx(2));
         expect(
@@ -2466,7 +2466,7 @@ describe("buildStackNav", () => {
         expect(el.querySelector('[data-mergify-stack-nav="next"]')).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="next-empty"]'),
-        ).not.toBeNull();
+        ).toBeNull();
     });
 
     it("preserves the current subpath in prev/next links", () => {
@@ -2507,22 +2507,27 @@ describe("buildStackNav", () => {
         expect(dot.getAttribute("data-mergify-status")).toBe("open");
     });
 
-    it("renders a close button that hides the pill and sets localStorage", () => {
+    it("renders a close button that hides the pill and sets sessionStorage", () => {
         try {
-            localStorage.removeItem("mergify_browser_extension_stack_nav_hidden");
+            sessionStorage.removeItem(
+                "mergify_browser_extension_stack_nav_hidden",
+            );
         } catch (_) {}
         const stack = stackOf(pull(1, { is_current: true }), pull(2));
-        const el = buildStackNav(stack, ctx(1));
-        document.body.appendChild(el);
-        const close = el.querySelector("[data-mergify-stack-nav-close]");
+        // Go through injectStackNav so the document-level click delegate
+        // (which the close button relies on) is installed.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        const close = document.querySelector(
+            "#mergify-stack-nav [data-mergify-stack-nav-close]",
+        );
         expect(close).not.toBeNull();
         close.click();
         expect(document.querySelector("#mergify-stack-nav")).toBeNull();
         expect(
-            localStorage.getItem("mergify_browser_extension_stack_nav_hidden"),
+            sessionStorage.getItem("mergify_browser_extension_stack_nav_hidden"),
         ).toBe("1");
         // Cleanup so other tests aren't affected
-        localStorage.removeItem("mergify_browser_extension_stack_nav_hidden");
+        sessionStorage.removeItem("mergify_browser_extension_stack_nav_hidden");
     });
 });
 
@@ -2603,14 +2608,14 @@ describe("injectStackNav", () => {
         expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
     });
 
-    it("respects the localStorage hide flag", () => {
+    it("respects the sessionStorage hide flag", () => {
         const stack = {
             schema_version: 1,
             stack_id: "x",
             pulls: [pull(1, { is_current: true }), pull(2)],
         };
         try {
-            localStorage.setItem(
+            sessionStorage.setItem(
                 "mergify_browser_extension_stack_nav_hidden",
                 "1",
             );
@@ -2621,7 +2626,7 @@ describe("injectStackNav", () => {
             injectStackNav(stack, { org: "o", repo: "r", number: 1 });
             expect(document.querySelector("#mergify-stack-nav")).toBeNull();
         } finally {
-            localStorage.removeItem(
+            sessionStorage.removeItem(
                 "mergify_browser_extension_stack_nav_hidden",
             );
         }

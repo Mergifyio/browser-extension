@@ -768,9 +768,14 @@ export async function renderMergifyContext(currentPull) {
 
 export const STACK_NAV_HIDDEN_KEY = "mergify_browser_extension_stack_nav_hidden";
 
+// Session-only dismiss: × hides the pill for the rest of this tab/window.
+// A refresh or a new tab brings it back. Most dismisses are "in my way
+// right now" rather than "never show me again", and a per-session flag
+// avoids the dead-end where the only way to restore is clearing storage
+// in DevTools.
 function isStackNavHidden() {
     try {
-        return localStorage.getItem(STACK_NAV_HIDDEN_KEY) === "1";
+        return sessionStorage.getItem(STACK_NAV_HIDDEN_KEY) === "1";
     } catch (_e) {
         return false;
     }
@@ -778,7 +783,7 @@ function isStackNavHidden() {
 
 function setStackNavHidden() {
     try {
-        localStorage.setItem(STACK_NAV_HIDDEN_KEY, "1");
+        sessionStorage.setItem(STACK_NAV_HIDDEN_KEY, "1");
     } catch (_e) {}
 }
 
@@ -848,16 +853,6 @@ export function buildStackNav(stackData, currentPull) {
         return direction === "prev" ? "←" : "→";
     }
 
-    function renderEmpty(direction) {
-        const muted = document.createElement("span");
-        muted.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);opacity:0.4;" +
-            "min-width:24px;text-align:center;flex-shrink:0;";
-        muted.textContent = buildArrow(direction);
-        muted.setAttribute("data-mergify-stack-nav", `${direction}-empty`);
-        return muted;
-    }
-
     function buildLink(pull, direction) {
         const a = document.createElement("a");
         a.setAttribute("data-mergify-stack-nav", direction);
@@ -895,7 +890,7 @@ export function buildStackNav(stackData, currentPull) {
     }
 
     function renderPrev(pull) {
-        if (!pull) return renderEmpty("prev");
+        if (!pull) return null;
         const a = buildLink(pull, "prev");
         const arrow = document.createElement("span");
         arrow.textContent = buildArrow("prev");
@@ -908,7 +903,7 @@ export function buildStackNav(stackData, currentPull) {
     }
 
     function renderNext(pull) {
-        if (!pull) return renderEmpty("next");
+        if (!pull) return null;
         const a = buildLink(pull, "next");
         const dot = buildDot(pull.number);
         const num = document.createElement("span");
@@ -930,10 +925,7 @@ export function buildStackNav(stackData, currentPull) {
     const close = document.createElement("button");
     close.setAttribute("type", "button");
     close.setAttribute("data-mergify-stack-nav-close", "");
-    close.setAttribute(
-        "title",
-        "Hide. Clear localStorage 'mergify_browser_extension_stack_nav_hidden' to restore.",
-    );
+    close.setAttribute("title", "Hide for this session (refresh to restore)");
     close.textContent = "×";
     close.style.cssText =
         "background:transparent;border:none;cursor:pointer;flex-shrink:0;" +
@@ -946,7 +938,9 @@ export function buildStackNav(stackData, currentPull) {
         close.style.color = "var(--fgColor-muted, #7d8590)";
     };
 
-    root.append(renderPrev(prev), stackLabel, renderNext(next), close);
+    for (const child of [renderPrev(prev), stackLabel, renderNext(next), close]) {
+        if (child) root.append(child);
+    }
     return root;
 }
 
