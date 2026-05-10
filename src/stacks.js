@@ -766,25 +766,22 @@ export async function renderMergifyContext(currentPull) {
     }).catch((e) => debug("status fetch failed:", e));
 }
 
-export const STACK_NAV_HIDDEN_KEY = "mergify_browser_extension_stack_nav_hidden";
+// In-memory dismiss flag: × hides the pill for the current page only. A
+// page refresh or an SPA navigation to another PR brings it back. This
+// matches "× hides this view" intent and avoids the dead-end where the
+// only restore path is clearing storage in DevTools.
+let _stackNavHidden = false;
 
-// Session-only dismiss: × hides the pill for the rest of this tab/window.
-// A refresh or a new tab brings it back. Most dismisses are "in my way
-// right now" rather than "never show me again", and a per-session flag
-// avoids the dead-end where the only way to restore is clearing storage
-// in DevTools.
 function isStackNavHidden() {
-    try {
-        return sessionStorage.getItem(STACK_NAV_HIDDEN_KEY) === "1";
-    } catch (_e) {
-        return false;
-    }
+    return _stackNavHidden;
 }
 
 function setStackNavHidden() {
-    try {
-        sessionStorage.setItem(STACK_NAV_HIDDEN_KEY, "1");
-    } catch (_e) {}
+    _stackNavHidden = true;
+}
+
+export function clearStackNavHidden() {
+    _stackNavHidden = false;
 }
 
 function djb2Hash(str) {
@@ -925,7 +922,7 @@ export function buildStackNav(stackData, currentPull) {
     const close = document.createElement("button");
     close.setAttribute("type", "button");
     close.setAttribute("data-mergify-stack-nav-close", "");
-    close.setAttribute("title", "Hide for this session (refresh to restore)");
+    close.setAttribute("title", "Hide (refresh to restore)");
     close.textContent = "×";
     close.style.cssText =
         "background:transparent;border:none;cursor:pointer;flex-shrink:0;" +
@@ -1019,4 +1016,5 @@ export function resetStackState() {
     const panel = document.querySelector("#mergify-context");
     if (panel) panel.remove();
     document.querySelector("#mergify-stack-nav")?.remove();
+    clearStackNavHidden();
 }

@@ -29,6 +29,7 @@ const {
     clearCommentsCache,
     buildStackNav,
     injectStackNav,
+    resetStackState,
 } = require("../mergify");
 const { loadFixture, injectFixtureInDOM } = require("./utils");
 
@@ -2507,12 +2508,7 @@ describe("buildStackNav", () => {
         expect(dot.getAttribute("data-mergify-status")).toBe("open");
     });
 
-    it("renders a close button that hides the pill and sets sessionStorage", () => {
-        try {
-            sessionStorage.removeItem(
-                "mergify_browser_extension_stack_nav_hidden",
-            );
-        } catch (_) {}
+    it("close button hides the pill until clearStackNavHidden runs", () => {
         const stack = stackOf(pull(1, { is_current: true }), pull(2));
         // Go through injectStackNav so the document-level click delegate
         // (which the close button relies on) is installed.
@@ -2523,11 +2519,13 @@ describe("buildStackNav", () => {
         expect(close).not.toBeNull();
         close.click();
         expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        expect(
-            sessionStorage.getItem("mergify_browser_extension_stack_nav_hidden"),
-        ).toBe("1");
-        // Cleanup so other tests aren't affected
-        sessionStorage.removeItem("mergify_browser_extension_stack_nav_hidden");
+        // Re-injecting while hidden is a no-op.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // resetStackState (URL change / refresh proxy) clears the flag.
+        resetStackState();
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
     });
 });
 
@@ -2608,27 +2606,23 @@ describe("injectStackNav", () => {
         expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
     });
 
-    it("respects the sessionStorage hide flag", () => {
+    it("removes a stale pill if the in-memory hide flag is set", () => {
         const stack = {
             schema_version: 1,
             stack_id: "x",
             pulls: [pull(1, { is_current: true }), pull(2)],
         };
-        try {
-            sessionStorage.setItem(
-                "mergify_browser_extension_stack_nav_hidden",
-                "1",
-            );
-            injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-            expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-            // And if a stale pill is in the DOM, it gets removed.
-            document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
-            injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-            expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        } finally {
-            sessionStorage.removeItem(
-                "mergify_browser_extension_stack_nav_hidden",
-            );
-        }
+        // Inject + dismiss to set the flag.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        document
+            .querySelector("#mergify-stack-nav [data-mergify-stack-nav-close]")
+            .click();
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // A stale pill in the DOM (e.g. from a Turbo morph) gets swept.
+        document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // Reset to clear the flag for subsequent tests.
+        resetStackState();
     });
 });
