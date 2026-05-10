@@ -29,6 +29,7 @@ const {
     clearCommentsCache,
     buildStackNav,
     injectStackNav,
+    resetStackState,
 } = require("../mergify");
 const { loadFixture, injectFixtureInDOM } = require("./utils");
 
@@ -2442,22 +2443,22 @@ describe("buildStackNav", () => {
         const el = buildStackNav(stack, ctx(2));
         // The middle label sits between prev and next, exposing the position.
         const labels = Array.from(el.children).map((c) => c.textContent);
-        expect(labels.some((t) => t === "STACK 2/5")).toBe(true);
+        expect(labels.some((t) => t === "2/5")).toBe(true);
     });
 
-    it("mutes prev when at the base of the stack", () => {
+    it("omits the prev side entirely when at the base of the stack", () => {
         const stack = stackOf(pull(1, { is_current: true }), pull(2));
         const el = buildStackNav(stack, ctx(1));
         expect(el.querySelector('[data-mergify-stack-nav="prev"]')).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="prev-empty"]'),
-        ).not.toBeNull();
+        ).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="next"]'),
         ).not.toBeNull();
     });
 
-    it("mutes next when at the tip of the stack", () => {
+    it("omits the next side entirely when at the tip of the stack", () => {
         const stack = stackOf(pull(1), pull(2, { is_current: true }));
         const el = buildStackNav(stack, ctx(2));
         expect(
@@ -2466,7 +2467,28 @@ describe("buildStackNav", () => {
         expect(el.querySelector('[data-mergify-stack-nav="next"]')).toBeNull();
         expect(
             el.querySelector('[data-mergify-stack-nav="next-empty"]'),
-        ).not.toBeNull();
+        ).toBeNull();
+    });
+
+    it("shows the prev PR title when at the tip of the stack", () => {
+        const stack = stackOf(
+            pull(1, { title: "feat(api): land the new thing" }),
+            pull(2, { is_current: true }),
+        );
+        const el = buildStackNav(stack, ctx(2));
+        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
+        expect(prev.textContent).toContain("feat(api): land the new thing");
+    });
+
+    it("does NOT show the prev PR title when not at the tip", () => {
+        const stack = stackOf(
+            pull(1, { title: "feat(api): land the new thing" }),
+            pull(2, { is_current: true }),
+            pull(3),
+        );
+        const el = buildStackNav(stack, ctx(2));
+        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
+        expect(prev.textContent).not.toContain("feat(api): land the new thing");
     });
 
     it("preserves the current subpath in prev/next links", () => {
@@ -2488,6 +2510,58 @@ describe("buildStackNav", () => {
                 .getAttribute("href"),
         ).toBe("/o/r/pull/3/changes");
     });
+
+    it("prev link carries a status-dot keyed to the prev PR number", () => {
+        const stack = stackOf(pull(1), pull(2, { is_current: true }), pull(3));
+        const el = buildStackNav(stack, ctx(2));
+        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
+        const dot = prev.querySelector(
+            '[data-mergify-status-dot][data-mergify-pr-num="1"]',
+        );
+        expect(dot).not.toBeNull();
+        // Status-fetch pipeline paints all non-current pulls — the prev dot
+        // updates via updateStackDotStatus just like the next dot.
+        updateStackDotStatus(el, 1, "merged");
+        expect(dot.getAttribute("data-mergify-status")).toBe("merged");
+    });
+
+    it("next link shows the next PR's title and a status-dot keyed to its number", () => {
+        const stack = stackOf(
+            pull(1),
+            pull(2, { is_current: true }),
+            pull(3, { title: "feat(api): land the new thing" }),
+        );
+        const el = buildStackNav(stack, ctx(2));
+        const next = el.querySelector('[data-mergify-stack-nav="next"]');
+        expect(next.textContent).toContain("feat(api): land the new thing");
+        const dot = next.querySelector(
+            '[data-mergify-status-dot][data-mergify-pr-num="3"]',
+        );
+        expect(dot).not.toBeNull();
+        // updateStackDotStatus should paint the dot
+        updateStackDotStatus(el, 3, "open");
+        expect(dot.getAttribute("data-mergify-status")).toBe("open");
+    });
+
+    it("close button hides the pill until clearStackNavHidden runs", () => {
+        const stack = stackOf(pull(1, { is_current: true }), pull(2));
+        // Go through injectStackNav so the document-level click delegate
+        // (which the close button relies on) is installed.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        const close = document.querySelector(
+            "#mergify-stack-nav [data-mergify-stack-nav-close]",
+        );
+        expect(close).not.toBeNull();
+        close.click();
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // Re-injecting while hidden is a no-op.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // resetStackState (URL change / refresh proxy) clears the flag.
+        resetStackState();
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
+    });
 });
 
 describe("injectStackNav", () => {
@@ -2507,12 +2581,7 @@ describe("injectStackNav", () => {
         };
     }
 
-    function makeStickyHtml() {
-        return '<section class="use-sticky-header-module__stickyHeader__abc PullRequestFilesToolbar-module__toolbar__def"></section>';
-    }
-
-    it("appends the nav as a child of the sticky toolbar and forces flex-wrap", () => {
-        document.body.innerHTML = makeStickyHtml();
+    it("renders a fixed-position pill anchored to the body", () => {
         const stack = {
             schema_version: 1,
             stack_id: "x",
@@ -2521,32 +2590,11 @@ describe("injectStackNav", () => {
         injectStackNav(stack, { org: "o", repo: "r", number: 1 });
         const nav = document.querySelector("#mergify-stack-nav");
         expect(nav).not.toBeNull();
-        const sticky = document.querySelector(
-            '[class*="use-sticky-header-module__stickyHeader"]',
-        );
-        expect(nav.parentElement).toBe(sticky);
-        expect(sticky.style.flexWrap).toBe("wrap");
-    });
-
-    it("ignores the stickyHeaderActivationThreshold sentinel", () => {
-        // The threshold sentinel is a 1px marker that we must NOT inject into.
-        document.body.innerHTML =
-            '<div class="PullRequestFilesToolbar-module__stickyHeaderActivationThreshold__nWqbQ"></div>' +
-            makeStickyHtml();
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const nav = document.querySelector("#mergify-stack-nav");
-        expect(nav.parentElement.className).toMatch(
-            /use-sticky-header-module__stickyHeader/,
-        );
+        expect(nav.parentElement).toBe(document.body);
+        expect(nav.style.position).toBe("fixed");
     });
 
     it("is idempotent — replaces existing nav when called again", () => {
-        document.body.innerHTML = makeStickyHtml();
         const stack = {
             schema_version: 1,
             stack_id: "x",
@@ -2557,59 +2605,59 @@ describe("injectStackNav", () => {
         expect(document.querySelectorAll("#mergify-stack-nav").length).toBe(1);
     });
 
+    it("preserves the existing pill DOM node when nothing changed", () => {
+        // Hover-induced MutationObserver storms re-call injectStackNav. If we
+        // replaceWith() on every call, an in-flight click lands on a detached
+        // anchor and the click event never reaches our document delegate.
+        // The hash check makes the call a no-op when the content is identical.
+        const stack = {
+            schema_version: 1,
+            stack_id: "x",
+            pulls: [pull(1, { is_current: true }), pull(2)],
+        };
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        const firstNode = document.querySelector("#mergify-stack-nav");
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        const secondNode = document.querySelector("#mergify-stack-nav");
+        expect(secondNode).toBe(firstNode);
+    });
+
     it("removes the nav when stackData becomes null", () => {
-        document.body.innerHTML =
-            '<section class="use-sticky-header-module__stickyHeader__abc">' +
-            '<div id="mergify-stack-nav"></div>' +
-            "</section>";
+        document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
         injectStackNav(null, { org: "o", repo: "r", number: 1 });
         expect(document.querySelector("#mergify-stack-nav")).toBeNull();
     });
 
-    it("resets toolbar overrides when null even if our nav is already gone", () => {
-        // React may have replaced the sticky element after we tweaked its
-        // inline styles: the nav node is gone but flexWrap and padding-bottom
-        // we set linger. injectStackNav(null, ...) must restore them.
-        document.body.innerHTML =
-            '<section class="use-sticky-header-module__stickyHeader__abc"></section>';
-        const sticky = document.querySelector(
-            '[class*="use-sticky-header-module__stickyHeader"]',
-        );
-        sticky.style.flexWrap = "wrap";
-        sticky.style.setProperty("padding-bottom", "0", "important");
-        injectStackNav(null, { org: "o", repo: "r", number: 1 });
-        expect(sticky.style.flexWrap).toBe("");
-        expect(sticky.style.getPropertyValue("padding-bottom")).toBe("");
-    });
-
-    it("injects a sticky-offset CSS rule and removes it on null", () => {
-        document.body.innerHTML =
-            '<section class="use-sticky-header-module__stickyHeader__abc PullRequestFilesToolbar-module__toolbar__def"></section>';
+    it("does not require any GitHub anchor to inject", () => {
+        // Empty body — pill still attaches to body since it's viewport-fixed
+        // and doesn't depend on GitHub's DOM. This is the whole point of the
+        // floating design: GitHub layout changes can't break it.
         const stack = {
             schema_version: 1,
             stack_id: "x",
             pulls: [pull(1, { is_current: true }), pull(2)],
         };
         injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const style = document.getElementById("mergify-sticky-offset-fix");
-        expect(style).not.toBeNull();
-        // Rule targets GitHub's lower sticky pane and has !important.
-        expect(style.textContent).toMatch(
-            /\[class\*="DiffComparisonViewer-module__Pane"\]\s*\{\s*top:\s*\d+px\s*!important;\s*\}/,
-        );
-        // Removing the nav removes the style.
-        injectStackNav(null, { org: "o", repo: "r", number: 1 });
-        expect(document.getElementById("mergify-sticky-offset-fix")).toBeNull();
+        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
     });
 
-    it("no-ops when no sticky target is found", () => {
-        document.body.innerHTML = "<div></div>";
+    it("removes a stale pill if the in-memory hide flag is set", () => {
         const stack = {
             schema_version: 1,
             stack_id: "x",
             pulls: [pull(1, { is_current: true }), pull(2)],
         };
+        // Inject + dismiss to set the flag.
+        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
+        document
+            .querySelector("#mergify-stack-nav [data-mergify-stack-nav-close]")
+            .click();
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // A stale pill in the DOM (e.g. from a Turbo morph) gets swept.
+        document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
         injectStackNav(stack, { org: "o", repo: "r", number: 1 });
         expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        // Reset to clear the flag for subsequent tests.
+        resetStackState();
     });
 });
