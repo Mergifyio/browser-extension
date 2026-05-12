@@ -20,7 +20,6 @@ import {
     fetchQueueStateIfNeeded,
     getMergifyConfigurationStatus,
     isMergifyEnabledOnTheRepo,
-    lastKnownQueueState,
     resetQueueState,
     scheduleQueueStatePoll,
     updateMergifyRow,
@@ -96,7 +95,6 @@ async function _tryInject() {
 
     // Fetch queue state before first render (only once per PR page visit)
     await fetchQueueStateIfNeeded();
-    debug("Queue state fetched:", lastKnownQueueState);
 
     // New merge box — the mergebox-partial may be inside discussion-timeline-actions
     // or a separate element in the page (GitHub layout varies)
@@ -139,11 +137,9 @@ async function _tryInject() {
         scheduleQueueStatePoll();
         return;
     }
-    debug("No merge box found");
 }
 
 function tryInject() {
-    debug(`Mergify extension injecting: ${injecting} / ${pendingInjection}`);
     if (injecting) {
         pendingInjection = true;
         return;
