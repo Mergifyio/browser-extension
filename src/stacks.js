@@ -26,10 +26,6 @@ export const CONTEXT_PANEL_TARGETS = [
     ".js-discussion",
 ];
 
-export const STACK_NAV_TARGETS = [
-    '[class*="use-sticky-header-module__stickyHeader"]',
-];
-
 // Module-level state
 export const _commentBodyCache = new Map();
 export const _inflightStatusFetches = new Map();
@@ -167,8 +163,13 @@ const _remoteCommentIdsCache = new Map();
 export async function findMergifyCommentIdsRemote(org, repo, prNumber) {
     const key = `${org}/${repo}/${prNumber}`;
     const cached = _remoteCommentIdsCache.get(key);
-    if (cached && Date.now() - cached.timestamp < COMMENTS_CACHE_TTL_MS) {
-        return cached.ids;
+    if (cached) {
+        const age = Date.now() - cached.timestamp;
+        const ttl =
+            cached.ids.length > 0
+                ? COMMENTS_CACHE_TTL_MS
+                : COMMENTS_NEGATIVE_CACHE_TTL_MS;
+        if (age < ttl) return cached.ids;
     }
     try {
         const r = await fetch(`/${org}/${repo}/pull/${prNumber}`);
@@ -176,9 +177,10 @@ export async function findMergifyCommentIdsRemote(org, repo, prNumber) {
         const html = await r.text();
         const doc = new DOMParser().parseFromString(html, "text/html");
         const ids = findMergifyCommentIdsIn(doc);
-        if (ids.length > 0) {
-            _remoteCommentIdsCache.set(key, { ids, timestamp: Date.now() });
-        }
+        // Cache hits and misses both. Empty result uses a shorter TTL so we
+        // discover comments soon after they appear without re-downloading the
+        // ~500KB Conversation HTML on every tryInject tick.
+        _remoteCommentIdsCache.set(key, { ids, timestamp: Date.now() });
         return ids;
     } catch (e) {
         debug("findMergifyCommentIdsRemote failed", e);
@@ -727,9 +729,6 @@ export async function renderMergifyContext(currentPull) {
     injectStackNav(stackData, currentPull);
 
     if (!stackData) return;
-    const live = document.querySelector("#mergify-context");
-    if (!live) return;
-
     const items = stackData.pulls
         .filter((p) => !p.is_current)
         .map((p) => ({
@@ -744,7 +743,10 @@ export async function renderMergifyContext(currentPull) {
     // outlive a status change the user has now seen with their own eyes.
     const currentStatus = readCurrentPrStatus();
     if (currentStatus) {
-        updateStackDotStatus(live, currentPull.number, currentStatus);
+        const live = document.querySelector("#mergify-context");
+        if (live) {
+            updateStackDotStatus(live, currentPull.number, currentStatus);
+        }
         const currentEntry = stackData.pulls.find(
             (p) => p.number === currentPull.number,
         );
@@ -763,19 +765,37 @@ export async function renderMergifyContext(currentPull) {
 
     gatherPrStatuses(items, _prStatusCache, (item, status) => {
         if (generation !== _contextRenderGeneration) return;
-        const fresh = document.querySelector("#mergify-context");
-        if (!fresh) return;
-        updateStackDotStatus(fresh, item.num, status);
+        const panel = document.querySelector("#mergify-context");
+        if (panel) updateStackDotStatus(panel, item.num, status);
+        const nav = document.querySelector("#mergify-stack-nav");
+        if (nav) updateStackDotStatus(nav, item.num, status);
     }).catch((e) => debug("status fetch failed:", e));
 }
 
-// The `use-sticky-header-module` class is shared across both the Conversation
-// tab's StickyPullRequestHeader and the Files tab's PullRequestFilesToolbar
-// (the actual toolbar, not the 1px stickyHeaderActivationThreshold sentinel).
-export function findStackNavTarget() {
-    return document.querySelector(
-        '[class*="use-sticky-header-module__stickyHeader"]',
-    );
+// In-memory dismiss flag: × hides the pill for the current page only. A
+// page refresh or an SPA navigation to another PR brings it back. This
+// matches "× hides this view" intent and avoids the dead-end where the
+// only restore path is clearing storage in DevTools.
+let _stackNavHidden = false;
+
+function isStackNavHidden() {
+    return _stackNavHidden;
+}
+
+function setStackNavHidden() {
+    _stackNavHidden = true;
+}
+
+export function clearStackNavHidden() {
+    _stackNavHidden = false;
+}
+
+function djb2Hash(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) {
+        h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    }
+    return String(h);
 }
 
 export function buildStackNav(stackData, currentPull) {
@@ -790,185 +810,242 @@ export function buildStackNav(stackData, currentPull) {
     const next =
         idx < stackData.pulls.length - 1 ? stackData.pulls[idx + 1] : null;
 
+    // Standalone floating pill anchored to the viewport — fully decoupled
+    // from GitHub's layout so toolbar/header redesigns don't break us. Lives
+    // directly under <body>.
     const root = document.createElement("div");
     root.id = "mergify-stack-nav";
-    // flex:1 0 100% + min-width:100% + order:99 force the nav onto its own
-    // row inside the sticky toolbar's flex container (which we set to
-    // flex-wrap:wrap during injection). Symmetric vertical padding (no border)
-    // keeps the row content visually centered.
+    // Hash of the displayed content. Used by injectStackNav to skip
+    // identical re-renders. This matters during hover storms: GitHub's
+    // hover-card popover mutates the DOM, our MutationObserver re-fires
+    // tryInject → renderMergifyContext → injectStackNav. Without the
+    // dedup, we'd `replaceWith` on every hover and detach the anchor mid-
+    // click, eating the click event.
+    root.setAttribute(
+        "data-mergify-hash",
+        djb2Hash(
+            JSON.stringify({
+                cur: currentPull.number,
+                sub: currentPull.subpath || "",
+                org: currentPull.org,
+                repo: currentPull.repo,
+                len: stackData.pulls.length,
+                idx,
+                prev: prev ? `${prev.number}/${prev.title}` : null,
+                next: next ? `${next.number}/${next.title}` : null,
+            }),
+        ),
+    );
     root.style.cssText =
-        "display:grid;grid-template-columns:1fr auto 1fr;gap:12px;" +
-        "align-items:center;padding:6px 16px;font-size:11px;" +
-        "background:var(--bgColor-muted, #161b22);" +
-        "box-shadow:inset 0 1px 0 var(--borderColor-default, #30363d);" +
-        "flex:1 0 100%;min-width:100%;order:99;box-sizing:border-box;";
+        "position:fixed;bottom:16px;right:16px;z-index:50;" +
+        "display:inline-flex;align-items:center;gap:10px;" +
+        "padding:6px 8px 6px 12px;font-size:12px;" +
+        "background:var(--bgColor-default, #0d1117);" +
+        "color:var(--fgColor-default, #f0f6fc);" +
+        "border:1px solid var(--borderColor-default, #30363d);" +
+        "border-radius:999px;box-sizing:border-box;" +
+        "box-shadow:0 8px 24px rgba(0,0,0,0.25);" +
+        "font-variant-numeric:tabular-nums;max-width:560px;";
 
     const stackLabel = document.createElement("span");
     stackLabel.style.cssText =
-        "color:var(--fgColor-muted, #7d8590);" +
-        "text-transform:uppercase;letter-spacing:0.5px;" +
-        "font-size:10px;font-weight:600;text-align:center;" +
-        "font-variant-numeric:tabular-nums;";
-    stackLabel.textContent = `STACK ${idx + 1}/${stackData.pulls.length}`;
+        "color:var(--fgColor-muted, #7d8590);font-weight:600;font-size:11px;flex-shrink:0;";
+    stackLabel.textContent = `${idx + 1}/${stackData.pulls.length}`;
 
-    function renderHalf(pull, direction) {
-        const arrow = direction === "prev" ? "←" : "→";
-        const align = direction === "prev" ? "left" : "right";
-        if (!pull) {
-            const muted = document.createElement("span");
-            muted.style.cssText =
-                `text-align:${align};color:var(--fgColor-muted, #7d8590);` +
-                "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" +
-                "font-style:italic;";
-            muted.textContent =
-                direction === "prev" ? "base of stack" : "tip of stack";
-            muted.setAttribute("data-mergify-stack-nav", `${direction}-empty`);
-            return muted;
-        }
+    function buildArrow(direction) {
+        return direction === "prev" ? "←" : "→";
+    }
+
+    function buildLink(pull, direction) {
         const a = document.createElement("a");
         a.setAttribute("data-mergify-stack-nav", direction);
         a.setAttribute("data-mergify-stack-nav-num", String(pull.number));
+        // Opt out of GitHub's Turbo Drive — without this, Turbo intercepts
+        // the click, calls preventDefault, then fails to actually navigate
+        // because our anchor isn't in any Turbo frame. The data-turbo
+        // attribute makes Turbo ignore the link so the browser's default
+        // navigation runs.
+        a.setAttribute("data-turbo", "false");
         const tail = currentPull.subpath ? `/${currentPull.subpath}` : "";
         a.href = `/${currentPull.org}/${currentPull.repo}/pull/${pull.number}${tail}`;
         a.title = `Open #${pull.number}: ${pull.title}`;
         a.style.cssText =
-            "display:flex;align-items:center;gap:6px;" +
-            "color:var(--fgColor-accent, #58a6ff);" +
-            "text-decoration:none;white-space:nowrap;overflow:hidden;" +
-            (direction === "prev"
-                ? "justify-content:flex-start;"
-                : "justify-content:flex-end;");
-        a.onmouseenter = () => {
-            a.style.textDecoration = "underline";
-        };
-        a.onmouseleave = () => {
-            a.style.textDecoration = "none";
-        };
-        const arrowEl = document.createElement("span");
-        arrowEl.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);flex-shrink:0;font-size:13px;";
-        arrowEl.textContent = arrow;
+            "display:inline-flex;align-items:center;gap:6px;min-width:0;" +
+            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;";
+        return a;
+    }
+
+    function buildDot(prNumber) {
+        const dot = document.createElement("span");
+        dot.setAttribute("data-mergify-status-dot", "");
+        dot.setAttribute("data-mergify-pr-num", String(prNumber));
+        dot.setAttribute("data-mergify-status", "unknown");
+        dot.style.cssText =
+            "width:8px;height:8px;border-radius:50%;flex-shrink:0;" +
+            "background:var(--fgColor-muted, #7d8590);";
+        return dot;
+    }
+
+    function renderPrev(pull, { withTitle } = {}) {
+        if (!pull) return null;
+        const a = buildLink(pull, "prev");
+        const arrow = document.createElement("span");
+        arrow.textContent = buildArrow("prev");
+        arrow.style.cssText = "flex-shrink:0;";
+        const dot = buildDot(pull.number);
         const num = document.createElement("span");
-        num.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);flex-shrink:0;" +
-            "font-variant-numeric:tabular-nums;";
         num.textContent = `#${pull.number}`;
-        const title = document.createElement("span");
-        title.textContent = pull.title;
-        title.style.cssText =
-            "overflow:hidden;text-overflow:ellipsis;min-width:0;";
-        if (direction === "prev") {
-            a.appendChild(arrowEl);
-            a.appendChild(num);
-            a.appendChild(title);
-        } else {
-            a.appendChild(title);
-            a.appendChild(num);
-            a.appendChild(arrowEl);
+        num.style.cssText = "flex-shrink:0;";
+        a.append(arrow, dot, num);
+        if (withTitle) {
+            const title = document.createElement("span");
+            title.textContent = pull.title;
+            title.style.cssText =
+                "color:var(--fgColor-default, #f0f6fc);" +
+                "max-width:280px;overflow:hidden;text-overflow:ellipsis;" +
+                "white-space:nowrap;min-width:0;";
+            a.append(title);
         }
         return a;
     }
 
-    root.appendChild(renderHalf(prev, "prev"));
-    root.appendChild(stackLabel);
-    root.appendChild(renderHalf(next, "next"));
+    function renderNext(pull) {
+        if (!pull) return null;
+        const a = buildLink(pull, "next");
+        const dot = buildDot(pull.number);
+        const num = document.createElement("span");
+        num.textContent = `#${pull.number}`;
+        num.style.cssText = "flex-shrink:0;";
+        const title = document.createElement("span");
+        title.textContent = pull.title;
+        title.style.cssText =
+            "color:var(--fgColor-default, #f0f6fc);" +
+            "max-width:280px;overflow:hidden;text-overflow:ellipsis;" +
+            "white-space:nowrap;min-width:0;";
+        const arrow = document.createElement("span");
+        arrow.textContent = buildArrow("next");
+        arrow.style.cssText = "flex-shrink:0;";
+        a.append(dot, num, title, arrow);
+        return a;
+    }
+
+    const close = document.createElement("button");
+    close.setAttribute("type", "button");
+    close.setAttribute("data-mergify-stack-nav-close", "");
+    close.setAttribute(
+        "aria-label",
+        "Hide Mergify stack navigation (returns on refresh or PR navigation)",
+    );
+    close.setAttribute("title", "Hide (returns on refresh or PR navigation)");
+    close.textContent = "×";
+    close.style.cssText =
+        "background:transparent;border:none;cursor:pointer;flex-shrink:0;" +
+        "padding:0 4px;color:var(--fgColor-muted, #7d8590);" +
+        "font-size:16px;line-height:1;border-radius:50%;";
+
+    for (const child of [
+        renderPrev(prev, { withTitle: !next }),
+        stackLabel,
+        renderNext(next),
+        close,
+    ]) {
+        if (child) root.append(child);
+    }
     return root;
 }
 
-// GitHub's diff view has multiple `position: sticky` elements with their
-// `top` hardcoded to the toolbar's original height (e.g., the file-tree pane
-// at top:60px, and per-file headers that pin while you read a long file).
-// Once we grow the toolbar with our nav row, those elements stick UNDER our
-// nav and disappear. We rewrite their `top` two ways:
-//   - A class-substring CSS rule (cheap, survives React re-renders within
-//     a known class).
-//   - A runtime walk that catches anything else with `top > 0` inside the
-//     diff content area, setting an inline `top` with !important. Originals
-//     are tracked in a WeakMap so we can restore on cleanup.
-const STICKY_OFFSET_STYLE_ID = "mergify-sticky-offset-fix";
-const STICKY_OFFSET_KNOWN_SELECTORS = [
-    '[class*="DiffComparisonViewer-module__Pane"]',
-];
-const STICKY_OFFSET_WALK_SCOPES = [
-    '[class*="DiffComparisonViewer"]',
-    '[class*="PullRequestDiffsList"]',
-];
-const _stickyOffsetPatched = new Set();
-
-function updateStickyOffsetFix(target) {
-    const newTop = Math.max(0, target.offsetHeight - 1);
-    let style = document.getElementById(STICKY_OFFSET_STYLE_ID);
-    if (!style) {
-        style = document.createElement("style");
-        style.id = STICKY_OFFSET_STYLE_ID;
-        document.head.appendChild(style);
-    }
-    style.textContent = `${STICKY_OFFSET_KNOWN_SELECTORS.join(", ")} { top: ${newTop}px !important; }`;
-    // Also patch any other sticky descendants with top > 0 that the CSS
-    // selector doesn't catch (e.g., per-file diff headers when scrolled
-    // into a long file).
-    for (const sel of STICKY_OFFSET_WALK_SCOPES) {
-        for (const root of document.querySelectorAll(sel)) {
-            for (const el of root.querySelectorAll("*")) {
-                const cs = getComputedStyle(el);
-                if (cs.position !== "sticky") continue;
-                const t = Number.parseInt(cs.top, 10);
-                if (!t || t <= 0) continue;
-                el.style.setProperty("top", `${newTop}px`, "important");
-                _stickyOffsetPatched.add(el);
-            }
-        }
-    }
+// Hover styling lives in a one-time `<style>` rule rather than on each
+// element via .onmouseenter/.onmouseleave: those JS properties don't
+// survive Turbo DOM morphs and the hash dedup in injectStackNav means we
+// might not re-render the pill after a morph to re-attach them. CSS is
+// painted by the browser from the document stylesheet which is unaffected.
+const STACK_NAV_STYLE_ID = "mergify-stack-nav-style";
+function ensureStackNavStyle() {
+    if (document.getElementById(STACK_NAV_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STACK_NAV_STYLE_ID;
+    style.textContent =
+        "#mergify-stack-nav a[data-mergify-stack-nav]:hover{text-decoration:underline}" +
+        "#mergify-stack-nav [data-mergify-stack-nav-close]:hover{color:var(--fgColor-default,#f0f6fc)}";
+    document.head.appendChild(style);
 }
 
-function clearStickyOffsetFix() {
-    document.getElementById(STICKY_OFFSET_STYLE_ID)?.remove();
-    for (const el of _stickyOffsetPatched) {
-        el.style.removeProperty("top");
-    }
-    _stickyOffsetPatched.clear();
+// Document-level capture-phase click delegation, installed exactly once.
+// We can't bind handlers directly on the pill's elements because Turbo
+// morphs the DOM during navigation/scroll updates and matches our pill by
+// id — preserving the markup but stripping inline event-handler properties
+// (.onclick is a JS property, not part of the morphed HTML). Delegating at
+// document level survives any DOM swap. Capture phase ensures we run before
+// Turbo's own bubble-phase clickBubbled handler can preventDefault without
+// actually navigating.
+let _stackNavDelegated = false;
+function ensureStackNavClickDelegate() {
+    if (_stackNavDelegated) return;
+    _stackNavDelegated = true;
+    document.addEventListener(
+        "click",
+        (e) => {
+            if (
+                e.button !== 0 ||
+                e.metaKey ||
+                e.ctrlKey ||
+                e.shiftKey ||
+                e.altKey
+            ) {
+                return;
+            }
+            const close = e.target?.closest?.(
+                "#mergify-stack-nav [data-mergify-stack-nav-close]",
+            );
+            if (close) {
+                e.preventDefault();
+                e.stopPropagation();
+                setStackNavHidden();
+                document.querySelector("#mergify-stack-nav")?.remove();
+                return;
+            }
+            const link = e.target?.closest?.(
+                "#mergify-stack-nav a[data-mergify-stack-nav]",
+            );
+            if (link?.href) {
+                e.preventDefault();
+                e.stopPropagation();
+                window.location.href = link.href;
+            }
+        },
+        true,
+    );
 }
 
 export function injectStackNav(stackData, currentPull) {
-    const target = findStackNavTarget();
-    if (!target) return;
+    ensureStackNavClickDelegate();
+    ensureStackNavStyle();
     const existing = document.querySelector("#mergify-stack-nav");
-    const fresh = buildStackNav(stackData, currentPull);
-    if (!fresh) {
-        // Always reset our toolbar overrides — React may have replaced the
-        // sticky element while our nav node was the only thing left holding
-        // the override identity. Run unconditionally.
-        target.style.flexWrap = "";
-        target.style.removeProperty("padding-bottom");
+    if (isStackNavHidden()) {
         if (existing) existing.remove();
-        clearStickyOffsetFix();
         return;
     }
-    // The toolbar is a flex-row. Force flex-wrap so our 100%-width child
-    // spills onto a new line below the existing toolbar contents, and stays
-    // inside the same sticky element so it inherits stickiness naturally.
-    // Zero the toolbar's padding-bottom (with !important — GitHub ships an
-    // !important rule for it) so there's no visible gap between our nav and
-    // the bottom edge of the sticky bar.
-    target.style.flexWrap = "wrap";
-    target.style.setProperty("padding-bottom", "0", "important");
-    if (existing) existing.replaceWith(fresh);
-    else target.appendChild(fresh);
-    updateStickyOffsetFix(target);
+    const fresh = buildStackNav(stackData, currentPull);
+    if (!fresh) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) {
+        const oldHash = existing.getAttribute("data-mergify-hash");
+        const newHash = fresh.getAttribute("data-mergify-hash");
+        if (oldHash && newHash && oldHash === newHash) return;
+        existing.replaceWith(fresh);
+    } else {
+        document.body.appendChild(fresh);
+    }
 }
 
 export function resetStackState() {
     _contextRenderGeneration += 1;
     _commentBodyCache.clear();
+    _remoteCommentIdsCache.clear();
     const panel = document.querySelector("#mergify-context");
     if (panel) panel.remove();
-    const nav = document.querySelector("#mergify-stack-nav");
-    if (nav) {
-        const target = findStackNavTarget();
-        nav.remove();
-        if (target) {
-            target.style.flexWrap = "";
-            target.style.removeProperty("padding-bottom");
-        }
-    }
+    document.querySelector("#mergify-stack-nav")?.remove();
+    clearStackNavHidden();
 }
