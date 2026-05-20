@@ -61,6 +61,48 @@ export function resetForNavigation() {
     lastPullRequestUrl = null;
 }
 
+function injectRowIntoMergeBox() {
+    // New merge box — the mergebox-partial may be inside discussion-timeline-actions
+    // or a separate element in the page (GitHub layout varies)
+    const mergeBoxPartial = document.querySelector(
+        '[data-testid="mergebox-partial"]',
+    );
+    if (mergeBoxPartial) {
+        const mergeBoxContainer =
+            mergeBoxPartial.querySelector(".border.rounded-2");
+        if (mergeBoxContainer) {
+            mergeBoxContainer.appendChild(buildMergifyRow());
+            debug("Mergify section injected inside merge box container");
+            return true;
+        }
+    }
+
+    let detailSection = document.querySelector(
+        "div[class=discussion-timeline-actions]",
+    );
+    if (detailSection) {
+        const mergeBoxContainer = detailSection.querySelector(
+            ".merge-pr .border.rounded-2",
+        );
+        if (mergeBoxContainer) {
+            mergeBoxContainer.appendChild(buildMergifyRow());
+            debug("Mergify section injected inside merge-pr container");
+            return true;
+        }
+        debug("Merge box container not found yet, waiting for render");
+        return false;
+    }
+
+    // Classic merge box
+    detailSection = document.querySelector(".mergeability-details");
+    if (detailSection) {
+        detailSection.insertBefore(buildMergifyRow(), detailSection.firstChild);
+        debug("Mergify section injected in classic merge box");
+        return true;
+    }
+    return false;
+}
+
 async function _tryInject() {
     if (!isGitHubPullRequestPage()) {
         // SPA-navigated away from a PR (e.g., back to /pulls). The
@@ -81,70 +123,48 @@ async function _tryInject() {
         lastPullRequestUrl = currentUrl;
     }
 
-    const hasMergifyConfiguration = await getMergifyConfigurationStatus();
-    if (!isMergifyEnabledOnTheRepo(hasMergifyConfiguration)) {
+    // Try synchronous Mergify-enabled detection first (Mergify app icon in
+    // DOM, or cached repo result). Only fall back to the /search fetch when
+    // we have no synchronous signal — that fetch is the single biggest
+    // contributor to first-row latency on cold loads.
+    let mergifyEnabled = isMergifyEnabledOnTheRepo(false);
+    if (!mergifyEnabled) {
+        const hasMergifyConfiguration = await getMergifyConfigurationStatus();
+        mergifyEnabled = isMergifyEnabledOnTheRepo(hasMergifyConfiguration);
+    }
+    if (!mergifyEnabled) {
         debug("Mergify is not enabled on the repo");
         return;
     }
 
     const _data = getPullRequestData();
-    await renderMergifyContext({
+    const contextPayload = {
         org: _data.org,
         repo: _data.repo,
         number: Number.parseInt(_data.pull, 10),
         subpath: _data.subpath,
-    });
+    };
 
     const existingRow = document.querySelector("#mergify");
     if (existingRow) {
         updateMergifyRow(existingRow);
+        void renderMergifyContext(contextPayload);
         return;
     }
 
-    // Fetch queue state before first render (only once per PR page visit)
-    await fetchQueueStateIfNeeded();
+    // Inject the row immediately with state derived synchronously from the
+    // DOM. The queue-state and stack-context fetches run in parallel in the
+    // background — when fetchQueueStateIfNeeded resolves, we re-derive the
+    // button state and swap it in if it changed.
+    const injected = injectRowIntoMergeBox();
 
-    // New merge box — the mergebox-partial may be inside discussion-timeline-actions
-    // or a separate element in the page (GitHub layout varies)
-    const mergeBoxPartial = document.querySelector(
-        '[data-testid="mergebox-partial"]',
-    );
-    if (mergeBoxPartial) {
-        const mergeBoxContainer =
-            mergeBoxPartial.querySelector(".border.rounded-2");
-        if (mergeBoxContainer) {
-            mergeBoxContainer.appendChild(buildMergifyRow());
-            debug("Mergify section injected inside merge box container");
-            scheduleQueueStatePoll();
-            return;
-        }
-    }
+    void renderMergifyContext(contextPayload);
+    void fetchQueueStateIfNeeded().then(() => {
+        const row = document.querySelector("#mergify");
+        if (row) updateMergifyRow(row);
+    });
 
-    let detailSection = document.querySelector(
-        "div[class=discussion-timeline-actions]",
-    );
-    if (detailSection) {
-        // Fallback: look for merge box inside discussion-timeline-actions
-        const mergeBoxContainer = detailSection.querySelector(
-            ".merge-pr .border.rounded-2",
-        );
-        if (mergeBoxContainer) {
-            mergeBoxContainer.appendChild(buildMergifyRow());
-            debug("Mergify section injected inside merge-pr container");
-            scheduleQueueStatePoll();
-        } else {
-            debug("Merge box container not found yet, waiting for render");
-        }
-        return;
-    }
-    // Classic merge box
-    detailSection = document.querySelector(".mergeability-details");
-    if (detailSection) {
-        detailSection.insertBefore(buildMergifyRow(), detailSection.firstChild);
-        debug("Mergify section injected in classic merge box");
-        scheduleQueueStatePoll();
-        return;
-    }
+    if (injected) scheduleQueueStatePoll();
 }
 
 function tryInject() {
