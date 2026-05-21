@@ -45,21 +45,17 @@ jobs:
           UPLOAD_URL: ${{ github.event.release.upload_url }}
           VERSION: ${{ github.event.release.tag_name }}
         run: |
-          set +e
+          set -euo pipefail
           for name in mergify-firefox-${VERSION}.zip mergify-chrome-${VERSION}.zip mergify-safari-${VERSION}.pkg; do
-            curl -L \
-              --fail \
+            if ! curl -L \
+              --fail-with-body \
               -X POST \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@${name}" \
-              "${UPLOAD_URL%%/assets*}/assets?name=${name}"
-
-            if [ $? = 22 ]; then
-               echo "Upload of $name failed"
-               exit 22
+              "${UPLOAD_URL%%/assets*}/assets?name=${name}"; then
+              echo "Upload of $name failed"
+              exit 1
             fi
-
           done
-          set -e
