@@ -10,9 +10,13 @@ updates:
     allow:
       - dependency-name: "*"
         dependency-type: "all"
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: daily
       time: "08:00"
       timezone: Europe/Paris
+    cooldown:
+      default-days: 7
