@@ -1,6 +1,7 @@
 const {
     MergifyCache,
     PrStatusCache,
+    StackContextCache,
     findTimelineActions,
     isPullRequestOpen,
     isPullRequestQueued,
@@ -1192,6 +1193,76 @@ describe("PrStatusCache", () => {
             localStorage.getItem("mergify_browser_extension_pr_status_o_r_1_h"),
         ).toBeNull();
         expect(localStorage.getItem("unrelated_key")).toBe("keep me");
+    });
+});
+
+describe("StackContextCache", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        jest.spyOn(Date, "now").mockImplementation(() => 1000);
+    });
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it("returns null on cache miss", () => {
+        const cache = new StackContextCache();
+        expect(cache.get("o", "r", 1)).toBeNull();
+    });
+
+    it("returns stored stackData and revisionData on cache hit", () => {
+        const cache = new StackContextCache();
+        const stackData = { schema_version: 1, pulls: [{ number: 1 }] };
+        const revisionData = { schema_version: 1, entries: [] };
+        cache.update("o", "r", 1, stackData, revisionData);
+        const got = cache.get("o", "r", 1);
+        expect(got).not.toBeNull();
+        expect(got.stackData).toEqual(stackData);
+        expect(got.revisionData).toEqual(revisionData);
+    });
+
+    it("expires entries after TTL", () => {
+        const cache = new StackContextCache(500);
+        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        Date.now.mockImplementation(() => 1501);
+        expect(cache.get("o", "r", 1)).toBeNull();
+    });
+
+    it("returns null on corrupted entry", () => {
+        const cache = new StackContextCache();
+        const k = cache.key("o", "r", 1);
+        localStorage.setItem(k, "not-json");
+        const errSpy = jest
+            .spyOn(console, "error")
+            .mockImplementation(() => {});
+        expect(cache.get("o", "r", 1)).toBeNull();
+        expect(errSpy).toHaveBeenCalled();
+        errSpy.mockRestore();
+    });
+
+    it("remove deletes the entry", () => {
+        const cache = new StackContextCache();
+        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        expect(cache.get("o", "r", 1)).not.toBeNull();
+        cache.remove("o", "r", 1);
+        expect(cache.get("o", "r", 1)).toBeNull();
+    });
+
+    it("expires after 1h by default", () => {
+        const cache = new StackContextCache();
+        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        Date.now.mockImplementation(() => 1000 + 59 * 60 * 1000);
+        expect(cache.get("o", "r", 1)).not.toBeNull();
+        Date.now.mockImplementation(() => 1000 + 61 * 60 * 1000);
+        expect(cache.get("o", "r", 1)).toBeNull();
+    });
+
+    it("preserves null revisionData", () => {
+        const cache = new StackContextCache();
+        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        const got = cache.get("o", "r", 1);
+        expect(got.stackData).not.toBeNull();
+        expect(got.revisionData).toBeNull();
     });
 });
 

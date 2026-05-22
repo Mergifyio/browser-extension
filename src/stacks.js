@@ -1,4 +1,4 @@
-import { PrStatusCache } from "./cache.js";
+import { PrStatusCache, StackContextCache } from "./cache.js";
 import { debug } from "./debug.js";
 import { findFirstElement, readPrStatusFromDocument } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
@@ -30,6 +30,7 @@ export const CONTEXT_PANEL_TARGETS = [
 export const _commentBodyCache = new Map();
 export const _inflightStatusFetches = new Map();
 export const _prStatusCache = new PrStatusCache();
+export const _stackContextCache = new StackContextCache();
 export let _contextRenderGeneration = 0;
 
 export function extractMarkerJson(body, prefix) {
@@ -707,6 +708,37 @@ export function removeContextSurfaces(currentPull) {
 
 export async function renderMergifyContext(currentPull) {
     const generation = ++_contextRenderGeneration;
+
+    // Cache-first render: build the panel + nav from the last known good
+    // stack/revision data so the surfaces appear before the network roundtrips
+    // settle. The network refresh below replaces them in place (injectContextPanel
+    // / injectStackNav dedupe via data-mergify-hash, so identical data is a no-op).
+    const cached = _stackContextCache.get(
+        currentPull.org,
+        currentPull.repo,
+        currentPull.number,
+    );
+    if (cached) {
+        try {
+            const cachedPanel = buildContextPanel(
+                cached.stackData,
+                cached.revisionData,
+                currentPull,
+            );
+            if (cachedPanel) {
+                injectContextPanel(cachedPanel);
+                injectStackNav(cached.stackData, currentPull);
+            }
+        } catch (e) {
+            debug("Cache-first render failed; discarding entry:", e);
+            _stackContextCache.remove(
+                currentPull.org,
+                currentPull.repo,
+                currentPull.number,
+            );
+        }
+    }
+
     const bodies = await fetchCommentBodies(
         currentPull.org,
         currentPull.repo,
@@ -714,6 +746,11 @@ export async function renderMergifyContext(currentPull) {
     );
     if (generation !== _contextRenderGeneration) return;
     if (bodies.length === 0) {
+        _stackContextCache.remove(
+            currentPull.org,
+            currentPull.repo,
+            currentPull.number,
+        );
         removeContextSurfaces(currentPull);
         return;
     }
@@ -722,9 +759,23 @@ export async function renderMergifyContext(currentPull) {
     const revisionData = parseRevisionMarker(bodies, currentPull.number);
     const panel = buildContextPanel(stackData, revisionData, currentPull);
     if (!panel) {
+        _stackContextCache.remove(
+            currentPull.org,
+            currentPull.repo,
+            currentPull.number,
+        );
         removeContextSurfaces(currentPull);
         return;
     }
+
+    _stackContextCache.update(
+        currentPull.org,
+        currentPull.repo,
+        currentPull.number,
+        stackData,
+        revisionData,
+    );
+
     injectContextPanel(panel);
     injectStackNav(stackData, currentPull);
 

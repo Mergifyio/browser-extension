@@ -105,3 +105,58 @@ export class PrStatusCache {
         }
     }
 }
+
+export class StackContextCache {
+    constructor(expirationMs = 60 * 60 * 1000) {
+        this.PREFIX = "mergify_browser_extension_stack_ctx";
+        this.expirationMs = expirationMs;
+    }
+
+    key(org, repo, num) {
+        return `${this.PREFIX}_${org}_${repo}_${num}`;
+    }
+
+    get(org, repo, num) {
+        const k = this.key(org, repo, num);
+        try {
+            const raw = localStorage.getItem(k);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (Date.now() - data.timestamp > this.expirationMs) {
+                localStorage.removeItem(k);
+                return null;
+            }
+            return {
+                stackData: data.stackData ?? null,
+                revisionData: data.revisionData ?? null,
+            };
+        } catch (e) {
+            console.error("StackContextCache get failed:", e);
+            return null;
+        }
+    }
+
+    update(org, repo, num, stackData, revisionData) {
+        const k = this.key(org, repo, num);
+        try {
+            localStorage.setItem(
+                k,
+                JSON.stringify({
+                    stackData,
+                    revisionData,
+                    timestamp: Date.now(),
+                }),
+            );
+        } catch (e) {
+            console.error("StackContextCache update failed:", e);
+        }
+    }
+
+    remove(org, repo, num) {
+        try {
+            localStorage.removeItem(this.key(org, repo, num));
+        } catch (e) {
+            console.error("StackContextCache remove failed:", e);
+        }
+    }
+}

@@ -12,6 +12,7 @@
 import {
     MergifyCache as _MergifyCache,
     PrStatusCache as _PrStatusCache,
+    StackContextCache as _StackContextCache,
 } from "./cache.js";
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
@@ -36,7 +37,11 @@ export * from "./timestamps.js";
 // Re-export everything for the test suite (which imports from "../mergify").
 // Cache classes are re-exported as named exports (not export *) so that
 // jest.spyOn can replace them on the module object in tests.
-export { _MergifyCache as MergifyCache, _PrStatusCache as PrStatusCache };
+export {
+    _MergifyCache as MergifyCache,
+    _PrStatusCache as PrStatusCache,
+    _StackContextCache as StackContextCache,
+};
 
 // Clear cached PR statuses on a page reload (covers force-reload too —
 // browsers don't expose hard-vs-soft reload to JS, so we treat any reload
