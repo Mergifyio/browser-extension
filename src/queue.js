@@ -4,6 +4,10 @@ import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 import { resetStackState } from "./stacks.js";
 
+const QUEUE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm3.75-1.5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5ZM3 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>`;
+
+const LOGS_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 4.75a.75.75 0 0 1 1.5 0v3.44l1.97 1.97a.75.75 0 1 1-1.06 1.06l-2.19-2.19a.75.75 0 0 1-.22-.53Z"/></svg>`;
+
 export const BUTTONS = [
     {
         command: "refresh",
@@ -365,7 +369,9 @@ export function buildQueueButton(state) {
         case "dequeuing":
             btn = buildMergeBoxButton(
                 state === "queuing" ? "queue" : "dequeue",
-                state === "queuing" ? "Queuing…" : "Dequeuing…",
+                state === "queuing"
+                    ? "Adding to merge queue…"
+                    : "Removing from merge queue…",
                 "Waiting for Mergify to process…",
                 true,
                 "secondary",
@@ -374,7 +380,7 @@ export function buildQueueButton(state) {
         case "queued":
             btn = buildMergeBoxButton(
                 "dequeue",
-                "Dequeue",
+                "Remove from merge queue",
                 "Remove the pull request from the merge queue",
                 false,
                 "danger",
@@ -384,7 +390,7 @@ export function buildQueueButton(state) {
         default:
             btn = buildMergeBoxButton(
                 "queue",
-                "Queue",
+                "Add to merge queue",
                 "Add the pull request to the merge queue",
                 false,
                 "primary",
@@ -411,62 +417,15 @@ export function buildMergifyRow() {
 
     const row = document.createElement("div");
     row.id = "mergify";
+    row.className =
+        "bgColor-muted borderColor-muted border-top rounded-bottom-2";
     row.style.cssText =
-        "padding:10px 16px;border-top:1px solid var(--borderColor-default, #30363d);display:flex;align-items:center;gap:10px;";
+        "display:flex;align-items:center;gap:8px;padding:var(--base-size-16,16px)!important;";
 
-    const logo = document.createElement("div");
-    logo.style.cssText = "flex-shrink:0;display:flex;";
-    const svgEl = parseSvg(getLogoSvg());
-    svgEl.setAttribute("width", "20");
-    svgEl.setAttribute("height", "20");
-    logo.appendChild(svgEl);
-    row.appendChild(logo);
-
-    const info = document.createElement("div");
-    info.style.cssText =
-        "flex:1;display:flex;align-items:center;gap:6px;font-size:13px;";
-
-    const label = document.createElement("span");
-    label.style.fontWeight = "600";
-    label.textContent = "Mergify";
-    info.appendChild(label);
-
-    function appendDot() {
-        const dot = document.createElement("span");
-        dot.style.color = "var(--fgColor-muted, #7d8590)";
-        dot.textContent = "·";
-        info.appendChild(dot);
-    }
-
-    function appendLink(href, text) {
-        appendDot();
-        const link = document.createElement("a");
-        link.href = href;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = text;
-        link.style.cssText =
-            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;font-size:12px;";
-        info.appendChild(link);
-    }
-
-    appendLink(getMergeQueueLink(), "queue");
-    appendLink(getEventLogLink(), "logs");
-
-    row.appendChild(info);
-
-    if (state === "merged") {
-        const status = document.createElement("span");
-        status.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);font-size:13px;";
-        status.textContent = getMergedMessage();
-        row.appendChild(status);
-    } else if (state !== "closed") {
+    if (state !== "merged" && state !== "closed") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
-
         buttons.appendChild(buildQueueButton(state));
-
         for (const btn of BUTTONS) {
             buttons.appendChild(
                 buildMergeBoxButton(
@@ -478,9 +437,52 @@ export function buildMergifyRow() {
                 ),
             );
         }
-
         row.appendChild(buttons);
     }
+
+    const info = document.createElement("div");
+    info.style.cssText =
+        "display:flex;align-items:center;gap:12px;font-size:14px;margin-left:auto;";
+
+    function appendLink(href, text, iconSvg) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.cssText =
+            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;display:inline-flex;align-items:center;gap:4px;";
+        link.appendChild(parseSvg(iconSvg));
+        link.appendChild(document.createTextNode(text));
+        info.appendChild(link);
+    }
+
+    appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
+    appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
+
+    if (state === "merged") {
+        const status = document.createElement("span");
+        status.style.color = "var(--fgColor-muted, #7d8590)";
+        status.textContent = getMergedMessage();
+        info.appendChild(status);
+    }
+
+    const brand = document.createElement("a");
+    brand.href = "https://dashboard.mergify.com";
+    brand.target = "_blank";
+    brand.rel = "noopener noreferrer";
+    brand.title = "Open Mergify dashboard";
+    brand.style.cssText =
+        "display:flex;align-items:center;gap:6px;margin-left:8px;color:var(--fgColor-default, #e6edf3);text-decoration:none;font-weight:600;";
+    const svgEl = parseSvg(getLogoSvg());
+    svgEl.setAttribute("width", "20");
+    svgEl.setAttribute("height", "20");
+    brand.appendChild(svgEl);
+    const brandText = document.createElement("span");
+    brandText.textContent = "Mergify";
+    brand.appendChild(brandText);
+    info.appendChild(brand);
+
+    row.appendChild(info);
 
     return row;
 }
