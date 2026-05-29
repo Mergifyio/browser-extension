@@ -3,6 +3,7 @@ const {
     PrStatusCache,
     StackContextCache,
     findTimelineActions,
+    injectRowIntoMergeBox,
     isPullRequestOpen,
     isPullRequestQueued,
     resetQueueState,
@@ -135,6 +136,215 @@ describe("findTimelineActions", () => {
         expect(mergeBox.innerHTML).toMatch(
             /Pull\s+request\s+successfully\s+merged\s+and\s+closed/,
         );
+    });
+});
+
+describe("injectRowIntoMergeBox", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("injects into the new merge-status sidebar (Primer dialog)", () => {
+        // Mirrors the markup GitHub renders for the new sidebar: the
+        // border-container lives in a top-level <div role="dialog">,
+        // not under [data-testid="mergebox-partial"].
+        document.body.innerHTML = `
+            <div role="dialog" aria-modal="true">
+                <div class="MergeBox-module__mergePartialContainer__MTXP9">
+                    <div data-testid="mergebox-border-container">
+                        <section aria-label="Checks"></section>
+                        <section aria-label="Draft state"></section>
+                    </div>
+                </div>
+            </div>`;
+
+        const injected = injectRowIntoMergeBox();
+
+        expect(injected).toBe(true);
+        const row = document.querySelector("[data-mergify-merge-box-row]");
+        expect(row).not.toBeNull();
+        // Row is appended at the bottom of the new sidebar's section container.
+        const container = document.querySelector(
+            '[data-testid="mergebox-border-container"]',
+        );
+        expect(container.lastElementChild).toBe(row);
+    });
+
+    it('does not collide with GitHub\'s native <section id="mergify"> sub-section', () => {
+        document.body.innerHTML = `
+            <div data-testid="mergebox-border-container">
+                <section id="mergify" aria-label="Mergify">native app section</section>
+                <section aria-label="Checks"></section>
+            </div>`;
+
+        const injected = injectRowIntoMergeBox();
+
+        expect(injected).toBe(true);
+        const ourRow = document.querySelector("[data-mergify-merge-box-row]");
+        expect(ourRow).not.toBeNull();
+        expect(ourRow.tagName).toBe("DIV");
+        // The native section is untouched and still present.
+        const nativeSection = document.querySelector("section#mergify");
+        expect(nativeSection).not.toBeNull();
+    });
+
+    it("falls back to the legacy mergebox-partial / .border.rounded-2 anchor", () => {
+        document.body.innerHTML = `
+            <div data-testid="mergebox-partial">
+                <div class="border rounded-2 borderColor-default">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>`;
+
+        const injected = injectRowIntoMergeBox();
+
+        expect(injected).toBe(true);
+        expect(
+            document.querySelector("[data-mergify-merge-box-row]"),
+        ).not.toBeNull();
+    });
+
+    it("returns false when no merge box is present", () => {
+        document.body.innerHTML = "<div></div>";
+
+        expect(injectRowIntoMergeBox()).toBe(false);
+        expect(
+            document.querySelector("[data-mergify-merge-box-row]"),
+        ).toBeNull();
+    });
+
+    it("injects into every anchor when several variants coexist on the page", () => {
+        document.body.innerHTML = `
+            <div role="dialog" aria-modal="true">
+                <div data-testid="mergebox-border-container">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>
+            <div data-testid="mergebox-partial">
+                <div class="border rounded-2 borderColor-default">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>
+            <div class="mergeability-details"></div>`;
+
+        expect(injectRowIntoMergeBox()).toBe(true);
+
+        expect(
+            document.querySelectorAll("[data-mergify-merge-box-row]").length,
+        ).toBe(3);
+        expect(
+            document
+                .querySelector('[data-testid="mergebox-border-container"]')
+                .querySelector("[data-mergify-merge-box-row]"),
+        ).not.toBeNull();
+        expect(
+            document
+                .querySelector('[data-testid="mergebox-partial"]')
+                .querySelector("[data-mergify-merge-box-row]"),
+        ).not.toBeNull();
+        expect(
+            document
+                .querySelector(".mergeability-details")
+                .querySelector("[data-mergify-merge-box-row]"),
+        ).not.toBeNull();
+    });
+
+    it("is idempotent per anchor when called repeatedly", () => {
+        document.body.innerHTML = `
+            <div data-testid="mergebox-border-container">
+                <section aria-label="Checks"></section>
+            </div>`;
+
+        injectRowIntoMergeBox();
+        injectRowIntoMergeBox();
+        injectRowIntoMergeBox();
+
+        expect(
+            document.querySelectorAll("[data-mergify-merge-box-row]").length,
+        ).toBe(1);
+    });
+
+    it("treats mergebox-border-container inside mergebox-partial as the default variant", () => {
+        // Recent GitHub deploys put [data-testid="mergebox-border-container"]
+        // on the bottom merge box's inner wrapper too. That should NOT
+        // trigger the sidebar layout.
+        document.body.innerHTML = `
+            <div data-testid="mergebox-partial">
+                <div data-testid="mergebox-border-container">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>`;
+
+        injectRowIntoMergeBox();
+
+        const row = document.querySelector("[data-mergify-merge-box-row]");
+        expect(row).not.toBeNull();
+        expect(row.getAttribute("data-mergify-merge-box-row")).toBe("default");
+        expect(row.className).toContain("bgColor-muted");
+    });
+
+    it("uses the sidebar variant for the new merge-status sidebar", () => {
+        document.body.innerHTML = `
+            <div role="dialog" aria-modal="true">
+                <div data-testid="mergebox-border-container">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>
+            <div data-testid="mergebox-partial">
+                <div class="border rounded-2 borderColor-default">
+                    <section aria-label="Checks"></section>
+                </div>
+            </div>`;
+
+        injectRowIntoMergeBox();
+
+        const sidebarRow = document
+            .querySelector('[data-testid="mergebox-border-container"]')
+            .querySelector("[data-mergify-merge-box-row]");
+        const legacyRow = document
+            .querySelector('[data-testid="mergebox-partial"]')
+            .querySelector("[data-mergify-merge-box-row]");
+
+        expect(sidebarRow.getAttribute("data-mergify-merge-box-row")).toBe(
+            "sidebar",
+        );
+        // Sidebar variant: no muted background, top + bottom border rules
+        // matching GitHub's sub-section style, column layout, larger top margin.
+        expect(sidebarRow.className).toBe(
+            "border-top border-bottom color-border-subtle",
+        );
+        expect(sidebarRow.style.flexDirection).toBe("column");
+        expect(sidebarRow.style.marginTop).not.toBe("");
+
+        // First line: action buttons only.
+        const [firstLine, secondLine] = sidebarRow.children;
+        expect(firstLine.querySelector("button")).not.toBeNull();
+        expect(
+            firstLine.querySelector('a[href="https://dashboard.mergify.com"]'),
+        ).toBeNull();
+
+        // Second line: queue + logs at the start (left), Mergify brand at
+        // the end (right).
+        expect(secondLine.style.justifyContent).toBe("space-between");
+        const secondLineLinks =
+            secondLine.firstElementChild.querySelectorAll("a");
+        expect(secondLineLinks[0].textContent).toBe("queue");
+        expect(secondLineLinks[1].textContent).toBe("logs");
+        const brandLink = secondLine.querySelector(
+            'a[href="https://dashboard.mergify.com"]',
+        );
+        expect(brandLink).not.toBeNull();
+        expect(secondLine.lastElementChild).toBe(brandLink);
+
+        expect(legacyRow.getAttribute("data-mergify-merge-box-row")).toBe(
+            "default",
+        );
+        expect(legacyRow.className).toContain("bgColor-muted");
+        // Default variant keeps queue + logs + brand on a single info block.
+        const legacyInfo = legacyRow.querySelector(
+            'a[href="https://dashboard.mergify.com"]',
+        ).parentElement;
+        expect(legacyInfo.style.marginLeft).toBe("auto");
     });
 });
 

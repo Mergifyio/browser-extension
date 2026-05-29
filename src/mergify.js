@@ -21,9 +21,10 @@ import {
     fetchQueueStateIfNeeded,
     getMergifyConfigurationStatus,
     isMergifyEnabledOnTheRepo,
+    MERGE_BOX_ROW_ATTR,
     resetQueueState,
     scheduleQueueStatePoll,
-    updateMergifyRow,
+    updateAllMergifyRows,
 } from "./queue.js";
 import { renderMergifyContext } from "./stacks.js";
 import { convertMergifyTimestamps } from "./timestamps.js";
@@ -66,46 +67,87 @@ export function resetForNavigation() {
     lastPullRequestUrl = null;
 }
 
-function injectRowIntoMergeBox() {
-    // New merge box — the mergebox-partial may be inside discussion-timeline-actions
-    // or a separate element in the page (GitHub layout varies)
-    const mergeBoxPartial = document.querySelector(
-        '[data-testid="mergebox-partial"]',
-    );
-    if (mergeBoxPartial) {
-        const mergeBoxContainer =
-            mergeBoxPartial.querySelector(".border.rounded-2");
-        if (mergeBoxContainer) {
-            mergeBoxContainer.appendChild(buildMergifyRow());
-            debug("Mergify section injected inside merge box container");
-            return true;
+// Anchors we inject the Mergify row into. Each entry resolves a container in
+// the document (or returns null) and tells the injector how to attach the row.
+// Multiple anchors can match on the same page — e.g. GitHub is rolling out a
+// new merge-status sidebar dialog alongside the legacy bottom merge box — and
+// we want the row visible on every variant the user can see.
+const MERGE_BOX_ANCHORS = [
+    {
+        name: "new merge-status sidebar",
+        // The new sidebar is rendered as a Primer dialog at the document
+        // root. The bottom merge box also exposes a
+        // [data-testid="mergebox-border-container"] on its inner section
+        // wrapper, so we only treat the testid as the sidebar anchor when
+        // it sits OUTSIDE the legacy mergebox-partial.
+        find: () => {
+            const containers = document.querySelectorAll(
+                '[data-testid="mergebox-border-container"]',
+            );
+            return Array.from(containers).filter(
+                (c) => !c.closest('[data-testid="mergebox-partial"]'),
+            );
+        },
+        attach: (container, row) => container.appendChild(row),
+        variant: "sidebar",
+    },
+    {
+        name: "merge-box-partial",
+        find: () => {
+            const partials = document.querySelectorAll(
+                '[data-testid="mergebox-partial"]',
+            );
+            const containers = [];
+            for (const partial of partials) {
+                // Newer deploys add the testid to the inner section wrapper;
+                // older ones only have the utility class. Either anchors the
+                // default-variant row.
+                const inner =
+                    partial.querySelector(
+                        '[data-testid="mergebox-border-container"]',
+                    ) || partial.querySelector(".border.rounded-2");
+                if (inner) containers.push(inner);
+            }
+            return containers;
+        },
+        attach: (container, row) => container.appendChild(row),
+        variant: "default",
+    },
+    {
+        name: "discussion-timeline-actions merge-pr",
+        find: () => {
+            const detail = document.querySelector(
+                "div[class=discussion-timeline-actions]",
+            );
+            const inner = detail?.querySelector(".merge-pr .border.rounded-2");
+            return inner ? [inner] : [];
+        },
+        attach: (container, row) => container.appendChild(row),
+        variant: "default",
+    },
+    {
+        name: "classic mergeability-details",
+        find: () => document.querySelectorAll(".mergeability-details"),
+        attach: (container, row) =>
+            container.insertBefore(row, container.firstChild),
+        variant: "default",
+    },
+];
+
+export function injectRowIntoMergeBox() {
+    let injected = false;
+    for (const anchor of MERGE_BOX_ANCHORS) {
+        for (const container of anchor.find()) {
+            // Idempotency per container: skip if we already attached a row
+            // here. Multiple anchors can therefore coexist without growing
+            // duplicate rows on repeated MutationObserver ticks.
+            if (container.querySelector(`[${MERGE_BOX_ROW_ATTR}]`)) continue;
+            anchor.attach(container, buildMergifyRow(anchor.variant));
+            debug(`Mergify section injected into ${anchor.name}`);
+            injected = true;
         }
     }
-
-    let detailSection = document.querySelector(
-        "div[class=discussion-timeline-actions]",
-    );
-    if (detailSection) {
-        const mergeBoxContainer = detailSection.querySelector(
-            ".merge-pr .border.rounded-2",
-        );
-        if (mergeBoxContainer) {
-            mergeBoxContainer.appendChild(buildMergifyRow());
-            debug("Mergify section injected inside merge-pr container");
-            return true;
-        }
-        debug("Merge box container not found yet, waiting for render");
-        return false;
-    }
-
-    // Classic merge box
-    detailSection = document.querySelector(".mergeability-details");
-    if (detailSection) {
-        detailSection.insertBefore(buildMergifyRow(), detailSection.firstChild);
-        debug("Mergify section injected in classic merge box");
-        return true;
-    }
-    return false;
+    return injected;
 }
 
 async function _tryInject() {
@@ -150,26 +192,21 @@ async function _tryInject() {
         subpath: _data.subpath,
     };
 
-    const existingRow = document.querySelector("#mergify");
-    if (existingRow) {
-        updateMergifyRow(existingRow);
-        void renderMergifyContext(contextPayload);
-        return;
-    }
-
-    // Inject the row immediately with state derived synchronously from the
-    // DOM. The queue-state and stack-context fetches run in parallel in the
-    // background — when fetchQueueStateIfNeeded resolves, we re-derive the
-    // button state and swap it in if it changed.
-    const injected = injectRowIntoMergeBox();
+    // injectRowIntoMergeBox is idempotent per anchor (data-attr guard inside)
+    // so we can call it on every tick — it will only add a row to anchors
+    // that don't already have one. Existing rows still get their queue state
+    // refreshed via updateAllMergifyRows below.
+    injectRowIntoMergeBox();
+    updateAllMergifyRows();
 
     void renderMergifyContext(contextPayload);
     void fetchQueueStateIfNeeded().then(() => {
-        const row = document.querySelector("#mergify");
-        if (row) updateMergifyRow(row);
+        updateAllMergifyRows();
     });
 
-    if (injected) scheduleQueueStatePoll();
+    if (document.querySelector(`[${MERGE_BOX_ROW_ATTR}]`)) {
+        scheduleQueueStatePoll();
+    }
 }
 
 function tryInject() {
