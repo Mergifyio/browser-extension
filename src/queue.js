@@ -301,8 +301,7 @@ export function postCommand(command) {
 
 export function postCommandAndUpdate(command) {
     postCommand(command);
-    const row = document.querySelector("#mergify");
-    if (row) updateMergifyRow(row);
+    updateAllMergifyRows();
 }
 
 export function buildMergeBoxButton(
@@ -412,11 +411,22 @@ export function getMergeQueueLink() {
     return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main&pull-request-number=${data.pull}`;
 }
 
-export function buildMergifyRow() {
+// Marker for the rows we inject. Use a data attribute rather than an id so
+// the row can coexist multiple times across the legacy merge box and the new
+// merge-status sidebar without clashing on uniqueness. Also avoids matching
+// GitHub's native <section id="mergify"> for the Mergify GitHub App check.
+export const MERGE_BOX_ROW_ATTR = "data-mergify-merge-box-row";
+
+export function buildMergifyRow(variant = "default") {
+    if (variant === "sidebar") return buildMergifySidebarRow();
+
     const state = deriveQueueButtonState();
 
     const row = document.createElement("div");
-    row.id = "mergify";
+    // Variant is stored on the attribute so updateMergifyRow can rebuild
+    // the row in the same style when state transitions from open to
+    // merged/closed.
+    row.setAttribute(MERGE_BOX_ROW_ATTR, "default");
     row.className =
         "bgColor-muted borderColor-muted border-top rounded-bottom-2";
     row.style.cssText =
@@ -487,14 +497,104 @@ export function buildMergifyRow() {
     return row;
 }
 
+function buildMergifySidebarRow() {
+    const state = deriveQueueButtonState();
+
+    const row = document.createElement("div");
+    row.setAttribute(MERGE_BOX_ROW_ATTR, "sidebar");
+    // Two-line layout that matches the surrounding native sections (border
+    // rules on top and bottom, no muted background); action buttons on line
+    // one, queue/logs on the left of line two and Mergify brand on the
+    // right.
+    row.className = "border-top border-bottom color-border-subtle";
+    row.style.cssText =
+        "display:flex;flex-direction:column;gap:8px;padding:var(--base-size-16,16px)!important;margin-top:var(--base-size-24,24px);";
+
+    if (state !== "merged" && state !== "closed") {
+        const buttons = document.createElement("div");
+        buttons.style.cssText = "display:flex;gap:6px;";
+        buttons.appendChild(buildQueueButton(state));
+        for (const btn of BUTTONS) {
+            buttons.appendChild(
+                buildMergeBoxButton(
+                    btn.command,
+                    btn.label,
+                    btn.tooltip,
+                    false,
+                    "secondary",
+                ),
+            );
+        }
+        row.appendChild(buttons);
+    }
+
+    const secondLine = document.createElement("div");
+    secondLine.style.cssText =
+        "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+
+    const links = document.createElement("div");
+    links.style.cssText =
+        "display:flex;align-items:center;gap:12px;font-size:14px;";
+
+    function appendLink(href, text, iconSvg) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.cssText =
+            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;display:inline-flex;align-items:center;gap:4px;";
+        link.appendChild(parseSvg(iconSvg));
+        link.appendChild(document.createTextNode(text));
+        links.appendChild(link);
+    }
+
+    appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
+    appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
+
+    if (state === "merged") {
+        const status = document.createElement("span");
+        status.style.color = "var(--fgColor-muted, #7d8590)";
+        status.textContent = getMergedMessage();
+        links.appendChild(status);
+    }
+    secondLine.appendChild(links);
+
+    const brand = document.createElement("a");
+    brand.href = "https://dashboard.mergify.com";
+    brand.target = "_blank";
+    brand.rel = "noopener noreferrer";
+    brand.title = "Open Mergify dashboard";
+    brand.style.cssText =
+        "display:flex;align-items:center;gap:6px;color:var(--fgColor-default, #e6edf3);text-decoration:none;font-weight:600;";
+    const svgEl = parseSvg(getLogoSvg());
+    svgEl.setAttribute("width", "20");
+    svgEl.setAttribute("height", "20");
+    brand.appendChild(svgEl);
+    const brandText = document.createElement("span");
+    brandText.textContent = "Mergify";
+    brand.appendChild(brandText);
+    secondLine.appendChild(brand);
+
+    row.appendChild(secondLine);
+
+    return row;
+}
+
+export function updateAllMergifyRows() {
+    const rows = document.querySelectorAll(`[${MERGE_BOX_ROW_ATTR}]`);
+    for (const row of rows) updateMergifyRow(row);
+}
+
 export function updateMergifyRow(row) {
     const state = deriveQueueButtonState();
     const oldBtn = row.querySelector("[data-mergify-queue-btn]");
 
     if (state === "merged" || state === "closed") {
         if (oldBtn) {
-            // PR was open, now merged/closed — rebuild entire row
-            const newRow = buildMergifyRow();
+            // PR was open, now merged/closed — rebuild entire row, keeping
+            // the same variant so the sidebar styling survives the swap.
+            const variant = row.getAttribute(MERGE_BOX_ROW_ATTR) || "default";
+            const newRow = buildMergifyRow(variant);
             row.replaceWith(newRow);
             debug("Mergify row rebuilt for state:", state);
         }
@@ -515,10 +615,7 @@ export function scheduleQueueStatePoll() {
         if (!isGitHubPullRequestPage()) return;
         const previousState = lastKnownQueueState;
         await fetchQueueState();
-        if (previousState !== lastKnownQueueState) {
-            const row = document.querySelector("#mergify");
-            if (row) updateMergifyRow(row);
-        }
+        if (previousState !== lastKnownQueueState) updateAllMergifyRows();
         if (isGitHubPullRequestPage()) scheduleQueueStatePoll();
     }, QUEUE_POLL_INTERVAL);
 }
