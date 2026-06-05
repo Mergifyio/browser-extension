@@ -16,6 +16,7 @@ import {
 } from "./cache.js";
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
+import * as mqPayload from "./mqPayload.js";
 import {
     buildMergifyRow,
     fetchQueueStateIfNeeded,
@@ -24,6 +25,8 @@ import {
     MERGE_BOX_ROW_ATTR,
     resetQueueState,
     scheduleQueueStatePoll,
+    startEtaTicker,
+    stopEtaTicker,
     updateAllMergifyRows,
 } from "./queue.js";
 import { renderMergifyContext } from "./stacks.js";
@@ -61,9 +64,12 @@ let lastPullRequestUrl = null;
 let injecting = false;
 let pendingInjection = false;
 let pageUpdateScheduled = false;
+let _mqAttached = false;
 
 export function resetForNavigation() {
     resetQueueState(); // also calls resetStackState internally
+    mqPayload.detach();
+    _mqAttached = false;
     lastPullRequestUrl = null;
 }
 
@@ -206,6 +212,27 @@ async function _tryInject() {
 
     if (document.querySelector(`[${MERGE_BOX_ROW_ATTR}]`)) {
         scheduleQueueStatePoll();
+    }
+
+    // Subscribe to engine-authoritative merge-queue payloads (PR #32922).
+    // When a status comment with a payload exists, mqPayload emits payload
+    // states and we re-render every row in the rich shape; when none exists,
+    // it emits fallback states that pass through to the legacy patch path.
+    // Both lifecycles flow through updateAllMergifyRows so all containers
+    // (bottom mergebox + side peek) stay in sync.
+    if (!_mqAttached) {
+        _mqAttached = true;
+        mqPayload.attach((state) => {
+            updateAllMergifyRows();
+            if (
+                state.source === "payload" &&
+                state.payload.estimated_time_of_merge
+            ) {
+                startEtaTicker(state.payload);
+            } else {
+                stopEtaTicker();
+            }
+        });
     }
 }
 
