@@ -1,0 +1,1 @@
+format queued duration as Hh Mm / Dd Hh past 1h / 1d so long queue waits stay legible (e.g. 822m → 13h 42m)
