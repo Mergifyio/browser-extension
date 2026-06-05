@@ -1,0 +1,1 @@
+address copilot review: restore missing isGitHubPullRequestPage import; Array.from snapshot for replaceChildren; add scheduleQueueStatePoll regression test
