@@ -964,7 +964,8 @@ describe("convertMergifyTimestamps", () => {
         expect(codes[0].textContent).not.toBe("2025-06-15 14:30 UTC");
         expect(codes[0].getAttribute("title")).toBe("2025-06-15 14:30 UTC");
         expect(codes[1].getAttribute("title")).toBe("2025-06-15 16:00 UTC");
-        expect(codes[1].style.cursor).toBe("help");
+        // No forced cursor: converted timestamps match GitHub's native ones.
+        expect(codes[1].style.cursor).toBe("");
     });
 
     it("should not convert timestamps in non-Mergify comments", () => {
