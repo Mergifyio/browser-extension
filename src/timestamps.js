@@ -27,6 +27,5 @@ export function convertMergifyTimestamps() {
         code.textContent = formatLocalTime(date);
         code.setAttribute(TIMESTAMP_CONVERTED_ATTR, "true");
         code.setAttribute("title", originalUtc);
-        code.style.cursor = "help";
     }
 }
