@@ -343,6 +343,29 @@ export function attach(callback) {
     }
 }
 
+// Force an immediate freshness pass, bypassing the periodic poll's timer.
+// Wired to tab focus / visibility-regain in the orchestrator: browsers
+// throttle setTimeout in background tabs, so a poll scheduled for
+// QUEUE_POLL_INTERVAL can be far staler than that by the time the user returns.
+// Re-resolving on focus makes the queue button reflect changes made outside the
+// page (a CLI dequeue, a teammate's @mergifyio command, the engine merging the
+// PR) the moment they look back at it.
+//
+// Routes to whichever mode is active, mirroring the periodic poll, and emits
+// through the same callback — so a row only re-renders when something actually
+// changed:
+//   - payload mode  → re-read the latest status-comment payload
+//   - fallback mode → re-fetch the check-run queue state
+export async function refreshNow() {
+    if (!_onChange) return;
+    if (!isGitHubPullRequestPage()) return;
+    if (_inPayloadMode) {
+        await _resolveAndEmit();
+    } else {
+        await _runFallbackPoll();
+    }
+}
+
 export function detach() {
     _payloadGeneration++;
     if (_timelineObserver) {
