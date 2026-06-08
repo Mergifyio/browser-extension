@@ -921,7 +921,7 @@ function buildEtaMetaContent(payload) {
         frag.appendChild(document.createTextNode("queued "));
         const queuedMin = (Date.now() - Date.parse(payload.queued_at)) / 60000;
         const strong = document.createElement("strong");
-        strong.style.color = "#e6edf3";
+        strong.style.color = "var(--fgColor-default, #e6edf3)";
         strong.textContent = `${formatDurationMinutes(queuedMin)} ago`;
         frag.appendChild(strong);
         parts.push(frag);
@@ -931,7 +931,7 @@ function buildEtaMetaContent(payload) {
         const frag = document.createDocumentFragment();
         frag.appendChild(document.createTextNode("merging "));
         const strong = document.createElement("strong");
-        strong.style.color = "#e6edf3";
+        strong.style.color = "var(--fgColor-default, #e6edf3)";
         strong.textContent = etaStr;
         frag.appendChild(strong);
         parts.push(frag);
