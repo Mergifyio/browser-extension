@@ -287,4 +287,29 @@ function onPageUpdate() {
         childList: true,
         subtree: true,
     });
+
+    // Force an immediate refresh when the tab regains focus or visibility. The
+    // periodic poll (QUEUE_POLL_INTERVAL) is the steady-state freshness
+    // mechanism, but browsers throttle timers in background tabs — so a PR page
+    // left in the background can show a stale queue button ("Add to" vs "Remove
+    // from merge queue") long after the queue changed via the CLI, a teammate's
+    // @mergifyio comment, or the engine merging it. Refreshing the moment the
+    // user looks back closes that window. mqPayload.refreshNow() routes to the
+    // active mode and emits through the same callback as the poll, so rows
+    // re-render only when something actually changed.
+    let refreshingOnFocus = false;
+    const refreshOnFocus = async () => {
+        if (document.visibilityState === "hidden") return;
+        if (!isGitHubPullRequestPage()) return;
+        // Coalesce focus + visibilitychange firing back-to-back into one fetch.
+        if (refreshingOnFocus) return;
+        refreshingOnFocus = true;
+        try {
+            await mqPayload.refreshNow();
+        } finally {
+            refreshingOnFocus = false;
+        }
+    };
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    window.addEventListener("focus", refreshOnFocus);
 })();

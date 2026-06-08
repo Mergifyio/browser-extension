@@ -283,7 +283,7 @@ describe("resolveLatestStatusCommentPayload", () => {
     });
 });
 
-const { attach, detach, getCurrent } = require("../mqPayload");
+const { attach, detach, getCurrent, refreshNow } = require("../mqPayload");
 
 const VALID_PAYLOAD = {
     version: 1,
@@ -564,5 +564,111 @@ describe("attach/detach — fallback + upgrade", () => {
         expect(calls.slice(payloadIdx).every((s) => s === "payload")).toBe(
             true,
         );
+    });
+});
+
+describe("refreshNow — immediate focus/visibility refresh", () => {
+    // The fallback-mode test assigns global.fetch directly;
+    // jest.restoreAllMocks() only restores spyOn spies, not direct property
+    // assignments, so capture and restore the original ourselves to avoid
+    // leaking the mock into later tests.
+    let originalFetch;
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        originalFetch = global.fetch;
+        detach();
+    });
+
+    afterEach(() => {
+        detach();
+        global.fetch = originalFetch;
+        jest.restoreAllMocks();
+    });
+
+    test("is a no-op when not attached", async () => {
+        await expect(refreshNow()).resolves.toBeUndefined();
+    });
+
+    test("does nothing when not on a pull request page", async () => {
+        window.history.replaceState({}, "", "/acme/widget/pulls");
+        appendInlineComment(VALID_PAYLOAD);
+        const cb = jest.fn();
+        attach(cb);
+        cb.mockClear();
+
+        await refreshNow();
+        expect(cb).not.toHaveBeenCalled();
+    });
+
+    test("payload mode: re-resolves and emits immediately without waiting for the poll", async () => {
+        const ta = appendInlineComment(VALID_PAYLOAD);
+        const cb = jest.fn();
+        attach(cb);
+        cb.mockClear();
+
+        // Engine rewrites the textarea `.value` (no DOM-tree mutation, so the
+        // MutationObserver won't catch it). refreshNow must pick it up right
+        // away instead of waiting for the next QUEUE_POLL_INTERVAL tick.
+        ta.value = markerFor({ ...VALID_PAYLOAD, state: "frozen" });
+        await refreshNow();
+
+        expect(cb).toHaveBeenCalledTimes(1);
+        expect(cb.mock.calls[0][0]).toEqual({
+            source: "payload",
+            payload: expect.objectContaining({ state: "frozen" }),
+        });
+    });
+
+    test("payload mode: does not re-emit when the payload is unchanged", async () => {
+        appendInlineComment(VALID_PAYLOAD);
+        const cb = jest.fn();
+        attach(cb);
+        cb.mockClear();
+
+        await refreshNow();
+        expect(cb).not.toHaveBeenCalled();
+    });
+
+    test("fallback mode: re-fetches the check-run queue state immediately", async () => {
+        let queued = false;
+        global.fetch = jest.fn((url) => {
+            const u = String(url);
+            if (u.includes("/checks")) {
+                return Promise.resolve({
+                    ok: true,
+                    text: () =>
+                        Promise.resolve(
+                            `<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>`,
+                        ),
+                });
+            }
+            if (u.includes("/runs/")) {
+                return Promise.resolve({
+                    ok: true,
+                    text: () =>
+                        Promise.resolve(
+                            queued ? "Queued for merge" : "Some other state",
+                        ),
+                });
+            }
+            // edit_form etc. — keep us in fallback mode.
+            return Promise.resolve({
+                ok: false,
+                text: () => Promise.resolve(""),
+            });
+        });
+
+        const cb = jest.fn();
+        attach(cb);
+        // Let the initial fallback poll settle (emits queued:false).
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        cb.mockClear();
+
+        // Queue state flips outside the page; focus refresh must observe it.
+        queued = true;
+        await refreshNow();
+
+        expect(cb).toHaveBeenCalledWith({ source: "fallback", queued: true });
     });
 });
