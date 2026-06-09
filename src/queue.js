@@ -1034,6 +1034,11 @@ function _richRowHash(payload, variant, data) {
         v: variant,
         org: data.org,
         repo: data.repo,
+        // PR number is load-bearing: the queue/logs links and the merged
+        // message are all keyed on it. Omitting it would let a reused row
+        // survive an SPA nav between same-state PRs in one repo with stale
+        // links, since resetForNavigation doesn't tear the merge-box row down.
+        n: data.pull,
         s: payload.state,
         q: payload.queued_at,
         e: payload.estimated_time_of_merge,
