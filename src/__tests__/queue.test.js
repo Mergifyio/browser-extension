@@ -321,6 +321,84 @@ describe("buildMergifyRow dispatcher", () => {
     });
 });
 
+describe("updateMergifyRow rich-row idempotency (freeze regression #34031)", () => {
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        document.body.innerHTML = "";
+        jest.resetModules();
+    });
+
+    function mockPayloadState(getState) {
+        jest.doMock("../mqPayload", () => ({
+            ...jest.requireActual("../mqPayload"),
+            getCurrent: () => ({
+                source: "payload",
+                payload: {
+                    version: 1,
+                    state: getState(),
+                    queue_rule_name: "default",
+                    queued_at: "2026-05-29T10:20:00Z",
+                    estimated_time_of_merge: "2026-05-29T10:42:00Z",
+                    speculative_check_pr: 12345,
+                    required_conditions: [],
+                },
+            }),
+        }));
+    }
+
+    // The freeze: _tryInject calls updateAllMergifyRows() on every body
+    // MutationObserver tick. If the rich path swaps the row's children on each
+    // call, replaceChildren is itself a tree mutation → re-fires the observer →
+    // self-sustaining rAF loop that pegs the main thread and destroys the row's
+    // buttons mid-click. An unchanged payload must be a DOM no-op.
+    test("repeated calls with an unchanged payload produce no DOM mutations", () => {
+        jest.isolateModules(() => {
+            mockPayloadState(() => "checking");
+            const queue = require("../queue");
+            const row = queue.buildMergifyRow();
+            document.body.appendChild(row);
+            expect(row.dataset.mergifyShape).toBe("rich");
+
+            const firstChildBefore = row.firstChild;
+            // Observe exactly what the body MutationObserver in mergify.js
+            // observes; takeRecords() returns synchronously whatever would have
+            // re-triggered the loop.
+            const observer = new MutationObserver(() => {});
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            queue.updateMergifyRow(row);
+            queue.updateMergifyRow(row);
+
+            const records = observer.takeRecords();
+            observer.disconnect();
+
+            // No tree mutation → the orchestrator's observer would not re-fire.
+            expect(records).toHaveLength(0);
+            // And the existing buttons survive (a click can complete on them).
+            expect(row.firstChild).toBe(firstChildBefore);
+        });
+    });
+
+    test("still rebuilds when the payload state actually changes", () => {
+        jest.isolateModules(() => {
+            let state = "checking";
+            mockPayloadState(() => state);
+            const queue = require("../queue");
+            const row = queue.buildMergifyRow();
+            document.body.appendChild(row);
+            expect(
+                row.querySelector("[data-mergify-state-pill]").textContent,
+            ).toContain("Checking");
+
+            state = "frozen";
+            queue.updateMergifyRow(row);
+            expect(
+                row.querySelector("[data-mergify-state-pill]").textContent,
+            ).toContain("Frozen");
+        });
+    });
+});
+
 const { startEtaTicker, stopEtaTicker } = require("../queue");
 
 describe("ETA ticker", () => {
