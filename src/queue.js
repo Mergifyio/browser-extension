@@ -623,12 +623,25 @@ export function updateMergifyRow(row) {
     }
 
     if (incomingShape === "rich") {
+        // Idempotency guard: skip the DOM swap when the row already reflects
+        // this payload. updateAllMergifyRows() runs on every tryInject tick
+        // (which fires from the body MutationObserver), so an unconditional
+        // replaceChildren here re-triggers that observer and spins a
+        // self-sustaining rAF loop — freezing the tab and eating clicks on
+        // the row's buttons. Time-based ETA text is owned by the ETA ticker,
+        // so it's intentionally excluded from the hash.
+        const newHash = _richRowHash(payload, variant, getPullRequestData());
+        if (row.getAttribute("data-mergify-hash") === newHash) {
+            _etaPayload = payload;
+            return;
+        }
         const next = buildRichRow(payload, variant);
         // Snapshot the children before replaceChildren starts moving them.
         // Spread already eagerly iterates, but Array.from makes the snapshot
         // explicit so the live-NodeList shape can't trip up a future reader
         // (or static analyzer) reasoning about iteration-during-mutation.
         row.replaceChildren(...Array.from(next.childNodes));
+        row.setAttribute("data-mergify-hash", newHash);
         _etaPayload = payload;
         debug("Mergify rich row patched:", payload.state);
         return;
@@ -1007,11 +1020,39 @@ function deriveQueueButtonStateFromPayload(state) {
     return "unqueued";
 }
 
+// Stable fingerprint of everything that determines a rich row's rendered
+// structure, EXCEPT the live ETA text (which the ETA ticker refreshes on its
+// own 1s cadence by touching only [data-mergify-eta]). updateMergifyRow uses
+// this to skip the children swap when nothing changed — without it, every
+// tryInject tick would replaceChildren, and since that is itself a tree
+// mutation observed by the orchestrator's body MutationObserver, it would
+// re-fire tryInject in a self-sustaining rAF loop that pegs the main thread
+// and destroys the row's buttons mid-click. Mirrors the data-mergify-hash
+// dedup already used by the stack-nav pill and context panel.
+function _richRowHash(payload, variant, data) {
+    const input = JSON.stringify({
+        v: variant,
+        org: data.org,
+        repo: data.repo,
+        s: payload.state,
+        q: payload.queued_at,
+        e: payload.estimated_time_of_merge,
+        spr: payload.speculative_check_pr,
+        rc: payload.required_conditions,
+    });
+    let h = 0;
+    for (let i = 0; i < input.length; i++) {
+        h = ((h << 5) - h + input.charCodeAt(i)) | 0;
+    }
+    return String(h);
+}
+
 export function buildRichRow(payload, variant = "default") {
     ensurePulseKeyframes();
     const data = getPullRequestData();
     const row = document.createElement("div");
     row.setAttribute(MERGE_BOX_ROW_ATTR, variant);
+    row.setAttribute("data-mergify-hash", _richRowHash(payload, variant, data));
     row.dataset.mergifyShape = "rich";
     row.className =
         variant === "sidebar"
