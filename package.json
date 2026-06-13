@@ -14,7 +14,7 @@
         "@biomejs/biome": "2.4.16",
         "@swc/core": "^1.15.40",
         "@swc/jest": "^0.2.39",
-        "esbuild": "^0.28.0",
+        "esbuild": "^0.28.1",
         "jest": "^30.4.2",
         "jest-environment-jsdom": "^30.4.1",
         "nodemon": "^3.1.14"
