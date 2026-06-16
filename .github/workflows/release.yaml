@@ -1,24 +1,109 @@
 name: Release
-permissions:
-  id-token: write
-  contents: write
+
+# Two-stage release flow, forced by GitHub's immutable-releases
+# policy (assets can't be added after publish — the old job did a
+# `curl -X POST .../assets` against the already-published release,
+# which returns HTTP 422 under immutable releases, the same failure
+# the CLI hit in #1569). The fix is to attach assets while the
+# release is still a *draft*. Naïvely you'd expect `release: created`
+# to fire for draft saves, but GitHub Actions filters release events
+# on drafts: nothing fires until the release becomes visible. So the
+# prepare stage runs from `workflow_dispatch` instead — the
+# maintainer drives it from the Actions UI.
+#
+# Stage 1 — prepare-draft (`workflow_dispatch`):
+#   Maintainer opens Actions → "Release" → "Run workflow" → enters an
+#   explicit semver `tag` (e.g. `1.4.2`). The workflow builds and
+#   signs the three artifacts (`mergify-firefox-<tag>.zip`,
+#   `mergify-chrome-<tag>.zip`, `mergify-safari-<tag>.pkg`) on
+#   `macos-15` (Xcode is needed for the Safari `.pkg`) and creates the
+#   GitHub Release as a *draft* with all three assets attached and
+#   notes auto-generated from the commit log via `--generate-notes`.
+#
+# Stage 2 — publish (`release: published`):
+#   Maintainer goes to Releases, reviews the draft (notes + asset
+#   list), optionally edits, clicks "Publish release". This fires
+#   `release: published`. We only ASSERT the three expected asset
+#   names are present (sanity net if the release was created some
+#   other way, e.g. straight from the Releases UI without binaries),
+#   then exit. The release is immutable from this point on.
+#
+# Unlike the CLI, stage 2 does NOT publish anywhere: Chrome Web Store
+# / Firefox Add-ons uploads and Safari notarization
+# (`publish-safari-extension.sh`) stay manual, exactly as before.
+# Versions are explicit semver (no calver auto-compute) because the
+# web stores need monotonic version numbers under the existing scheme.
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: |
+          Release version to publish, semver `X.Y.Z` (e.g. `1.4.2`).
+          Used verbatim as the git tag, the release title, and the
+          `VERSION` stamped into the build (so it ends up in the
+          artifact names and the manifest).
+        required: true
+        type: string
+      target_commitish:
+        description: |
+          Branch or commit SHA to tag. Defaults to the branch the
+          workflow runs from — keep as-is unless you're cherry-
+          picking a release commit off an older line.
+        required: false
+        type: string
+        default: ''
   release:
-    types:
-      - published
+    types: [published]
+
+# Serialize runs that could collide on the same tag. Explicit-tag
+# dispatches and `release: published` runs key off the tag itself so
+# unrelated releases run in parallel. Don't cancel-in-progress: a
+# build that's cut short would leave the draft half-populated, which
+# is worse than letting it finish.
+concurrency:
+  group: release-${{ github.event_name }}-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # ---------------- Stage 1: prepare draft ----------------
+
+  prepare-draft:
+    name: build artifacts and create draft release
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
+    permissions:
+      # `gh release create` writes the release.
+      contents: write
     steps:
+      # Validate the tag shape before the ~10 min build so a typo
+      # fails in seconds. `gh release create` would accept any string,
+      # so the check lives here; the value also flows into artifact
+      # names and the manifest, where garbage would be silently baked
+      # into a shipped build.
+      - name: Validate tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "${INPUT_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '${INPUT_TAG}' doesn't match the X.Y.Z semver shape"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6.0.3
+        with:
+          # `--generate-notes` needs full history to walk back to the
+          # previous tag.
+          fetch-depth: 0
+          fetch-tags: true
+
       - name: Install dependencies
         run: |
           brew install gnu-sed
 
           sudo xcode-select -s /Applications/Xcode.app
-
 
       - name: Decode and install certificate
         run: |
@@ -35,27 +120,94 @@ jobs:
       - name: Build
         env:
           SIGN: 1
-          VERSION: ${{ github.event.release.tag_name }}
+          VERSION: ${{ inputs.tag }}
         run: |
           make
 
-      - name: Upload to GitHub release assets
+      - name: Create draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPLOAD_URL: ${{ github.event.release.upload_url }}
-          VERSION: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # Read inputs via env, not `${{ }}` interpolation, so a tag
+          # or commitish value containing shell metacharacters can't
+          # break out of the script. With direct interpolation,
+          # `inputs.tag = "foo'; rm -rf /; '"` would render the script
+          # as runnable injected commands; through env they reach bash
+          # as plain string values.
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TARGET: ${{ inputs.target_commitish }}
+        shell: bash
         run: |
           set -euo pipefail
-          for name in mergify-firefox-${VERSION}.zip mergify-chrome-${VERSION}.zip mergify-safari-${VERSION}.pkg; do
-            if ! curl -L \
-              --fail-with-body \
-              -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${name}" \
-              "${UPLOAD_URL%%/assets*}/assets?name=${name}"; then
-              echo "Upload of $name failed"
-              exit 1
-            fi
+          # Build the gh argument list as an array — keeps each element
+          # a single argv slot regardless of the value's contents.
+          args=(
+              "${INPUT_TAG}"
+              --draft
+              --generate-notes
+              --title "${INPUT_TAG}"
+          )
+          if [ -n "${INPUT_TARGET}" ]; then
+              args+=(--target "${INPUT_TARGET}")
+          fi
+          # `--draft` keeps the release mutable until the maintainer
+          # clicks Publish. `--generate-notes` builds a changelog from
+          # PRs merged since the previous tag — overridable in the UI
+          # before publish if needed. Asset names are deterministic
+          # from the tag, so list them explicitly rather than glob.
+          gh release create "${args[@]}" \
+            "mergify-firefox-${INPUT_TAG}.zip" \
+            "mergify-chrome-${INPUT_TAG}.zip" \
+            "mergify-safari-${INPUT_TAG}.pkg"
+
+          url=$(gh release view "${INPUT_TAG}" --json url --jq .url)
+          echo
+          echo "Draft release created: ${url}"
+          echo "Review the draft and click Publish in the Releases UI to ship."
+
+  # ---------------- Stage 2: assert on publish ----------------
+
+  assert-assets-present:
+    name: assert artifacts attached
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check expected assets are on the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t attached < <(gh release view "$TAG" --json assets --jq '.assets[].name')
+          echo "Assets on $TAG:"
+          printf '  %s\n' "${attached[@]}"
+
+          expected=(
+            "mergify-firefox-${TAG}.zip"
+            "mergify-chrome-${TAG}.zip"
+            "mergify-safari-${TAG}.pkg"
+          )
+          missing=()
+          for asset in "${expected[@]}"; do
+            printf '%s\n' "${attached[@]}" | grep -Fqx "$asset" || missing+=("$asset")
           done
+          if (( ${#missing[@]} > 0 )); then
+            cat <<EOF >&2
+          ::error::Release $TAG is missing assets: ${missing[*]}
+
+          Artifacts are attached by the 'prepare-draft' job, which runs from
+          Actions → "Release" → "Run workflow". Did you create this release
+          through the Releases UI directly instead? That path doesn't attach
+          the build artifacts, and the release is now immutable so they can't
+          be backfilled.
+
+          Recovery: delete this release, then re-create it via Actions →
+          "Release" → "Run workflow" with the same tag.
+          EOF
+            exit 1
+          fi
+          echo "All expected assets present."
