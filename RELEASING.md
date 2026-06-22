@@ -80,6 +80,7 @@ a missing secret just fails that one store's job.
 | Secret | Used by | What it is |
 | --- | --- | --- |
 | `BROWSER_EXT_GOOGLE_EXTENSION_ID` | Chrome | The extension's ID in the Web Store. |
+| `BROWSER_EXT_GOOGLE_PUBLISHER_ID` | Chrome | The developer-account (publisher) id, not the extension id. Required by the Web Store API v2. Find it in the dashboard URL: `chrome.google.com/webstore/devconsole/<publisher-id>`. |
 | `BROWSER_EXT_GOOGLE_CLIENT_ID` | Chrome | OAuth2 client ID for the Web Store API. |
 | `BROWSER_EXT_GOOGLE_CLIENT_SECRET` | Chrome | OAuth2 client secret. |
 | `BROWSER_EXT_GOOGLE_REFRESH_TOKEN_SILEHT` | Chrome | OAuth2 refresh token for the publishing account. |
