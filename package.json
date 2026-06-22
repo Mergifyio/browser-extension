@@ -11,7 +11,7 @@
         "dev:clean": "make dev-clean"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.4.16",
+        "@biomejs/biome": "2.5.0",
         "@swc/core": "^1.15.41",
         "@swc/jest": "^0.2.39",
         "esbuild": "^0.28.1",
