@@ -265,12 +265,16 @@ jobs:
       - name: Upload and publish to the Chrome Web Store
         env:
           # chrome-webstore-upload-cli reads CLIENT_ID/CLIENT_SECRET/
-          # REFRESH_TOKEN/EXTENSION_ID from the environment; the repo
-          # secrets are BROWSER_EXT_GOOGLE_*-named and mapped to those here.
+          # REFRESH_TOKEN/EXTENSION_ID/PUBLISHER_ID from the environment; the
+          # repo secrets are BROWSER_EXT_GOOGLE_*-named and mapped to those.
+          # PUBLISHER_ID (the developer-account id, not the extension id) is
+          # required since cli@4 moved to the Chrome Web Store API v2, whose
+          # endpoints are scoped under publishers/<id>/items/<extension-id>.
           CLIENT_ID: ${{ secrets.BROWSER_EXT_GOOGLE_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.BROWSER_EXT_GOOGLE_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.BROWSER_EXT_GOOGLE_REFRESH_TOKEN_SILEHT }}
           EXTENSION_ID: ${{ secrets.BROWSER_EXT_GOOGLE_EXTENSION_ID }}
+          PUBLISHER_ID: ${{ secrets.BROWSER_EXT_GOOGLE_PUBLISHER_ID }}
           TAG: ${{ github.event.release.tag_name }}
         shell: bash
         run: |
