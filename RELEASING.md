@@ -87,10 +87,13 @@ a missing secret just fails that one store's job.
 | `BROWSER_EXT_MOZILLA_JWT_SECRET` | Firefox | AMO API secret (JWT secret) for that key. |
 | `BROWSER_EXT_APPLE_CONNECT_KEY_P8` | Safari | Base64 of the App Store Connect API key `AuthKey_ASA5Z72QVK.p8`. Generate with `base64 -i AuthKey_ASA5Z72QVK.p8 \| pbcopy`. |
 
-The Apple **signing** secrets used by stage 1 (`APPLE_CERTIFICATE_P12`,
-`APPLE_CERTIFICATE_PASSWORD`) are unchanged. The team id, issuer id and
-key id are hardcoded in `publish-safari-extension.sh`; only the `.p8`
-key itself comes from the secret above.
+Stage 1 also signs the build with two more Apple secrets:
+`BROWSER_EXT_APPLE_CERTIFICATE_P12` (base64 of a `.p12` holding the
+`Developer ID Application` + `Developer ID Installer` identities and
+their private keys) and `BROWSER_EXT_APPLE_CERTIFICATE_PASSWORD` (its
+export password). The team id, issuer id and key id are hardcoded in
+`publish-safari-extension.sh`; only the `.p8` key itself comes from the
+secret above.
 
 ## Manual fallback
 
