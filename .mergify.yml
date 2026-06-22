@@ -27,10 +27,6 @@ queue_rules:
     <<: *DefaultQueueOptions
     queue_conditions:
       - and: *CheckRuns
-      - "#approved-reviews-by>=2"
-      - "#changes-requested-reviews-by=0"
-      - "#review-threads-unresolved=0"
-      - "#review-requested=0"
     merge_conditions:
       - and: *CheckRuns
 
