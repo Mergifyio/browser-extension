@@ -23,16 +23,35 @@ name: Release
 # Stage 2 — publish (`release: published`):
 #   Maintainer goes to Releases, reviews the draft (notes + asset
 #   list), optionally edits, clicks "Publish release". This fires
-#   `release: published`. We only ASSERT the three expected asset
+#   `release: published`. First we ASSERT the three expected asset
 #   names are present (sanity net if the release was created some
-#   other way, e.g. straight from the Releases UI without binaries),
-#   then exit. The release is immutable from this point on.
+#   other way, e.g. straight from the Releases UI without binaries).
+#   Then, gated on that assert, three independent jobs push the
+#   *reviewed bytes* to the stores — each downloads only its own asset
+#   off the published release and never rebuilds, so what ships equals
+#   what the maintainer reviewed:
+#     - Chrome Web Store: `chrome-webstore-upload-cli` uploads and
+#       publishes `mergify-chrome-<tag>.zip`.
+#     - Firefox AMO: `web-ext sign --channel listed` submits
+#       `mergify-firefox-<tag>.zip` for Mozilla's review queue. web-ext
+#       can only sign a *source directory*, never a prebuilt zip, so
+#       the reviewed asset is unzipped and web-ext repackages the same
+#       files — identical contents, fresh archive container.
+#     - Safari: `publish-safari-extension.sh` notarizes and staples
+#       `mergify-safari-<tag>.pkg`. Notarization runs post-publish, so
+#       the stapled pkg can't replace the immutable release asset; only
+#       the Apple-side notarization (Gatekeeper online check) persists.
+#       See RELEASING.md for that tradeoff.
+#   The three store jobs are independent: one failing doesn't block the
+#   others, and a red job flags exactly which store needs a manual
+#   retry. The release is immutable from this point on.
 #
-# Unlike the CLI, stage 2 does NOT publish anywhere: Chrome Web Store
-# / Firefox Add-ons uploads and Safari notarization
-# (`publish-safari-extension.sh`) stay manual, exactly as before.
-# Versions are explicit semver (no calver auto-compute) because the
-# web stores need monotonic version numbers under the existing scheme.
+# Store pushes only ever fire on Publish (never on the draft-building
+# dispatch stage) and only for full releases (pre-releases are
+# skipped), so a draft never reaches a public store — the human
+# draft→Publish gate is the whole point. Versions are explicit semver
+# (no calver auto-compute) because the web stores need monotonic
+# version numbers under the existing scheme.
 
 on:
   workflow_dispatch:
@@ -211,3 +230,150 @@ jobs:
             exit 1
           fi
           echo "All expected assets present."
+
+  # ---------------- Stage 2: push reviewed bytes to the stores ----------------
+  #
+  # All three jobs gate on `assert-assets-present` so a release missing its
+  # binaries never reaches a store, and skip pre-releases so only a real
+  # Publish ships. Each downloads only its own reviewed asset (no rebuild) and
+  # routes every secret/tag value through `env:` — never inline `${{ }}` in a
+  # `run:` body — so a hostile value can't break out of the shell.
+
+  publish-chrome:
+    name: publish to Chrome Web Store
+    needs: assert-assets-present
+    if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    permissions:
+      # Read-only: download the asset off the published release.
+      contents: read
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Download the reviewed Chrome asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "mergify-chrome-${TAG}.zip" --clobber
+
+      - name: Upload and publish to the Chrome Web Store
+        env:
+          # chrome-webstore-upload-cli reads CLIENT_ID/CLIENT_SECRET/
+          # REFRESH_TOKEN/EXTENSION_ID from the environment; the repo
+          # secrets are BROWSER_EXT_GOOGLE_*-named and mapped to those here.
+          CLIENT_ID: ${{ secrets.BROWSER_EXT_GOOGLE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.BROWSER_EXT_GOOGLE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.BROWSER_EXT_GOOGLE_REFRESH_TOKEN_SILEHT }}
+          EXTENSION_ID: ${{ secrets.BROWSER_EXT_GOOGLE_EXTENSION_ID }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No subcommand = upload + publish in one shot. v4 dropped the
+          # old `--auto-publish` flag (upload+publish is now the default
+          # when no command is given); pinned to major 4 so the CLI's
+          # contract can't shift under us.
+          npx --yes chrome-webstore-upload-cli@4 \
+            --source "mergify-chrome-${TAG}.zip" \
+            --extension-id "$EXTENSION_ID"
+
+  publish-firefox:
+    name: publish to Firefox Add-ons (AMO)
+    needs: assert-assets-present
+    if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Download the reviewed Firefox asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "mergify-firefox-${TAG}.zip" --clobber
+
+      - name: Sign and submit to AMO (listed)
+        env:
+          # web-ext reads these exact env names for the AMO JWT creds.
+          WEB_EXT_API_KEY: ${{ secrets.BROWSER_EXT_MOZILLA_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.BROWSER_EXT_MOZILLA_JWT_SECRET }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # web-ext can only sign a *source directory*, never a prebuilt
+          # zip, so unzip the reviewed asset and let web-ext repackage the
+          # identical files. `--channel listed` submits the version to
+          # Mozilla's review queue, which is human and asynchronous.
+          # `--approval-timeout 0` makes web-ext return as soon as the
+          # version is uploaded instead of blocking on approval — without
+          # it, web-ext waits up to 15 min and then *errors out* on the
+          # still-pending review, failing the job even though the submit
+          # succeeded.
+          rm -rf firefox-src
+          unzip -q "mergify-firefox-${TAG}.zip" -d firefox-src
+          npx --yes web-ext@10 sign \
+            --source-dir firefox-src \
+            --channel listed \
+            --approval-timeout 0
+
+  publish-safari:
+    name: notarize and staple the Safari pkg
+    needs: assert-assets-present
+    if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
+    # macOS runner: notarytool/stapler ship with Xcode, not on Linux.
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      # Check out at the release tag so publish-safari-extension.sh is the
+      # exact version that shipped, not whatever is on the default branch.
+      - uses: actions/checkout@v6.0.3
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install the App Store Connect API key
+        env:
+          APPLE_CONNECT_KEY_P8: ${{ secrets.BROWSER_EXT_APPLE_CONNECT_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # publish-safari-extension.sh hardcodes this path and the
+          # matching key id (ASA5Z72QVK); decode the base64 secret into it.
+          mkdir -p private_keys
+          echo "$APPLE_CONNECT_KEY_P8" | base64 --decode > private_keys/AuthKey_ASA5Z72QVK.p8
+
+      - name: Download the reviewed Safari asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "mergify-safari-${TAG}.pkg" --clobber
+
+      - name: Notarize and staple
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # "We only need to run the script": it submits to notarytool
+          # --wait then staples the local copy. That stapled pkg can't be
+          # re-attached to the immutable release; the Apple-side
+          # notarization registration is what persists. See RELEASING.md.
+          ./publish-safari-extension.sh "./mergify-safari-${TAG}.pkg"
