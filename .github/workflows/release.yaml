@@ -111,7 +111,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           # `--generate-notes` needs full history to walk back to the
           # previous tag.
@@ -345,7 +345,7 @@ jobs:
     steps:
       # Check out at the release tag so publish-safari-extension.sh is the
       # exact version that shipped, not whatever is on the default branch.
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.event.release.tag_name }}
 
