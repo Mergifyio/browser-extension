@@ -190,6 +190,13 @@ describe("buildRichRow", () => {
         window.history.replaceState({}, "", "/acme/widget/pull/42");
     });
 
+    afterEach(() => {
+        // deriveQueueButtonStateFromPayload reads the page DOM (draft status),
+        // so clear it between tests — otherwise a draft span set by one test
+        // would leak into the next and flip its expected button state.
+        document.body.innerHTML = "";
+    });
+
     test("renders checking state with pill, ETA, draft-PR link, and conditions block", () => {
         const row = buildRichRow(payload({ state: "checking" }));
         expect(row.dataset.mergifyShape).toBe("rich");
@@ -253,6 +260,20 @@ describe("buildRichRow", () => {
         expect(btn.getAttribute("data-mergify-queue-btn")).toBe("unqueued");
     });
 
+    test("draft PR renders a disabled add-to-queue button", () => {
+        document.body.innerHTML = '<span data-status="draft">Draft</span>';
+        const row = buildRichRow(
+            payload({
+                state: "dequeued",
+                required_conditions: [],
+                speculative_check_pr: null,
+            }),
+        );
+        const btn = row.querySelector("[data-mergify-queue-btn]");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("draft");
+        expect(btn.getAttribute("aria-disabled")).toBe("true");
+    });
+
     test("does not render draft-PR link when speculative_check_pr is null", () => {
         const row = buildRichRow(payload({ speculative_check_pr: null }));
         expect(row.querySelector("[data-mergify-spec-pr]")).toBeNull();
@@ -263,6 +284,45 @@ describe("buildRichRow", () => {
             payload({ speculative_check_pr: "12345; alert(1)" }),
         );
         expect(row.querySelector("[data-mergify-spec-pr]")).toBeNull();
+    });
+});
+
+const { buildQueueButton } = require("../queue");
+
+describe("buildQueueButton", () => {
+    test("draft state is greyed out via aria-disabled, keeps its tooltip, and ignores clicks", () => {
+        const btn = buildQueueButton("draft");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("draft");
+        // aria-disabled (not the `disabled` attribute) so the explanatory
+        // title tooltip still shows on hover — disabled controls suppress it.
+        expect(btn.getAttribute("aria-disabled")).toBe("true");
+        expect(btn.hasAttribute("disabled")).toBe(false);
+        expect(btn.getAttribute("title")).toContain("Draft pull requests");
+        expect(btn.style.opacity).toBe("0.5");
+        expect(btn.style.cursor).toBe("not-allowed");
+        expect(btn.textContent).toBe("Add to merge queue");
+
+        // Clicking must not post an @mergifyio queue command.
+        const field = document.createElement("input");
+        field.id = "new_comment_field";
+        document.body.appendChild(field);
+        btn.onclick(new MouseEvent("click"));
+        expect(field.value).toBe("");
+        document.body.innerHTML = "";
+    });
+
+    test("unqueued state is an enabled add-to-queue button", () => {
+        const btn = buildQueueButton("unqueued");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("unqueued");
+        expect(btn.hasAttribute("disabled")).toBe(false);
+        expect(btn.textContent).toBe("Add to merge queue");
+    });
+
+    test("queued state offers a remove button", () => {
+        const btn = buildQueueButton("queued");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("queued");
+        expect(btn.hasAttribute("disabled")).toBe(false);
+        expect(btn.textContent).toBe("Remove from merge queue");
     });
 });
 
@@ -303,6 +363,38 @@ describe("buildMergifyRow dispatcher", () => {
             expect(
                 row.querySelector("[data-mergify-state-pill]").textContent,
             ).toContain("Checking");
+        });
+    });
+
+    test("draft PR row swaps its disabled button for an enabled one when the PR becomes ready", () => {
+        jest.isolateModules(() => {
+            // No engine payload → legacy row path, where draft status drives
+            // the button.
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () => null,
+            }));
+            const queue = require("../queue");
+
+            // Draft PR → legacy row with a greyed (aria-disabled) draft button.
+            document.body.innerHTML = '<span data-status="draft">Draft</span>';
+            const row = queue.buildMergifyRow();
+            document.body.appendChild(row);
+            let btn = row.querySelector("[data-mergify-queue-btn]");
+            expect(btn.getAttribute("data-mergify-queue-btn")).toBe("draft");
+            expect(btn.getAttribute("aria-disabled")).toBe("true");
+
+            // PR marked ready for review → status flips to open.
+            document
+                .querySelector("span[data-status]")
+                .setAttribute("data-status", "pullOpened");
+            queue.updateAllMergifyRows();
+
+            btn = row.querySelector("[data-mergify-queue-btn]");
+            expect(btn.getAttribute("data-mergify-queue-btn")).toBe("unqueued");
+            expect(btn.hasAttribute("aria-disabled")).toBe(false);
+
+            document.body.innerHTML = "";
         });
     });
 
