@@ -134,6 +134,18 @@ export function isPullRequestOpen() {
     return true;
 }
 
+export function isPullRequestDraft() {
+    if (document.querySelector("span[data-status=draft]")) return true;
+
+    const oldStatusBadge = document.querySelector("span.State");
+    if (oldStatusBadge) {
+        const status = oldStatusBadge.getAttribute("title")?.split(": ")[1];
+        if (status) return status.toLowerCase() === "draft";
+    }
+
+    return false;
+}
+
 export function wasMergedByMergify() {
     const timelineItems = document.querySelectorAll(".TimelineItem");
     for (const item of timelineItems) {
@@ -316,10 +328,20 @@ export function deriveQueueButtonState() {
     // Only show pending state when the command hasn't been acknowledged yet.
     // Once Mergify thumbs-ups the comment, it was processed — trust the check run.
     if (lastCmd && !lastCmd.acknowledged) {
-        if (lastCmd.command === "queue" && !checkRunQueued) return "queuing";
+        if (lastCmd.command === "queue" && !checkRunQueued) {
+            // A draft can't actually be queued, so don't show a perpetual
+            // "queuing…" spinner for a stale queue command on a draft.
+            return isPullRequestDraft() ? "draft" : "queuing";
+        }
         if (lastCmd.command === "dequeue" && checkRunQueued) return "dequeuing";
     }
-    return checkRunQueued ? "queued" : "unqueued";
+    if (checkRunQueued) return "queued";
+    // A draft PR that isn't queued can't be added — grey out the "Add to merge
+    // queue" action. Checked AFTER the queued/dequeue logic so a PR that's
+    // already in the queue keeps its dequeue affordance even as a draft (e.g.
+    // converted to draft while queued); draft only disables the add action.
+    if (isPullRequestDraft()) return "draft";
+    return "unqueued";
 }
 
 export function postCommand(command) {
@@ -413,6 +435,23 @@ export function buildQueueButton(state) {
                 true,
                 "secondary",
             );
+            break;
+        case "draft":
+            // Build it enabled (no `disabled` attribute) so the title tooltip
+            // still shows on hover — browsers suppress hover/pointer events on
+            // disabled controls, which would hide the explanation. Mark it
+            // aria-disabled, grey it out, and neutralize the click instead.
+            btn = buildMergeBoxButton(
+                "queue",
+                "Add to merge queue",
+                "Draft pull requests can't be queued — mark it ready for review first",
+                false,
+                "primary",
+            );
+            btn.setAttribute("aria-disabled", "true");
+            btn.style.opacity = "0.5";
+            btn.style.cursor = "not-allowed";
+            btn.onclick = (event) => event.preventDefault();
             break;
         case "queued":
             btn = buildMergeBoxButton(
@@ -1017,6 +1056,7 @@ function buildMergedRow() {
 function deriveQueueButtonStateFromPayload(state) {
     if (state === "checking" || state === "frozen" || state === "bisecting")
         return "queued";
+    if (isPullRequestDraft()) return "draft";
     return "unqueued";
 }
 
@@ -1044,6 +1084,11 @@ function _richRowHash(payload, variant, data) {
         e: payload.estimated_time_of_merge,
         spr: payload.speculative_check_pr,
         rc: payload.required_conditions,
+        // Draft status drives the queue button (draft → disabled). It lives in
+        // the page DOM, not the payload, so fold it in here; otherwise a
+        // draft→ready toggle that leaves the payload untouched would be deduped
+        // away and the button would stay greyed out.
+        d: isPullRequestDraft(),
     });
     let h = 0;
     for (let i = 0; i < input.length; i++) {

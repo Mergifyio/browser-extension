@@ -5,6 +5,7 @@ const {
     findTimelineActions,
     injectRowIntoMergeBox,
     isPullRequestOpen,
+    isPullRequestDraft,
     isPullRequestQueued,
     resetQueueState,
     findLastMergifyCommand,
@@ -433,6 +434,39 @@ describe("isPullRequestOpen", () => {
     });
 });
 
+describe("isPullRequestDraft", () => {
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    it("should detect draft PR via data-status=draft attribute", () => {
+        document.body.innerHTML = '<span data-status="draft">Draft</span>';
+        expect(isPullRequestDraft()).toBe(true);
+    });
+
+    it("should detect draft PR via legacy span.State title", () => {
+        document.body.innerHTML =
+            '<span class="State" title="Status: Draft">Draft</span>';
+        expect(isPullRequestDraft()).toBe(true);
+    });
+
+    it("should return false for an open PR", () => {
+        document.body.innerHTML = '<span data-status="pullOpened">Open</span>';
+        expect(isPullRequestDraft()).toBe(false);
+    });
+
+    it("should return false for an open legacy span.State", () => {
+        document.body.innerHTML =
+            '<span class="State" title="Status: Open">Open</span>';
+        expect(isPullRequestDraft()).toBe(false);
+    });
+
+    it("should return false when no status element is found", () => {
+        document.body.innerHTML = "<div>No status here</div>";
+        expect(isPullRequestDraft()).toBe(false);
+    });
+});
+
 describe("isPullRequestQueued", () => {
     afterEach(() => {
         document.body.innerHTML = "";
@@ -667,6 +701,42 @@ describe("deriveQueueButtonState", () => {
             </div>
         `;
         expect(deriveQueueButtonState()).toBe("unqueued");
+    });
+
+    it("should return 'draft' when PR is a draft", () => {
+        document.body.innerHTML = '<span data-status="draft">Draft</span>';
+        expect(deriveQueueButtonState()).toBe("draft");
+    });
+
+    it("should return 'draft' for a draft PR even with a pending queue command", () => {
+        document.body.innerHTML = `
+            <span data-status="draft">Draft</span>
+            <div class="TimelineItem">
+                <div class="comment-body">@mergifyio queue</div>
+            </div>
+        `;
+        expect(deriveQueueButtonState()).toBe("draft");
+    });
+
+    it("should return 'draft' from the legacy State badge title", () => {
+        document.body.innerHTML =
+            '<span class="State" title="Status: Draft">Draft</span>';
+        expect(deriveQueueButtonState()).toBe("draft");
+    });
+
+    it("should return 'queued' for a draft PR that is already in the queue so it keeps a dequeue button", () => {
+        document.body.innerHTML = `
+            <span data-status="draft">Draft</span>
+            <section aria-label="Checks">
+                <ul>
+                    <li>
+                        <span>Mergify Merge Queue</span>
+                        <span>— In merge queue</span>
+                    </li>
+                </ul>
+            </section>
+        `;
+        expect(deriveQueueButtonState()).toBe("queued");
     });
 
     it("should return 'merged' when PR merged by Mergify", () => {
