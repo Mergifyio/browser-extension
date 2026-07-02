@@ -27,6 +27,9 @@ queue_rules:
     <<: *DefaultQueueOptions
     queue_conditions:
       - and: *CheckRuns
+    commit_message_format:
+      title: pr-title
+      body: pr-body
     merge_conditions:
       - and: *CheckRuns
 
