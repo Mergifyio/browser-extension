@@ -1,10 +1,9 @@
 extends: .github
 shared:
   DefaultQueueOptions: &DefaultQueueOptions
-    commit_message_template: |
-      {{ title }} (#{{ number }})
-
-      {{ body }}
+    commit_message_format:
+      title: pr-title
+      body: pr-body
     merge_method: squash
   CheckRuns: &CheckRuns
     - check-success=test
@@ -22,7 +21,7 @@ queue_rules:
     merge_method: fast-forward
     batch_size: 7
     batch_max_wait_time: 5min
-    commit_message_template:
+    commit_message_format:
   - name: default
     <<: *DefaultQueueOptions
     queue_conditions:
