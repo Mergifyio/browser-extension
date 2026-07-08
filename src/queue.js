@@ -1,6 +1,10 @@
 import { MergifyCache } from "./cache.js";
 import { debug } from "./debug.js";
-import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
+import {
+    getPullRequestData,
+    isGitHubPullRequestPage,
+    isMergifyBotComment,
+} from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 import { resetStackState } from "./stacks.js";
 
@@ -144,6 +148,21 @@ export function isPullRequestDraft() {
     }
 
     return false;
+}
+
+// True when the PR opener is the Mergify GitHub App. Scope the mergify-author
+// check to the PR header meta so a Mergify bot *comment* further down the
+// timeline can't be mistaken for the PR author.
+export function isPullRequestAuthoredByMergify() {
+    const header = document.querySelector(".gh-header-meta");
+    return header ? isMergifyBotComment(header) : false;
+}
+
+// A merge-queue batch PR is the draft the engine opens to run a batch's CI:
+// draft AND authored by the Mergify App. The head-branch prefix is per-rule
+// config, so it is deliberately not part of the signal.
+export function isMergeQueueBatchPr() {
+    return isPullRequestDraft() && isPullRequestAuthoredByMergify();
 }
 
 export function wasMergedByMergify() {
@@ -483,8 +502,38 @@ export function getEventLogLink() {
     return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`;
 }
 
+// Base branch of the current PR, read from the classic PR UI. The
+// `.commit-ref.base-ref` span is titled "owner/repo:branch"; ref names can't
+// contain ":", so everything after the first colon is the branch (which may
+// itself contain "/").
+export function getBaseRef() {
+    const title = document
+        .querySelector(".commit-ref.base-ref")
+        ?.getAttribute("title");
+    if (!title?.includes(":")) return null;
+    return title.slice(title.indexOf(":") + 1);
+}
+
 export function getMergeQueueLink() {
     const data = getPullRequestData();
+
+    // On a batch PR, deep-link to that batch's peek drawer via batch_pr=<the
+    // batch PR number we're on>. The batch PR's base ref is exactly the queue's
+    // target branch, so reading it (instead of hardcoding one) keeps
+    // non-default-branch queues in scope. The dashboard resolves batch_pr to
+    // the drawer, and degrades to the branch-scoped queue view for a drained
+    // batch or an older dashboard.
+    if (isMergeQueueBatchPr()) {
+        const params = new URLSearchParams({
+            login: data.org,
+            repository: data.repo,
+        });
+        const baseRef = getBaseRef();
+        if (baseRef) params.set("branch", baseRef);
+        params.set("batch_pr", data.pull);
+        return `https://dashboard.mergify.com/queues/status?${params}`;
+    }
+
     return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main&pull-request-number=${data.pull}`;
 }
 

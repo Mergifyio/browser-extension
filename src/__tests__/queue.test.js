@@ -665,3 +665,134 @@ describe("scheduleQueueStatePoll", () => {
         // Pass iff no exception escapes.
     });
 });
+
+const {
+    getBaseRef,
+    isMergeQueueBatchPr,
+    isPullRequestDraft,
+    getMergeQueueLink,
+} = require("../queue");
+const { injectFixtureInDOM } = require("./utils");
+
+// Minimal PR-page DOM: a draft status pill, the header-meta author link, and
+// the classic base-ref span. Any argument left undefined is omitted so a test
+// can exercise a single missing piece.
+function setPrDom({ draft, author, baseRef } = {}) {
+    const parts = [];
+    if (draft) parts.push('<span class="State" title="Status: Draft"></span>');
+    if (author) {
+        const href = author === "mergify" ? "/apps/mergify" : `/${author}`;
+        parts.push(
+            `<div class="gh-header-meta"><a class="author" href="${href}">${author}</a></div>`,
+        );
+    }
+    if (baseRef) {
+        parts.push(
+            `<span class="commit-ref css-truncate base-ref" title="acme/widget:${baseRef}"><a href="/acme/widget/tree/${baseRef}">acme:${baseRef}</a></span>`,
+        );
+    }
+    document.body.innerHTML = parts.join("");
+}
+
+describe("batch-PR queue link", () => {
+    beforeEach(() => {
+        // Clear DOM up front too: sibling blocks above leave rows in the body,
+        // and a test that reads the DOM without first overwriting it would
+        // otherwise inherit stale nodes.
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+    });
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    describe("getBaseRef", () => {
+        test("reads the branch from the base-ref span title", () => {
+            setPrDom({ baseRef: "develop" });
+            expect(getBaseRef()).toBe("develop");
+        });
+
+        test("keeps slashes in the branch name", () => {
+            setPrDom({ baseRef: "release/2.0" });
+            expect(getBaseRef()).toBe("release/2.0");
+        });
+
+        test("returns null when the base-ref span title is malformed (no colon)", () => {
+            document.body.innerHTML =
+                '<span class="commit-ref base-ref" title="develop"></span>';
+            expect(getBaseRef()).toBeNull();
+        });
+
+        test("returns null when no base-ref span is present", () => {
+            document.body.innerHTML = "";
+            expect(getBaseRef()).toBeNull();
+        });
+
+        test("reads the base branch from the real GitHub PR fixture", () => {
+            injectFixtureInDOM("github_pr_opened");
+            expect(getBaseRef()).toBe("main");
+        });
+    });
+
+    describe("isMergeQueueBatchPr", () => {
+        test("true for a draft PR authored by the Mergify App", () => {
+            setPrDom({ draft: true, author: "mergify" });
+            expect(isMergeQueueBatchPr()).toBe(true);
+        });
+
+        test("false for a draft PR authored by a human", () => {
+            setPrDom({ draft: true, author: "octocat" });
+            expect(isMergeQueueBatchPr()).toBe(false);
+        });
+
+        test("false for a Mergify-authored PR that is not a draft (e.g. config update)", () => {
+            setPrDom({ author: "mergify" });
+            expect(isMergeQueueBatchPr()).toBe(false);
+        });
+
+        // Real fixture: a human-authored draft PR (header author /Syffe) that
+        // carries Mergify author links in its timeline. Proves the author check
+        // is scoped to the header — a Mergify link elsewhere on the page must
+        // not flip a human draft into a batch classification.
+        test("false on a human-authored draft with Mergify links in the timeline (real fixture)", () => {
+            injectFixtureInDOM("github_pr_opened");
+            // Precondition: the fixture is a draft, so the false result below is
+            // attributable to the author scoping, not the draft check.
+            expect(isPullRequestDraft()).toBe(true);
+            expect(isMergeQueueBatchPr()).toBe(false);
+        });
+    });
+
+    describe("getMergeQueueLink", () => {
+        test("deep-links to the batch peek drawer via batch_pr, using the base ref as branch", () => {
+            setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
+            expect(getMergeQueueLink()).toBe(
+                "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&branch=develop&batch_pr=42",
+            );
+        });
+
+        test("url-encodes a slashed base ref in the branch param", () => {
+            setPrDom({
+                draft: true,
+                author: "mergify",
+                baseRef: "release/2.0",
+            });
+            expect(getMergeQueueLink()).toContain("branch=release%2F2.0");
+            expect(getMergeQueueLink()).toContain("batch_pr=42");
+        });
+
+        test("omits branch (dashboard falls back) when the base ref can't be read", () => {
+            setPrDom({ draft: true, author: "mergify" });
+            expect(getMergeQueueLink()).toBe(
+                "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&batch_pr=42",
+            );
+        });
+
+        test("non-batch PR keeps the branch-scoped queue link", () => {
+            setPrDom({ baseRef: "develop" });
+            expect(getMergeQueueLink()).toBe(
+                "https://dashboard.mergify.com/queues?login=acme&repository=widget&branch=main&pull-request-number=42",
+            );
+        });
+    });
+});
