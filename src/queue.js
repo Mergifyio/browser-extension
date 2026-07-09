@@ -342,6 +342,9 @@ export function deriveQueueButtonState() {
     if (!isPullRequestOpen()) {
         return wasMergedByMergify() ? "merged" : "closed";
     }
+    // A batch PR renders no action buttons at all — Mergify owns the branch,
+    // so queueing or commanding it would invalidate the batch.
+    if (isMergeQueueBatchPr()) return "batch";
     const checkRunQueued = isPullRequestQueued();
     const lastCmd = findLastMergifyCommand();
     // Only show pending state when the command hasn't been acknowledged yet.
@@ -440,6 +443,16 @@ export function buildMergeBoxButton(
     return button;
 }
 
+// Grey out a button while keeping its tooltip hoverable: a real `disabled`
+// attribute suppresses hover/pointer events (hiding the explanation), so mark
+// it aria-disabled, dim it, and neutralize the click instead.
+function neutralizeButton(btn) {
+    btn.setAttribute("aria-disabled", "true");
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "not-allowed";
+    btn.onclick = (event) => event.preventDefault();
+}
+
 export function buildQueueButton(state) {
     let btn;
     switch (state) {
@@ -456,10 +469,6 @@ export function buildQueueButton(state) {
             );
             break;
         case "draft":
-            // Build it enabled (no `disabled` attribute) so the title tooltip
-            // still shows on hover — browsers suppress hover/pointer events on
-            // disabled controls, which would hide the explanation. Mark it
-            // aria-disabled, grey it out, and neutralize the click instead.
             btn = buildMergeBoxButton(
                 "queue",
                 "Add to merge queue",
@@ -467,10 +476,7 @@ export function buildQueueButton(state) {
                 false,
                 "primary",
             );
-            btn.setAttribute("aria-disabled", "true");
-            btn.style.opacity = "0.5";
-            btn.style.cursor = "not-allowed";
-            btn.onclick = (event) => event.preventDefault();
+            neutralizeButton(btn);
             break;
         case "queued":
             btn = buildMergeBoxButton(
@@ -495,6 +501,24 @@ export function buildQueueButton(state) {
     }
     btn.setAttribute("data-mergify-queue-btn", state);
     return btn;
+}
+
+// Append the Refresh/Rebase/Update command buttons to a container. On a batch
+// PR they are omitted — Mergify owns the branch, so any command here would
+// invalidate the batch.
+function appendCommandButtons(container) {
+    if (isMergeQueueBatchPr()) return;
+    for (const btn of BUTTONS) {
+        container.appendChild(
+            buildMergeBoxButton(
+                btn.command,
+                btn.label,
+                btn.tooltip,
+                false,
+                "secondary",
+            ),
+        );
+    }
 }
 
 export function getEventLogLink() {
@@ -559,21 +583,11 @@ function buildLegacyDefaultRow() {
     row.style.cssText =
         "display:flex;align-items:center;gap:8px;padding:var(--base-size-16,16px)!important;flex-wrap:wrap;";
 
-    if (state !== "merged" && state !== "closed") {
+    if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
         buttons.appendChild(buildQueueButton(state));
-        for (const btn of BUTTONS) {
-            buttons.appendChild(
-                buildMergeBoxButton(
-                    btn.command,
-                    btn.label,
-                    btn.tooltip,
-                    false,
-                    "secondary",
-                ),
-            );
-        }
+        appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
 
@@ -608,21 +622,11 @@ function buildLegacySidebarRow() {
     row.style.cssText =
         "display:flex;flex-direction:column;gap:8px;padding:var(--base-size-16,16px)!important;margin-top:var(--base-size-24,24px);";
 
-    if (state !== "merged" && state !== "closed") {
+    if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
         buttons.appendChild(buildQueueButton(state));
-        for (const btn of BUTTONS) {
-            buttons.appendChild(
-                buildMergeBoxButton(
-                    btn.command,
-                    btn.label,
-                    btn.tooltip,
-                    false,
-                    "secondary",
-                ),
-            );
-        }
+        appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
 
@@ -741,7 +745,7 @@ export function updateMergifyRow(row) {
 function _legacyPatch(row, variant = "default") {
     const derived = deriveQueueButtonState();
     const oldBtn = row.querySelector("[data-mergify-queue-btn]");
-    if (derived === "merged" || derived === "closed") {
+    if (derived === "merged" || derived === "closed" || derived === "batch") {
         if (oldBtn) {
             const newRow = buildLegacyRow(variant);
             row.replaceWith(newRow);
@@ -979,21 +983,13 @@ function buildButtonsRow(queueButtonState) {
     const row = document.createElement("div");
     row.style.cssText =
         "display:flex;align-items:center;gap:8px;padding:var(--base-size-16,16px)!important;flex-wrap:wrap;";
-    const buttons = document.createElement("div");
-    buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
-    buttons.appendChild(buildQueueButton(queueButtonState));
-    for (const btn of BUTTONS) {
-        buttons.appendChild(
-            buildMergeBoxButton(
-                btn.command,
-                btn.label,
-                btn.tooltip,
-                false,
-                "secondary",
-            ),
-        );
+    if (queueButtonState !== "batch") {
+        const buttons = document.createElement("div");
+        buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
+        buttons.appendChild(buildQueueButton(queueButtonState));
+        appendCommandButtons(buttons);
+        row.appendChild(buttons);
     }
-    row.appendChild(buttons);
     row.appendChild(buildBrandAndLinks());
     return row;
 }
@@ -1103,6 +1099,10 @@ function buildMergedRow() {
 }
 
 function deriveQueueButtonStateFromPayload(state) {
+    // Mirrors deriveQueueButtonState(): a batch PR renders no action buttons,
+    // and this must win over the payload state — a batch payload can say
+    // "checking", which would otherwise surface an active dequeue button.
+    if (isMergeQueueBatchPr()) return "batch";
     if (state === "checking" || state === "frozen" || state === "bisecting")
         return "queued";
     if (isPullRequestDraft()) return "draft";
