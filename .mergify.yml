@@ -6,8 +6,10 @@ shared:
       body: pr-body
     merge_method: squash
   CheckRuns: &CheckRuns
-    - check-success=test
-    - check-success=actionlint
+    - check-success=ci-gate
+  DefaultReviewCond: &DefaultReviewCond
+    - "#approved-reviews-by>=2"
+    - author = dependabot[bot]
 
 queue_rules:
   - name: automated updates
@@ -33,24 +35,28 @@ pull_request_rules:
   - name: request review
     conditions:
       - -author=dependabot[bot]
-      - -draft
+      - -merged
       - -closed
       - and: *CheckRuns
-      - "#approved-reviews-by=0"
       - "#changes-requested-reviews-by=0"
-      - "review-requested!=@devs"
+      - review-requested!=@devs
+      - not:
+          or: *DefaultReviewCond
     actions:
       request_reviews:
         teams:
           - devs
 
 merge_protections:
-  - name: Required Reviews
+  - name: 🤖 Continuous Integration
     if: []
     success_conditions:
-      - or:
-          - "#approved-reviews-by >= 2"
-          - author = dependabot[bot]
+      - and: *CheckRuns
+
+  - name: 👀 Review Requirements
+    if: []
+    success_conditions:
+      - or: *DefaultReviewCond
 
 merge_protections_settings:
   reporting_method: deployments
