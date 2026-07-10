@@ -796,3 +796,89 @@ describe("batch-PR queue link", () => {
         });
     });
 });
+
+const { deriveQueueButtonState } = require("../queue");
+
+function commandButtonsOf(row) {
+    return [...row.querySelectorAll("button")].filter(
+        (b) => !b.hasAttribute("data-mergify-queue-btn"),
+    );
+}
+
+describe("batch-PR row treatment", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+    });
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    test("deriveQueueButtonState returns 'batch' for an open batch PR", () => {
+        setPrDom({ draft: true, author: "mergify", baseRef: "main" });
+        expect(deriveQueueButtonState()).toBe("batch");
+    });
+
+    test("renders no queue or command buttons at all (legacy shape)", () => {
+        jest.isolateModules(() => {
+            // Pin the legacy path: a mqPayload mock left behind by an earlier
+            // suite would otherwise leak a rich payload into this row.
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () => null,
+            }));
+            const queue = require("../queue");
+            setPrDom({ draft: true, author: "mergify", baseRef: "main" });
+            for (const variant of ["default", "sidebar"]) {
+                const row = queue.buildMergifyRow(variant);
+                expect(row.querySelectorAll("button").length).toBe(0);
+                // The row stays informational: the queue link is still there.
+                const links = [...row.querySelectorAll("a")].map((a) =>
+                    a.textContent.trim(),
+                );
+                expect(links).toContain("queue");
+            }
+        });
+    });
+
+    test("renders no queue or command buttons at all (rich shape)", () => {
+        jest.isolateModules(() => {
+            // A "checking" payload maps to the queued (dequeue) button on a
+            // normal PR — the strongest case that batch must override it.
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () => ({
+                    source: "payload",
+                    payload: { state: "checking" },
+                }),
+            }));
+            const queue = require("../queue");
+            setPrDom({ draft: true, author: "mergify", baseRef: "main" });
+            for (const variant of ["default", "sidebar"]) {
+                const row = queue.buildMergifyRow(variant);
+                expect(row.dataset.mergifyShape).toBe("rich");
+                expect(row.querySelectorAll("button").length).toBe(0);
+                // The row stays informational: the queue link is still there.
+                const links = [...row.querySelectorAll("a")].map((a) =>
+                    a.textContent.trim(),
+                );
+                expect(links).toContain("queue");
+            }
+        });
+    });
+
+    test("a normal draft PR keeps its queue and command buttons", () => {
+        setPrDom({ draft: true, author: "octocat", baseRef: "main" });
+        const row = buildMergifyRow();
+        expect(row.querySelector("[data-mergify-queue-btn]")).not.toBeNull();
+        const buttons = commandButtonsOf(row);
+        expect(buttons.map((b) => b.textContent)).toEqual([
+            "Refresh",
+            "Rebase",
+            "Update",
+        ]);
+        for (const b of buttons) {
+            expect(b.hasAttribute("aria-disabled")).toBe(false);
+        }
+    });
+});
