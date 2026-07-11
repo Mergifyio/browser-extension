@@ -544,32 +544,40 @@ function appendBatchAwareLinks(appendLink) {
         appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
     }
     appendLink(
-        batch ? getBatchActivityLogLink() : getEventLogLink(),
+        batch ? getBatchActivityLogLink() : getPullRequestActivityLogLink(),
         "logs",
         LOGS_ICON_SVG,
     );
 }
 
-export function getEventLogLink() {
-    const data = getPullRequestData();
-    return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`;
-}
-
-// Activity log pivoted to a batch's own lifecycle events via its batch_pull
-// filter — a batch PR has no per-PR event log, so this replaces
-// getEventLogLink() on batch PRs. preset=Past1month widens the page's default
-// 1-hour window, which would render empty for any batch older than an hour
-// (a drained batch's post-mortem being the main use); same convention as the
+// Activity log scoped to the current repo and filtered by one PR-number
+// param. Targets /activity-log directly — the retired /event-logs URL only
+// survives as a redirect + param-translation shim for old bookmarks.
+// preset=Past1month widens the page's default 1-hour window, which would
+// render empty for events older than an hour; same convention as the
 // dashboard's own queue → activity-log deep link.
-export function getBatchActivityLogLink() {
+function getActivityLogLink(pullFilterName) {
     const data = getPullRequestData();
     const params = new URLSearchParams({
         login: data.org,
         repository: data.repo,
-        batch_pull: data.pull,
+        [pullFilterName]: data.pull,
         preset: "Past1month",
     });
     return `https://dashboard.mergify.com/activity-log?${params}`;
+}
+
+// Activity log filtered to the current PR's own events.
+export function getPullRequestActivityLogLink() {
+    return getActivityLogLink("pull_request");
+}
+
+// Activity log pivoted to a batch's lifecycle events via its batch_pull
+// filter — a batch PR has no per-PR event log, so this replaces
+// getPullRequestActivityLogLink() on batch PRs (a drained batch's post-mortem
+// being the main use).
+export function getBatchActivityLogLink() {
+    return getActivityLogLink("batch_pull");
 }
 
 // Base branch of the current PR, read from the classic PR UI. The

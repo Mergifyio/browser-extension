@@ -927,13 +927,13 @@ describe("batch-PR informational links", () => {
         expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
 
-    test("open non-batch PR keeps both the queue and per-PR event-log links", () => {
+    test("open non-batch PR keeps both the queue and per-PR activity-log links", () => {
         setPrDom({ author: "octocat", baseRef: "develop" });
         const row = buildMergifyRow();
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
         expect(hrefOf(row, "queue")).toContain("pull-request-number=42");
         expect(hrefOf(row, "logs")).toBe(
-            "https://dashboard.mergify.com/event-logs?login=acme&repository=widget&pullRequestNumber=42",
+            "https://dashboard.mergify.com/activity-log?login=acme&repository=widget&pull_request=42&preset=Past1month",
         );
     });
 
