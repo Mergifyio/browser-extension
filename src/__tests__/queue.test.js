@@ -901,32 +901,40 @@ describe("batch-PR informational links", () => {
             .map((a) => a.textContent.trim())
             .filter((t) => t === "queue" || t === "logs");
     }
-    function queueHrefOf(row) {
+    function hrefOf(row, label) {
         return [...row.querySelectorAll("a")]
-            .find((a) => a.textContent.trim() === "queue")
+            .find((a) => a.textContent.trim() === label)
             ?.getAttribute("href");
     }
 
-    test("open batch PR: queue link deep-links via batch_pr, no logs link", () => {
+    const BATCH_ACTIVITY_LOG_HREF =
+        "https://dashboard.mergify.com/activity-log?login=acme&repository=widget&batch_pull=42&preset=Past1month";
+
+    test("open batch PR: queue link deep-links via batch_pr, logs link via batch_pull", () => {
         setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual(["queue"]);
-        expect(queueHrefOf(row)).toBe(
+        expect(linkLabels(row)).toEqual(["queue", "logs"]);
+        expect(hrefOf(row, "queue")).toBe(
             "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&branch=develop&batch_pr=42",
         );
+        expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
 
-    test("closed batch PR: no queue link and no logs link", () => {
+    test("closed batch PR: no queue link, logs link via batch_pull", () => {
         setPrDom({ closed: true, author: "mergify" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual([]);
+        expect(linkLabels(row)).toEqual(["logs"]);
+        expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
 
-    test("open non-batch PR keeps both the queue and logs links", () => {
+    test("open non-batch PR keeps both the queue and per-PR event-log links", () => {
         setPrDom({ author: "octocat", baseRef: "develop" });
         const row = buildMergifyRow();
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
-        expect(queueHrefOf(row)).toContain("pull-request-number=42");
+        expect(hrefOf(row, "queue")).toContain("pull-request-number=42");
+        expect(hrefOf(row, "logs")).toBe(
+            "https://dashboard.mergify.com/event-logs?login=acme&repository=widget&pullRequestNumber=42",
+        );
     });
 
     test("closed human PR is unaffected — keeps both links", () => {
