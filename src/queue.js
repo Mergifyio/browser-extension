@@ -165,6 +165,17 @@ export function isMergeQueueBatchPr() {
     return isPullRequestDraft() && isPullRequestAuthoredByMergify();
 }
 
+// A batch PR page for the purpose of the informational links. While open a
+// batch PR is a draft (isMergeQueueBatchPr); once closed the draft pill is gone,
+// so fall back to Mergify authorship. This also matches closed Mergify
+// config/backport PRs, whose queue and logs links point nowhere useful anyway.
+export function isBatchPrContext() {
+    return (
+        isMergeQueueBatchPr() ||
+        (!isPullRequestOpen() && isPullRequestAuthoredByMergify())
+    );
+}
+
 export function wasMergedByMergify() {
     const timelineItems = document.querySelectorAll(".TimelineItem");
     for (const item of timelineItems) {
@@ -521,6 +532,21 @@ function appendCommandButtons(container) {
     }
 }
 
+// Append the queue and logs links via the caller's appendLink(href, text, svg),
+// honoring batch-PR restrictions: the queue link points at the batch peek
+// drawer while the batch PR is open and is dropped once it closes (the batch
+// has drained — nothing to open); the logs link is omitted on batch PRs
+// entirely (not supported for batches yet).
+function appendBatchAwareLinks(appendLink) {
+    const batch = isBatchPrContext();
+    if (!batch || isPullRequestOpen()) {
+        appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
+    }
+    if (!batch) {
+        appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
+    }
+}
+
 export function getEventLogLink() {
     const data = getPullRequestData();
     return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`;
@@ -652,8 +678,7 @@ function buildLegacySidebarRow() {
         link.appendChild(document.createTextNode(text));
         links.appendChild(link);
     }
-    appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
-    appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
+    appendBatchAwareLinks(appendLink);
     if (state === "merged") {
         const status = document.createElement("span");
         status.style.color = "var(--fgColor-muted, #7d8590)";
@@ -957,8 +982,7 @@ function buildBrandAndLinks() {
         link.appendChild(document.createTextNode(text));
         info.appendChild(link);
     }
-    appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
-    appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
+    appendBatchAwareLinks(appendLink);
 
     const brand = document.createElement("a");
     brand.href = "https://dashboard.mergify.com";
