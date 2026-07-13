@@ -674,12 +674,14 @@ const {
 } = require("../queue");
 const { injectFixtureInDOM } = require("./utils");
 
-// Minimal PR-page DOM: a draft status pill, the header-meta author link, and
-// the classic base-ref span. Any argument left undefined is omitted so a test
-// can exercise a single missing piece.
-function setPrDom({ draft, author, baseRef } = {}) {
+// Minimal PR-page DOM: a status pill (draft/closed), the header-meta author
+// link, and the classic base-ref span. Any argument left undefined is omitted
+// so a test can exercise a single missing piece.
+function setPrDom({ draft, closed, author, baseRef } = {}) {
     const parts = [];
     if (draft) parts.push('<span class="State" title="Status: Draft"></span>');
+    else if (closed)
+        parts.push('<span class="State" title="Status: Closed"></span>');
     if (author) {
         const href = author === "mergify" ? "/apps/mergify" : `/${author}`;
         parts.push(
@@ -880,5 +882,56 @@ describe("batch-PR row treatment", () => {
         for (const b of buttons) {
             expect(b.hasAttribute("aria-disabled")).toBe(false);
         }
+    });
+});
+
+describe("batch-PR informational links", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+    });
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    // The informational-link labels ("queue"/"logs"), excluding the Mergify
+    // brand anchor (whose textContent carries the inlined logo SVG).
+    function linkLabels(row) {
+        return [...row.querySelectorAll("a")]
+            .map((a) => a.textContent.trim())
+            .filter((t) => t === "queue" || t === "logs");
+    }
+    function queueHrefOf(row) {
+        return [...row.querySelectorAll("a")]
+            .find((a) => a.textContent.trim() === "queue")
+            ?.getAttribute("href");
+    }
+
+    test("open batch PR: queue link deep-links via batch_pr, no logs link", () => {
+        setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
+        const row = buildMergifyRow();
+        expect(linkLabels(row)).toEqual(["queue"]);
+        expect(queueHrefOf(row)).toBe(
+            "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&branch=develop&batch_pr=42",
+        );
+    });
+
+    test("closed batch PR: no queue link and no logs link", () => {
+        setPrDom({ closed: true, author: "mergify" });
+        const row = buildMergifyRow();
+        expect(linkLabels(row)).toEqual([]);
+    });
+
+    test("open non-batch PR keeps both the queue and logs links", () => {
+        setPrDom({ author: "octocat", baseRef: "develop" });
+        const row = buildMergifyRow();
+        expect(linkLabels(row)).toEqual(["queue", "logs"]);
+        expect(queueHrefOf(row)).toContain("pull-request-number=42");
+    });
+
+    test("closed human PR is unaffected — keeps both links", () => {
+        setPrDom({ closed: true, author: "octocat" });
+        const row = buildMergifyRow();
+        expect(linkLabels(row)).toEqual(["queue", "logs"]);
     });
 });
