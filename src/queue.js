@@ -535,21 +535,41 @@ function appendCommandButtons(container) {
 // Append the queue and logs links via the caller's appendLink(href, text, svg),
 // honoring batch-PR restrictions: the queue link points at the batch peek
 // drawer while the batch PR is open and is dropped once it closes (the batch
-// has drained — nothing to open); the logs link is omitted on batch PRs
-// entirely (not supported for batches yet).
+// has drained — nothing to open); the logs link points at the batch-filtered
+// activity log on batch PRs — kept on closed ones, where the batch's event
+// history is the post-mortem trail.
 function appendBatchAwareLinks(appendLink) {
     const batch = isBatchPrContext();
     if (!batch || isPullRequestOpen()) {
         appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
     }
-    if (!batch) {
-        appendLink(getEventLogLink(), "logs", LOGS_ICON_SVG);
-    }
+    appendLink(
+        batch ? getBatchActivityLogLink() : getEventLogLink(),
+        "logs",
+        LOGS_ICON_SVG,
+    );
 }
 
 export function getEventLogLink() {
     const data = getPullRequestData();
     return `https://dashboard.mergify.com/event-logs?login=${data.org}&repository=${data.repo}&pullRequestNumber=${data.pull}`;
+}
+
+// Activity log pivoted to a batch's own lifecycle events via its batch_pull
+// filter — a batch PR has no per-PR event log, so this replaces
+// getEventLogLink() on batch PRs. preset=Past1month widens the page's default
+// 1-hour window, which would render empty for any batch older than an hour
+// (a drained batch's post-mortem being the main use); same convention as the
+// dashboard's own queue → activity-log deep link.
+export function getBatchActivityLogLink() {
+    const data = getPullRequestData();
+    const params = new URLSearchParams({
+        login: data.org,
+        repository: data.repo,
+        batch_pull: data.pull,
+        preset: "Past1month",
+    });
+    return `https://dashboard.mergify.com/activity-log?${params}`;
 }
 
 // Base branch of the current PR, read from the classic PR UI. The
