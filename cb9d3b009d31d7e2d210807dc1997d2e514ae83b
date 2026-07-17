@@ -1,0 +1,1 @@
+Amend: fold in the dashboard-link URL-format fix (path-scoped /orgs/<org>/repos/<repo>/…; the retired ?login=&repository= form no longer resolves) — author-reported the activity-log link was dead. Covers activity-log + queue links, batch and non-batch.
