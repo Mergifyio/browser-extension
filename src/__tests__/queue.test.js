@@ -672,7 +672,7 @@ const {
     isPullRequestDraft,
     getMergeQueueLink,
 } = require("../queue");
-const { injectFixtureInDOM } = require("./utils");
+const { injectFixtureInDOM, LEGACY_ERA } = require("./utils");
 
 // Minimal PR-page DOM: a status pill (draft/closed), the header-meta author
 // link, and the classic base-ref span. Any argument left undefined is omitted
@@ -731,7 +731,7 @@ describe("batch-PR queue link", () => {
         });
 
         test("reads the base branch from the real GitHub PR fixture", () => {
-            injectFixtureInDOM("github_pr_opened");
+            injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
             expect(getBaseRef()).toBe("main");
         });
     });
@@ -757,7 +757,7 @@ describe("batch-PR queue link", () => {
         // is scoped to the header — a Mergify link elsewhere on the page must
         // not flip a human draft into a batch classification.
         test("false on a human-authored draft with Mergify links in the timeline (real fixture)", () => {
-            injectFixtureInDOM("github_pr_opened");
+            injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
             // Precondition: the fixture is a draft, so the false result below is
             // attributable to the author scoping, not the draft check.
             expect(isPullRequestDraft()).toBe(true);

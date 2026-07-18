@@ -34,7 +34,7 @@ const {
     injectStackNav,
     resetStackState,
 } = require("../mergify");
-const { loadFixture, injectFixtureInDOM } = require("./utils");
+const { loadFixture, injectFixtureInDOM, LEGACY_ERA } = require("./utils");
 
 describe("MergifyCache", () => {
     beforeEach(() => {
@@ -107,7 +107,7 @@ describe("findTimelineActions", () => {
     });
 
     it("should find the new merge box on pull requests without any timeline actions items", () => {
-        injectFixtureInDOM("github_pr_no_timeline_actions");
+        injectFixtureInDOM("github_pr_no_timeline_actions", LEGACY_ERA);
 
         const mergeBox = findTimelineActions();
 
@@ -117,7 +117,7 @@ describe("findTimelineActions", () => {
     });
 
     it("should find the new merge box on opened pull requests", () => {
-        injectFixtureInDOM("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
 
         const mergeBox = findTimelineActions();
 
@@ -128,7 +128,7 @@ describe("findTimelineActions", () => {
     });
 
     it("should find the new merge box on merged pull requests", () => {
-        injectFixtureInDOM("github_pr_merged");
+        injectFixtureInDOM("github_pr_merged", LEGACY_ERA);
 
         const mergeBox = findTimelineActions();
 
@@ -355,7 +355,7 @@ describe("isPullRequestOpen", () => {
     });
 
     it("should detect open PR via legacy span.State (fixture)", () => {
-        injectFixtureInDOM("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
 
         const status = isPullRequestOpen();
 
@@ -363,7 +363,7 @@ describe("isPullRequestOpen", () => {
     });
 
     it("should detect merged PR via legacy span.State (fixture)", () => {
-        injectFixtureInDOM("github_pr_merged");
+        injectFixtureInDOM("github_pr_merged", LEGACY_ERA);
 
         const status = isPullRequestOpen();
 
@@ -851,25 +851,25 @@ describe("isMergifyEnabledOnTheRepo caching behavior", () => {
     });
 
     it("should return true if Mergify is enabled on the repo with config", () => {
-        injectFixtureInDOM("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
         const isEnabled = isMergifyEnabledOnTheRepo(true);
         expect(isEnabled).toBe(true);
     });
 
     it("should return true if Mergify is enabled on the repo with no config", () => {
-        injectFixtureInDOM("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
         const isEnabled = isMergifyEnabledOnTheRepo(false);
         expect(isEnabled).toBe(true);
     });
 
     it("should return false if Mergify is not enabled on the repo", () => {
-        injectFixtureInDOM("github_pr_no_mergify");
+        injectFixtureInDOM("github_pr_no_mergify", LEGACY_ERA);
         const isEnabled = isMergifyEnabledOnTheRepo(false);
         expect(isEnabled).toBe(false);
     });
 
     it("should still return true if cache have false and the repo is enabled", () => {
-        injectFixtureInDOM("github_pr_opened");
+        injectFixtureInDOM("github_pr_opened", LEGACY_ERA);
         const cache = new MergifyCache();
         cache.update("cypress-io", "cypress", false);
 
