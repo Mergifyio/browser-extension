@@ -151,9 +151,14 @@ export function isPullRequestDraft() {
 }
 
 // True when the PR opener is the Mergify GitHub App. Scope the mergify-author
-// check to the PR header meta so a Mergify bot *comment* further down the
-// timeline can't be mistaken for the PR author.
+// check to the PR description (the opening comment) so a Mergify bot *comment*
+// further down the timeline can't be mistaken for the PR author.
 export function isPullRequestAuthoredByMergify() {
+    // Current PR page: the opening comment carries the pull-body marker; its
+    // author is the PR opener. Present across DOM eras, so it's the primary
+    // scope. Falls back to the classic header meta for the minimal/legacy DOM.
+    const prBody = document.querySelector(".js-command-palette-pull-body");
+    if (prBody) return isMergifyBotComment(prBody);
     const header = document.querySelector(".gh-header-meta");
     return header ? isMergifyBotComment(header) : false;
 }
@@ -586,11 +591,19 @@ export function getBatchActivityLogLink() {
     return getActivityLogLink("batch_pull");
 }
 
-// Base branch of the current PR, read from the classic PR UI. The
-// `.commit-ref.base-ref` span is titled "owner/repo:branch"; ref names can't
-// contain ":", so everything after the first colon is the branch (which may
-// itself contain "/").
+// Base branch of the current PR. The header reads "into <base> from <head>", so
+// the first branch-name link is the base; read the branch off its /tree/<branch>
+// href so a slashed ref survives. Falls back to the classic PR UI's
+// `.commit-ref.base-ref` span (titled "owner/repo:branch"; ref names can't
+// contain ":", so everything after the first colon is the branch).
 export function getBaseRef() {
+    const href = document
+        .querySelector('a[class*="BranchName"]')
+        ?.getAttribute("href");
+    const marker = "/tree/";
+    const idx = href ? href.indexOf(marker) : -1;
+    if (idx !== -1) return href.slice(idx + marker.length) || null;
+
     const title = document
         .querySelector(".commit-ref.base-ref")
         ?.getAttribute("title");
@@ -648,6 +661,10 @@ function buildLegacyDefaultRow() {
         row.appendChild(buttons);
     }
 
+    // Batch PRs carry no action buttons, so the pill is what tells the reader
+    // the row belongs to a merge-queue batch draft rather than being empty.
+    if (state === "batch") row.appendChild(buildStatePill("batch"));
+
     const info = buildBrandAndLinks();
 
     if (state === "merged") {
@@ -686,6 +703,9 @@ function buildLegacySidebarRow() {
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
+
+    // See buildLegacyDefaultRow: the pill labels the button-less batch row.
+    if (state === "batch") row.appendChild(buildStatePill("batch"));
 
     const secondLine = document.createElement("div");
     secondLine.style.cssText =
@@ -905,6 +925,7 @@ const STATE_PILL_COPY = {
     },
     merged: { label: "Merged", note: "" },
     dequeued: { label: "Dequeued", note: "removed from queue" },
+    batch: { label: "Merge-queue batch PR", note: "" },
 };
 
 const STATE_PILL_COLORS = {
@@ -943,6 +964,14 @@ const STATE_PILL_COLORS = {
         bg: "#da363322",
         fg: "#f85149",
         border: "#da363366",
+        pulse: false,
+    },
+    // Informational, not a live queue state: a calm accent-blue that reads as
+    // "for your information" rather than pending/error.
+    batch: {
+        bg: "#1f6feb22",
+        fg: "#58a6ff",
+        border: "#1f6feb55",
         pulse: false,
     },
 };
@@ -1045,6 +1074,8 @@ function buildButtonsRow(queueButtonState) {
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
+    // See buildLegacyDefaultRow: the pill labels the button-less batch row.
+    if (queueButtonState === "batch") row.appendChild(buildStatePill("batch"));
     row.appendChild(buildBrandAndLinks());
     return row;
 }

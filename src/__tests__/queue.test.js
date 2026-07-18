@@ -672,7 +672,7 @@ const {
     isPullRequestDraft,
     getMergeQueueLink,
 } = require("../queue");
-const { injectFixtureInDOM, LEGACY_ERA } = require("./utils");
+const { injectFixtureInDOM, LEGACY_ERA, CURRENT_ERA } = require("./utils");
 
 // Minimal PR-page DOM: a status pill (draft/closed), the header-meta author
 // link, and the classic base-ref span. Any argument left undefined is omitted
@@ -869,10 +869,26 @@ describe("batch-PR row treatment", () => {
         });
     });
 
+    test("labels the button-less row with a 'Merge-queue batch PR' pill", () => {
+        setPrDom({ draft: true, author: "mergify", baseRef: "main" });
+        for (const variant of ["default", "sidebar"]) {
+            const row = buildMergifyRow(variant);
+            const pill = row.querySelector(
+                '[data-mergify-state-pill][data-state="batch"]',
+            );
+            expect(pill).not.toBeNull();
+            expect(pill.textContent.trim()).toBe("Merge-queue batch PR");
+        }
+    });
+
     test("a normal draft PR keeps its queue and command buttons", () => {
         setPrDom({ draft: true, author: "octocat", baseRef: "main" });
         const row = buildMergifyRow();
         expect(row.querySelector("[data-mergify-queue-btn]")).not.toBeNull();
+        // ... and shows no batch pill: the pill is exclusive to batch PRs.
+        expect(
+            row.querySelector('[data-mergify-state-pill][data-state="batch"]'),
+        ).toBeNull();
         const buttons = commandButtonsOf(row);
         expect(buttons.map((b) => b.textContent)).toEqual([
             "Refresh",
@@ -941,5 +957,84 @@ describe("batch-PR informational links", () => {
         setPrDom({ closed: true, author: "octocat" });
         const row = buildMergifyRow();
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
+    });
+});
+
+describe("batch-PR real fixtures (current GitHub DOM)", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState(
+            {},
+            "",
+            "/mergify-sandbox/browser-extension-fixtures/pull/4",
+        );
+    });
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    // Guards against selector drift: detection reads the current React PR header
+    // (pull-body author marker + branch-name links), not the retired
+    // .gh-header-meta / .commit-ref.base-ref the earlier synthetic tests build.
+    test("detects the batch PR and reads its base ref on the current DOM", () => {
+        injectFixtureInDOM("github_pr_batch_open", CURRENT_ERA);
+        expect(isMergeQueueBatchPr()).toBe(true);
+        expect(getBaseRef()).toBe("main");
+        expect(deriveQueueButtonState()).toBe("batch");
+    });
+
+    test("renders the batch row: pill, no buttons, live queue/logs links", () => {
+        injectFixtureInDOM("github_pr_batch_open", CURRENT_ERA);
+        const row = buildMergifyRow();
+        const pill = row.querySelector(
+            '[data-mergify-state-pill][data-state="batch"]',
+        );
+        expect(pill?.textContent.trim()).toBe("Merge-queue batch PR");
+        expect(row.querySelectorAll("button").length).toBe(0);
+        const links = [...row.querySelectorAll("a")].map((a) =>
+            a.textContent.trim(),
+        );
+        expect(links).toContain("queue");
+        expect(links).toContain("logs");
+        // Queue link deep-links to the batch drawer, branch = the base ref.
+        const queueHref = [...row.querySelectorAll("a")].find(
+            (a) => a.textContent.trim() === "queue",
+        )?.href;
+        expect(queueHref).toContain("batch_pr=4");
+        expect(queueHref).toContain("branch=main");
+    });
+
+    // Regression for the dequeue-button hazard. Real merge-queue batch PRs carry
+    // NO "Mergify Merge Queue" check (verified against production batch PRs — the
+    // check lives on the embarked PRs), so the fixture has none; the batch guard
+    // is what guarantees no live "Remove from merge queue" button here. The
+    // complementary "even when a queued signal IS present" case is covered by the
+    // rich-payload ("checking") test in batch-PR row treatment.
+    test("shows no live dequeue button", () => {
+        injectFixtureInDOM("github_pr_batch_open", CURRENT_ERA);
+        const row = buildMergifyRow();
+        const dequeue = [...row.querySelectorAll("button")].find((b) =>
+            /remove from merge queue/i.test(b.textContent),
+        );
+        expect(dequeue).toBeUndefined();
+        expect(row.querySelector("[data-mergify-queue-btn]")).toBeNull();
+    });
+
+    // A closed batch PR loses its draft pill, so it's no longer detected as an
+    // open batch (isMergeQueueBatchPr) — but Mergify authorship still marks it as
+    // batch context, so the row drops the (now pointless) queue link and keeps
+    // the batch-scoped activity log. Proves isPullRequestAuthoredByMergify reads
+    // the Mergify author on a *closed* PR's current DOM too.
+    test("closed batch PR: no queue link, batch-scoped logs link, no buttons", () => {
+        injectFixtureInDOM("github_pr_batch_closed", CURRENT_ERA);
+        const row = buildMergifyRow();
+        const labels = [...row.querySelectorAll("a")]
+            .map((a) => a.textContent.trim())
+            .filter((t) => t === "queue" || t === "logs");
+        expect(labels).toEqual(["logs"]);
+        const logsHref = [...row.querySelectorAll("a")].find(
+            (a) => a.textContent.trim() === "logs",
+        )?.href;
+        expect(logsHref).toContain("batch_pull=4");
     });
 });
