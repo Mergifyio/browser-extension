@@ -1,0 +1,1 @@
+Reworked #618's current-DOM parity into a dual-era suite (fixtureDomEras.test.js): the same detection checks (isPullRequestOpen/isPullRequestDraft/wasMergedByMergify/app-avatar) now run against BOTH github_dom_2025_02 and github_dom_2026_07 via describe.each, with per-era expected values (the eras were captured from different PRs, so states differ).
