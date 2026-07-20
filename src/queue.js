@@ -141,6 +141,13 @@ export function isPullRequestOpen() {
 export function isPullRequestDraft() {
     if (document.querySelector("span[data-status=draft]")) return true;
 
+    // On the current DOM the viewed PR's own pill is span[data-status], while
+    // cross-referenced PRs in the timeline render legacy span.State badges —
+    // e.g. a queued PR referencing its draft batch PR. When any data-status
+    // pill exists it is authoritative; falling back to span.State would read
+    // another PR's badge.
+    if (document.querySelector("span[data-status]")) return false;
+
     const oldStatusBadge = document.querySelector("span.State");
     if (oldStatusBadge) {
         const status = oldStatusBadge.getAttribute("title")?.split(": ")[1];

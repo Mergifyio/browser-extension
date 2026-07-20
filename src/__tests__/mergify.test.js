@@ -409,6 +409,15 @@ describe("isPullRequestDraft", () => {
         expect(isPullRequestDraft()).toBe(false);
     });
 
+    it("should ignore a cross-referenced PR's legacy draft badge when the viewed PR has a data-status pill", () => {
+        // A queued PR's timeline references its draft batch PR, whose state
+        // renders as a legacy span.State badge (github_dom_2026_07 queued page).
+        document.body.innerHTML =
+            '<span data-status="pullOpened">Open</span>' +
+            '<span class="State" title="Status: Draft">Draft</span>';
+        expect(isPullRequestDraft()).toBe(false);
+    });
+
     it("should return false when no status element is found", () => {
         document.body.innerHTML = "<div>No status here</div>";
         expect(isPullRequestDraft()).toBe(false);
