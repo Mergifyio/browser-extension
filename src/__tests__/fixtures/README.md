@@ -54,14 +54,13 @@ listed in each era's `description`.
 | field | meaning |
 | -- | -- |
 | `path` | PR path the page was captured from; set as the test URL |
-| `state` | the PR's real state: `open` \| `draft` \| `merged` \| `closed` |
+| `state` | the PR's real state: `open` \| `draft` \| `merged` \| `closed`. Every state reader must resolve exactly this, on every era |
 | `mergifyDetectableFromPage` | page alone proves Mergify is on the repo (app avatar); false on quiet pages of enabled repos where checks are collapsed |
 | `authoredByMergify` | header-scoped Mergify-authorship detection outcome |
 | `mergedByMergify` | merged-commit timeline entry authored by Mergify |
 | `queued` | a Mergify Merge Queue check reports the PR as queued |
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |
-| `dataStatusPillState` | state readable from `span[data-status]` alone; `null` on eras that predate that attribute |
 | `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 
 ## Recording a new era

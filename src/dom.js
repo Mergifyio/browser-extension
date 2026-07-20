@@ -93,9 +93,36 @@ export const PR_STATUS_SELECTORS = [
     { selector: 'span[data-status="pullClosed"]', status: "closed" },
 ];
 
+const LEGACY_STATE_BADGE_STATUSES = {
+    open: "open",
+    draft: "draft",
+    merged: "merged",
+    closed: "closed",
+};
+
+// The single place the PR state is read, for the page itself and for pages
+// fetched to resolve another PR's status. Returns null when the scope carries
+// no readable state — callers decide what to assume.
 export function readPrStatusFromDocument(scope) {
     for (const { selector, status } of PR_STATUS_SELECTORS) {
         if (scope.querySelector(selector)) return status;
     }
+
+    // A data-status pill anywhere means this DOM generation labels the viewed
+    // PR that way, so the legacy badge below belongs to a cross-referenced PR
+    // (a queued PR's timeline shows its batch PR's badge) and must not be read
+    // as this one's state.
+    if (scope.querySelector("span[data-status]")) return null;
+
+    const legacyBadge = scope.querySelector("span.State");
+    if (legacyBadge) {
+        const label = legacyBadge.getAttribute("title")?.split(": ")[1];
+        if (!label) {
+            console.warn("Can't find pull request status");
+            return null;
+        }
+        return LEGACY_STATE_BADGE_STATUSES[label.toLowerCase()] ?? null;
+    }
+
     return null;
 }

@@ -12,7 +12,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": null,
             "queueButtonState": "draft"
         },
         "github_pr_merged": {
@@ -24,7 +23,6 @@
             "queued": false,
             "baseRef": null,
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": null,
             "queueButtonState": "closed"
         },
         "github_pr_no_mergify": {
@@ -36,7 +34,6 @@
             "queued": false,
             "baseRef": "develop",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": null,
             "queueButtonState": "unqueued"
         },
         "github_pr_no_timeline_actions": {
@@ -48,7 +45,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": [],
-            "dataStatusPillState": null,
             "queueButtonState": "draft"
         }
     }

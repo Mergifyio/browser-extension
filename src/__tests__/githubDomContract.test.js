@@ -93,10 +93,10 @@ describe.each(listGitHubDomEras())("%s", (era) => {
             expect(isPullRequestDraft()).toBe(expected.state === "draft");
         });
 
-        it("resolves the data-status pill (null on eras that predate it)", () => {
-            expect(readPrStatusFromDocument(document)).toBe(
-                expected.dataStatusPillState,
-            );
+        // The reader stack dots use for other PRs' pages. It must resolve the
+        // real state on every era, not just the one carrying data-status.
+        it("reads the pull request state from the page scope", () => {
+            expect(readPrStatusFromDocument(document)).toBe(expected.state);
         });
 
         it("detects Mergify from the page alone when the page carries the signal", () => {

@@ -12,7 +12,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "open",
             "queueButtonState": "unqueued"
         },
         "github_pr_draft": {
@@ -24,7 +23,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "draft",
             "queueButtonState": "draft"
         },
         "github_pr_queued": {
@@ -36,7 +34,6 @@
             "queued": true,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "open",
             "queueButtonState": "queued"
         },
         "github_pr_batch_open": {
@@ -48,7 +45,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "draft",
             "queueButtonState": "batch"
         },
         "github_pr_no_timeline_actions": {
@@ -60,7 +56,6 @@
             "queued": false,
             "mergeBoxRowVariants": ["default"],
             "baseRef": "main",
-            "dataStatusPillState": "closed",
             "queueButtonState": "closed"
         },
         "github_pr_merged": {
@@ -72,7 +67,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "merged",
             "queueButtonState": "merged"
         },
         "github_pr_batch_closed": {
@@ -84,7 +78,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "closed",
             "queueButtonState": "closed"
         },
         "github_pr_no_mergify": {
@@ -96,7 +89,6 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "dataStatusPillState": "open",
             "queueButtonState": "unqueued"
         }
     }

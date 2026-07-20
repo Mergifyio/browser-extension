@@ -1520,6 +1520,16 @@ describe("fetchPrStatus", () => {
         await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("draft");
     });
 
+    // Stack status dots resolve other PRs by fetching their pages. Enterprise
+    // Server serves the legacy badge, so reading only data-status left every
+    // dot on those deployments stuck at "unknown".
+    it("resolves state from a legacy-DOM page", async () => {
+        mockFetchHtml(
+            '<span class="State" title="Status: Merged">Merged</span>',
+        );
+        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("merged");
+    });
+
     it("returns 'unknown' on non-OK response", async () => {
         mockFetchHtml("", false);
         await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("unknown");
