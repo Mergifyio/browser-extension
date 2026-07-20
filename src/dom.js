@@ -30,6 +30,30 @@ export function isMergifyBotComment(container) {
     return false;
 }
 
+// Login of the Mergify GitHub App as it appears in GitHub's embedded payload.
+export const MERGIFY_APP_LOGIN = "mergify[bot]";
+
+// GitHub's pull request app hydrates from a JSON blob rather than exposing
+// every field as markup. Author and base branch live only here on the current
+// DOM — the elements that used to carry them (.gh-header-meta,
+// .commit-ref.base-ref) are gone. Absent on the DOM generation that GitHub
+// Enterprise Server still serves, so callers keep their element-based path as
+// a fallback.
+export function readEmbeddedPullRequestPayload(scope = document) {
+    const holder = scope.querySelector(
+        'script[type="application/json"][data-target="react-app.embeddedData"]',
+    );
+    if (!holder?.textContent) return null;
+    try {
+        return (
+            JSON.parse(holder.textContent)?.payload?.pullRequestsLayoutRoute
+                ?.pullRequest ?? null
+        );
+    } catch (_e) {
+        return null;
+    }
+}
+
 export function getPullRequestData() {
     const url = new URL(window.location.href);
     const parts = url.pathname.split("/");

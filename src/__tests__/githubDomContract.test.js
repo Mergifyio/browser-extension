@@ -23,6 +23,7 @@ const {
 } = require("./utils");
 const {
     MERGE_BOX_ROW_ATTR,
+    deriveQueueButtonState,
     getBaseRef,
     injectRowIntoMergeBox,
     isMergeQueueBatchPr,
@@ -123,6 +124,13 @@ describe.each(listGitHubDomEras())("%s", (era) => {
 
         it("reads the base branch", () => {
             expect(getBaseRef()).toBe(expected.baseRef);
+        });
+
+        // The rendered outcome of the detectors above: "batch" is what keeps
+        // the command buttons off a merge-queue batch PR, where posting a
+        // Mergify command would invalidate the running batch.
+        it("derives the queue button state the page calls for", () => {
+            expect(deriveQueueButtonState()).toBe(expected.queueButtonState);
         });
 
         it("injects the merge-box row into the era's anchors, idempotently", () => {

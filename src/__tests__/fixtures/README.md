@@ -62,6 +62,7 @@ listed in each era's `description`.
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |
 | `dataStatusPillState` | state readable from `span[data-status]` alone; `null` on eras that predate that attribute |
+| `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 
 ## Recording a new era
 

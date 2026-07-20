@@ -669,6 +669,7 @@ describe("scheduleQueueStatePoll", () => {
 const {
     getBaseRef,
     isMergeQueueBatchPr,
+    isPullRequestAuthoredByMergify,
     getMergeQueueLink,
 } = require("../queue");
 
@@ -693,6 +694,84 @@ function setPrDom({ draft, closed, author, baseRef } = {}) {
     }
     document.body.innerHTML = parts.join("");
 }
+
+// The payload GitHub embeds for its own hydration. `json` is written verbatim
+// so a test can supply malformed content.
+function setEmbeddedPayload(json) {
+    const holder = document.createElement("script");
+    holder.setAttribute("type", "application/json");
+    holder.setAttribute("data-target", "react-app.embeddedData");
+    holder.textContent = json;
+    document.body.appendChild(holder);
+}
+
+function payloadWith(pullRequest) {
+    return JSON.stringify({
+        payload: { pullRequestsLayoutRoute: { pullRequest } },
+    });
+}
+
+describe("embedded payload as the primary metadata source", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+    });
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    test("reads Mergify authorship from the payload with no header meta present", () => {
+        setEmbeddedPayload(
+            payloadWith({ author: { login: "mergify[bot]" }, baseBranch: "x" }),
+        );
+        expect(isPullRequestAuthoredByMergify()).toBe(true);
+    });
+
+    test("reads a human author from the payload", () => {
+        setEmbeddedPayload(
+            payloadWith({ author: { login: "octocat" }, baseBranch: "x" }),
+        );
+        expect(isPullRequestAuthoredByMergify()).toBe(false);
+    });
+
+    test("payload authorship wins over a Mergify link elsewhere in the page", () => {
+        setPrDom({ draft: true, author: "mergify" });
+        setEmbeddedPayload(payloadWith({ author: { login: "octocat" } }));
+        expect(isPullRequestAuthoredByMergify()).toBe(false);
+    });
+
+    test("reads the base branch from the payload, preferring it over the legacy span", () => {
+        setPrDom({ baseRef: "from-span" });
+        setEmbeddedPayload(payloadWith({ baseBranch: "from-payload" }));
+        expect(getBaseRef()).toBe("from-payload");
+    });
+
+    test("falls back to the legacy elements when no payload is present", () => {
+        setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
+        expect(isPullRequestAuthoredByMergify()).toBe(true);
+        expect(getBaseRef()).toBe("develop");
+    });
+
+    test("falls back to the legacy elements when the payload is malformed", () => {
+        setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
+        setEmbeddedPayload("{not json");
+        expect(isPullRequestAuthoredByMergify()).toBe(true);
+        expect(getBaseRef()).toBe("develop");
+    });
+
+    test("classifies a payload-authored draft as a merge-queue batch PR", () => {
+        setPrDom({ draft: true });
+        setEmbeddedPayload(
+            payloadWith({
+                author: { login: "mergify[bot]" },
+                baseBranch: "main",
+            }),
+        );
+        expect(isMergeQueueBatchPr()).toBe(true);
+        expect(getMergeQueueLink()).toContain("branch=main");
+        expect(getMergeQueueLink()).toContain("batch_pr=42");
+    });
+});
 
 describe("batch-PR queue link", () => {
     beforeEach(() => {
