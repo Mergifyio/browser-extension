@@ -769,7 +769,7 @@ describe("batch-PR queue link", () => {
         test("deep-links to the batch peek drawer via batch_pr, using the base ref as branch", () => {
             setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
             expect(getMergeQueueLink()).toBe(
-                "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&branch=develop&batch_pr=42",
+                "https://dashboard.mergify.com/orgs/acme/repos/widget/queues/status?branch=develop&batch_pr=42",
             );
         });
 
@@ -786,14 +786,14 @@ describe("batch-PR queue link", () => {
         test("omits branch (dashboard falls back) when the base ref can't be read", () => {
             setPrDom({ draft: true, author: "mergify" });
             expect(getMergeQueueLink()).toBe(
-                "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&batch_pr=42",
+                "https://dashboard.mergify.com/orgs/acme/repos/widget/queues/status?batch_pr=42",
             );
         });
 
         test("non-batch PR keeps the branch-scoped queue link", () => {
             setPrDom({ baseRef: "develop" });
             expect(getMergeQueueLink()).toBe(
-                "https://dashboard.mergify.com/queues?login=acme&repository=widget&branch=main&pull-request-number=42",
+                "https://dashboard.mergify.com/orgs/acme/repos/widget/queues?branch=main&pull-request-number=42",
             );
         });
     });
@@ -908,14 +908,14 @@ describe("batch-PR informational links", () => {
     }
 
     const BATCH_ACTIVITY_LOG_HREF =
-        "https://dashboard.mergify.com/activity-log?login=acme&repository=widget&batch_pull=42&preset=Past1month";
+        "https://dashboard.mergify.com/orgs/acme/repos/widget/activity-log?batch_pull=42&preset=Past1month";
 
     test("open batch PR: queue link deep-links via batch_pr, logs link via batch_pull", () => {
         setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
         const row = buildMergifyRow();
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
         expect(hrefOf(row, "queue")).toBe(
-            "https://dashboard.mergify.com/queues/status?login=acme&repository=widget&branch=develop&batch_pr=42",
+            "https://dashboard.mergify.com/orgs/acme/repos/widget/queues/status?branch=develop&batch_pr=42",
         );
         expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
@@ -933,7 +933,7 @@ describe("batch-PR informational links", () => {
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
         expect(hrefOf(row, "queue")).toContain("pull-request-number=42");
         expect(hrefOf(row, "logs")).toBe(
-            "https://dashboard.mergify.com/activity-log?login=acme&repository=widget&pull_request=42&preset=Past1month",
+            "https://dashboard.mergify.com/orgs/acme/repos/widget/activity-log?pull_request=42&preset=Past1month",
         );
     });
 
