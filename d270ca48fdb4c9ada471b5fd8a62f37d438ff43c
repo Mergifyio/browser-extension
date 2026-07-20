@@ -1,0 +1,1 @@
+restructured: sanitization split into its own bottom PR so the fixture moves are pure renames; dataStatusPillState is no longer introduced (state coverage arrives with the scoped-reader fix)
