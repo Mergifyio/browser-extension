@@ -1,0 +1,1 @@
+restructured: now flips the pins recorded by the era manifest (baseRef, batch authorship, open batch page queueButtonState draft->batch) instead of introducing the queueButtonState field itself
