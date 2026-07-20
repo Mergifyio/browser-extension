@@ -17,6 +17,10 @@ fixtures/
     manifest.json
     github_pr_opened.html
     ...
+  github_dom_2026_07/                # current github.com React DOM
+    manifest.json
+    github_pr_opened.html
+    ...
 ```
 
 Root-level files are fragments or non-PR pages loaded with

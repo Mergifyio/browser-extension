@@ -8,6 +8,13 @@
 // Keep every test body synchronous: importing ../mergify starts the page
 // orchestrator (MutationObserver + requestAnimationFrame), and only async
 // bodies would let its background work interleave with assertions.
+//
+// Parse each page once per describe, never per test: jsdom retains every tree
+// it parses (a cleared body does not free it), so memory grows with the number
+// of parses, not with the number of pages held at once. Re-injecting a ~500KB
+// page for each assertion below costs ~22MB that is never returned, which
+// overruns the CI worker's heap as eras accumulate. Only the merge-box test
+// mutates the DOM, and it reverts itself in afterEach.
 const {
     injectEraFixtureInDOM,
     listEraFixtureFiles,
@@ -39,6 +46,14 @@ describe.each(listGitHubDomEras())("%s", (era) => {
     });
 
     describe.each(Object.entries(manifest.pages))("%s", (page, expected) => {
+        beforeAll(() => {
+            injectEraFixtureInDOM(era, page);
+        });
+
+        afterAll(() => {
+            document.body.innerHTML = "";
+        });
+
         beforeEach(() => {
             localStorage.clear();
             resetQueueState();
@@ -56,11 +71,16 @@ describe.each(listGitHubDomEras())("%s", (era) => {
                 "",
                 expected.path,
             );
-            injectEraFixtureInDOM(era, page);
         });
 
         afterEach(() => {
-            document.body.innerHTML = "";
+            // Return the shared page to its recorded state: the merge-box test
+            // is the only one that writes to it.
+            for (const row of document.querySelectorAll(
+                `[${MERGE_BOX_ROW_ATTR}]`,
+            )) {
+                row.remove();
+            }
             resetQueueState();
             localStorage.clear();
         });
