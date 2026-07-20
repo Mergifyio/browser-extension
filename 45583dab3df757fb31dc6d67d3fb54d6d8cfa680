@@ -1,0 +1,1 @@
+625: stripped stray CSI-u terminal escapes that corrupted searchConfigFound.html (restores contact_requests_implicit_opt_in and data-turbo-track); corrected the era-ordering comment in utils.js. Both from Copilot review.
