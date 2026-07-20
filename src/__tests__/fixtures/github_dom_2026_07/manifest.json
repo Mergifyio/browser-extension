@@ -1,0 +1,95 @@
+{
+    "era": "github_dom_2026_07",
+    "recordedAt": "2026-07-19",
+    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running. Gone vs 2025_02: span.State, .merge-pr, .gh-header-meta (so Mergify authorship and batch-PR classification resolve false even on real batch PRs), .commit-ref.base-ref (base branch only lives in embedded JSON), and the Mergify app avatar on pages whose checks are collapsed (so page-alone detection fails on quiet PRs of Mergify-enabled repos). Captured from synthetic PRs on mergify-sandbox repos, sanitized.",
+    "pages": {
+        "github_pr_opened": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/6",
+            "state": "open",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "unqueued"
+        },
+        "github_pr_draft": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/7",
+            "state": "draft",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "draft"
+        },
+        "github_pr_queued": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/8",
+            "state": "open",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": true,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "queued"
+        },
+        "github_pr_batch_open": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/9",
+            "state": "draft",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "draft"
+        },
+        "github_pr_no_timeline_actions": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/3",
+            "state": "closed",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "mergeBoxRowVariants": ["default"],
+            "baseRef": null,
+            "queueButtonState": "closed"
+        },
+        "github_pr_merged": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/1",
+            "state": "merged",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": true,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "merged"
+        },
+        "github_pr_batch_closed": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/4",
+            "state": "closed",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "closed"
+        },
+        "github_pr_no_mergify": {
+            "path": "/mergify-sandbox/browser-extension-fixtures-no-mergify/pull/2",
+            "state": "open",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "unqueued"
+        }
+    }
+}
