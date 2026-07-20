@@ -76,3 +76,10 @@ npm test
 ```
 
 The `__tests__` folder is automatically excluded from the development build.
+
+Tests run under Jest + jsdom against recorded GitHub PR pages. GitHub serves
+several DOM generations at once (A/B rollouts, GHES), so full-page fixtures
+are organized into DOM-era directories and
+`src/__tests__/githubDomContract.test.js` runs the extension's detectors
+against every recorded era — see `src/__tests__/fixtures/README.md` for the
+layout, the manifest format, and how a new era gets recorded.
