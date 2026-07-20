@@ -1,0 +1,1 @@
+Sanitize the identifiers Copilot flagged: fetch-nonce, request-id, html-safe-nonce, shared-web-socket session URL and data-session-id, and the capturer's display name and numeric user id, across both fixture eras
