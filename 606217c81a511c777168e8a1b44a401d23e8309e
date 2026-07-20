@@ -1,0 +1,1 @@
+restructured: absorbed #630's reader unification so the data-status precedence rule lands once, in its final home; retitled fix: since it changes GHES behavior (stack status dots)
