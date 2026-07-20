@@ -550,6 +550,14 @@ function appendBatchAwareLinks(appendLink) {
     );
 }
 
+// Path-scoped dashboard base for the current repo. The dashboard routes on
+// /orgs/<org>/repos/<repo>/…; the retired ?login=&repository= query form no
+// longer resolves.
+function getDashboardRepoBase() {
+    const data = getPullRequestData();
+    return `https://dashboard.mergify.com/orgs/${encodeURIComponent(data.org)}/repos/${encodeURIComponent(data.repo)}`;
+}
+
 // Activity log scoped to the current repo and filtered by one PR-number
 // param. Targets /activity-log directly — the retired /event-logs URL only
 // survives as a redirect + param-translation shim for old bookmarks.
@@ -559,12 +567,10 @@ function appendBatchAwareLinks(appendLink) {
 function getActivityLogLink(pullFilterName) {
     const data = getPullRequestData();
     const params = new URLSearchParams({
-        login: data.org,
-        repository: data.repo,
         [pullFilterName]: data.pull,
         preset: "Past1month",
     });
-    return `https://dashboard.mergify.com/activity-log?${params}`;
+    return `${getDashboardRepoBase()}/activity-log?${params}`;
 }
 
 // Activity log filtered to the current PR's own events.
@@ -602,17 +608,14 @@ export function getMergeQueueLink() {
     // the drawer, and degrades to the branch-scoped queue view for a drained
     // batch or an older dashboard.
     if (isMergeQueueBatchPr()) {
-        const params = new URLSearchParams({
-            login: data.org,
-            repository: data.repo,
-        });
+        const params = new URLSearchParams();
         const baseRef = getBaseRef();
         if (baseRef) params.set("branch", baseRef);
         params.set("batch_pr", data.pull);
-        return `https://dashboard.mergify.com/queues/status?${params}`;
+        return `${getDashboardRepoBase()}/queues/status?${params}`;
     }
 
-    return `https://dashboard.mergify.com/queues?login=${data.org}&repository=${data.repo}&branch=main&pull-request-number=${data.pull}`;
+    return `${getDashboardRepoBase()}/queues?branch=main&pull-request-number=${data.pull}`;
 }
 
 // Read the current payload from mqPayload via lazy require to sidestep the
