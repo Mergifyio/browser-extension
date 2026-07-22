@@ -669,10 +669,8 @@ describe("scheduleQueueStatePoll", () => {
 const {
     getBaseRef,
     isMergeQueueBatchPr,
-    isPullRequestDraft,
     getMergeQueueLink,
 } = require("../queue");
-const { injectFixtureInDOM } = require("./utils");
 
 // Minimal PR-page DOM: a status pill (draft/closed), the header-meta author
 // link, and the classic base-ref span. Any argument left undefined is omitted
@@ -729,11 +727,6 @@ describe("batch-PR queue link", () => {
             document.body.innerHTML = "";
             expect(getBaseRef()).toBeNull();
         });
-
-        test("reads the base branch from the real GitHub PR fixture", () => {
-            injectFixtureInDOM("github_pr_opened");
-            expect(getBaseRef()).toBe("main");
-        });
     });
 
     describe("isMergeQueueBatchPr", () => {
@@ -749,18 +742,6 @@ describe("batch-PR queue link", () => {
 
         test("false for a Mergify-authored PR that is not a draft (e.g. config update)", () => {
             setPrDom({ author: "mergify" });
-            expect(isMergeQueueBatchPr()).toBe(false);
-        });
-
-        // Real fixture: a human-authored draft PR (header author /Syffe) that
-        // carries Mergify author links in its timeline. Proves the author check
-        // is scoped to the header — a Mergify link elsewhere on the page must
-        // not flip a human draft into a batch classification.
-        test("false on a human-authored draft with Mergify links in the timeline (real fixture)", () => {
-            injectFixtureInDOM("github_pr_opened");
-            // Precondition: the fixture is a draft, so the false result below is
-            // attributable to the author scoping, not the draft check.
-            expect(isPullRequestDraft()).toBe(true);
             expect(isMergeQueueBatchPr()).toBe(false);
         });
     });

@@ -1,0 +1,47 @@
+{
+    "era": "github_dom_2025_02",
+    "recordedAt": "2025-02-18",
+    "description": "Legacy github.com DOM: span.State status pills (no data-status attributes), merge box rendered as data-testid=mergebox-partial inside div.discussion-timeline-actions. Closest recorded stand-in for what GHES serves today. Captured from live public PRs (pre-sandbox era), sanitized.",
+    "pages": {
+        "github_pr_opened": {
+            "path": "/Mergifyio/docs/pull/7215",
+            "state": "draft",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": "main",
+            "mergeBoxRowVariants": ["default"]
+        },
+        "github_pr_merged": {
+            "path": "/nodejs/node/pull/57792",
+            "state": "merged",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": null,
+            "mergeBoxRowVariants": ["default"]
+        },
+        "github_pr_no_mergify": {
+            "path": "/cypress-io/cypress/pull/32277",
+            "state": "open",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": "develop",
+            "mergeBoxRowVariants": ["default"]
+        },
+        "github_pr_no_timeline_actions": {
+            "path": "/Mergifyio/docs/pull/7215",
+            "state": "draft",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": "main",
+            "mergeBoxRowVariants": []
+        }
+    }
+}
