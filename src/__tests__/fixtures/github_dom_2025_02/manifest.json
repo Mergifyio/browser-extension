@@ -11,7 +11,8 @@
             "mergedByMergify": false,
             "queued": false,
             "baseRef": "main",
-            "mergeBoxRowVariants": ["default"]
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "draft"
         },
         "github_pr_merged": {
             "path": "/nodejs/node/pull/57792",
@@ -21,7 +22,8 @@
             "mergedByMergify": false,
             "queued": false,
             "baseRef": null,
-            "mergeBoxRowVariants": ["default"]
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "closed"
         },
         "github_pr_no_mergify": {
             "path": "/cypress-io/cypress/pull/32277",
@@ -31,7 +33,8 @@
             "mergedByMergify": false,
             "queued": false,
             "baseRef": "develop",
-            "mergeBoxRowVariants": ["default"]
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "unqueued"
         },
         "github_pr_no_timeline_actions": {
             "path": "/Mergifyio/docs/pull/7215",
@@ -41,7 +44,8 @@
             "mergedByMergify": false,
             "queued": false,
             "baseRef": "main",
-            "mergeBoxRowVariants": []
+            "mergeBoxRowVariants": [],
+            "queueButtonState": "draft"
         }
     }
 }

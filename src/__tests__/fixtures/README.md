@@ -17,6 +17,10 @@ fixtures/
     manifest.json
     github_pr_opened.html
     ...
+  github_dom_2026_07/                # current github.com React DOM
+    manifest.json
+    github_pr_opened.html
+    ...
 ```
 
 Root-level files are fragments or non-PR pages loaded with
@@ -57,6 +61,7 @@ listed in each era's `description`.
 | `queued` | a Mergify Merge Queue check reports the PR as queued |
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |
+| `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 
 ## Recording a new era
 
