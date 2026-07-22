@@ -50,7 +50,7 @@ listed in each era's `description`.
 | field | meaning |
 | -- | -- |
 | `path` | PR path the page was captured from; set as the test URL |
-| `state` | the PR's real state: `open` \| `draft` \| `merged` \| `closed` |
+| `state` | the PR's real state: `open` \| `draft` \| `merged` \| `closed`. Every state reader must resolve exactly this, on every era |
 | `mergifyDetectableFromPage` | page alone proves Mergify is on the repo (app avatar); false on quiet pages of enabled repos where checks are collapsed |
 | `authoredByMergify` | header-scoped Mergify-authorship detection outcome |
 | `mergedByMergify` | merged-commit timeline entry authored by Mergify |

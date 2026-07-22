@@ -4,6 +4,7 @@ import {
     getPullRequestData,
     isGitHubPullRequestPage,
     isMergifyBotComment,
+    readPrStatusFromDocument,
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 import { resetStackState } from "./stacks.js";
@@ -115,39 +116,16 @@ export function isMergifyQueueCheckQueued(text) {
 }
 
 export function isPullRequestOpen() {
-    const opened = document.querySelector("span[data-status=pullOpened]");
-    const draft = document.querySelector("span[data-status=draft]");
-    const closed = document.querySelector("span[data-status=pullClosed]");
-    const merged = document.querySelector("span[data-status=pullMerged]");
-    if (opened || draft) return true;
-    if (closed || merged) return false;
-
-    const oldStatusBadge = document.querySelector("span.State");
-    if (oldStatusBadge) {
-        const status = oldStatusBadge.getAttribute("title").split(": ")[1];
-        if (!status) {
-            console.warn("Can't find pull request status");
-            // Assume it's open if we can't find the status
-            return true;
-        }
-        // status can be "open", "draft", "merged" or "closed"
-        return ["open", "draft"].includes(status.toLowerCase());
-    }
-
-    // Assume it's open if we can't find the status
-    return true;
+    const status = readPrStatusFromDocument(document);
+    // Assume open when the page carries no readable state: the row is worth
+    // showing on an unrecognized page, and every closed-PR behaviour it gates
+    // is a removal.
+    if (status === null) return true;
+    return status === "open" || status === "draft";
 }
 
 export function isPullRequestDraft() {
-    if (document.querySelector("span[data-status=draft]")) return true;
-
-    const oldStatusBadge = document.querySelector("span.State");
-    if (oldStatusBadge) {
-        const status = oldStatusBadge.getAttribute("title")?.split(": ")[1];
-        if (status) return status.toLowerCase() === "draft";
-    }
-
-    return false;
+    return readPrStatusFromDocument(document) === "draft";
 }
 
 // True when the PR opener is the Mergify GitHub App. Scope the mergify-author

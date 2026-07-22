@@ -409,6 +409,15 @@ describe("isPullRequestDraft", () => {
         expect(isPullRequestDraft()).toBe(false);
     });
 
+    it("should ignore a cross-referenced PR's legacy draft badge when the viewed PR has a data-status pill", () => {
+        // A queued PR's timeline references its draft batch PR, whose state
+        // renders as a legacy span.State badge (github_dom_2026_07 queued page).
+        document.body.innerHTML =
+            '<span data-status="pullOpened">Open</span>' +
+            '<span class="State" title="Status: Draft">Draft</span>';
+        expect(isPullRequestDraft()).toBe(false);
+    });
+
     it("should return false when no status element is found", () => {
         document.body.innerHTML = "<div>No status here</div>";
         expect(isPullRequestDraft()).toBe(false);
@@ -1509,6 +1518,16 @@ describe("fetchPrStatus", () => {
     it("returns 'draft' for a draft PR", async () => {
         mockFetchHtml('<span data-status="draft"></span>');
         await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("draft");
+    });
+
+    // Stack status dots resolve other PRs by fetching their pages. Enterprise
+    // Server serves the legacy badge, so reading only data-status left every
+    // dot on those deployments stuck at "unknown".
+    it("resolves state from a legacy-DOM page", async () => {
+        mockFetchHtml(
+            '<span class="State" title="Status: Merged">Merged</span>',
+        );
+        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("merged");
     });
 
     it("returns 'unknown' on non-OK response", async () => {
