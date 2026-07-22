@@ -2,7 +2,6 @@ const {
     MergifyCache,
     PrStatusCache,
     StackContextCache,
-    findTimelineActions,
     injectRowIntoMergeBox,
     isPullRequestOpen,
     isPullRequestDraft,
@@ -34,7 +33,11 @@ const {
     injectStackNav,
     resetStackState,
 } = require("../mergify");
-const { loadFixture, injectFixtureInDOM } = require("./utils");
+const {
+    loadFixture,
+    injectFixtureInDOM,
+    injectEraFixtureInDOM,
+} = require("./utils");
 
 describe("MergifyCache", () => {
     beforeEach(() => {
@@ -98,45 +101,6 @@ describe("MergifyCache", () => {
         expect(consoleSpy).toHaveBeenCalled();
 
         consoleSpy.mockRestore();
-    });
-});
-
-describe("findTimelineActions", () => {
-    afterEach(() => {
-        document.body.innerHTML = "";
-    });
-
-    it("should find the new merge box on pull requests without any timeline actions items", () => {
-        injectFixtureInDOM("github_pr_no_timeline_actions");
-
-        const mergeBox = findTimelineActions();
-
-        expect(mergeBox).not.toBeUndefined();
-        expect(mergeBox.tagName).toBe("DIV");
-        expect(mergeBox.innerHTML).toBe(" ");
-    });
-
-    it("should find the new merge box on opened pull requests", () => {
-        injectFixtureInDOM("github_pr_opened");
-
-        const mergeBox = findTimelineActions();
-
-        expect(mergeBox).not.toBeUndefined();
-        expect(mergeBox.tagName).toBe("DIV");
-        expect(mergeBox.innerHTML).toMatch(/<section aria-label="Reviews"/);
-        expect(mergeBox.innerHTML).toMatch(/<section aria-label="Checks"/);
-    });
-
-    it("should find the new merge box on merged pull requests", () => {
-        injectFixtureInDOM("github_pr_merged");
-
-        const mergeBox = findTimelineActions();
-
-        expect(mergeBox).not.toBeUndefined();
-        expect(mergeBox.tagName).toBe("DIV");
-        expect(mergeBox.innerHTML).toMatch(
-            /Pull\s+request\s+successfully\s+merged\s+and\s+closed/,
-        );
     });
 });
 
@@ -352,22 +316,6 @@ describe("injectRowIntoMergeBox", () => {
 describe("isPullRequestOpen", () => {
     afterEach(() => {
         document.body.innerHTML = "";
-    });
-
-    it("should detect open PR via legacy span.State (fixture)", () => {
-        injectFixtureInDOM("github_pr_opened");
-
-        const status = isPullRequestOpen();
-
-        expect(status).toBe(true);
-    });
-
-    it("should detect merged PR via legacy span.State (fixture)", () => {
-        injectFixtureInDOM("github_pr_merged");
-
-        const status = isPullRequestOpen();
-
-        expect(status).toBe(false);
     });
 
     it("should detect open PR via data-status=pullOpened attribute", () => {
@@ -850,26 +798,10 @@ describe("isMergifyEnabledOnTheRepo caching behavior", () => {
         localStorage.clear();
     });
 
-    it("should return true if Mergify is enabled on the repo with config", () => {
-        injectFixtureInDOM("github_pr_opened");
-        const isEnabled = isMergifyEnabledOnTheRepo(true);
-        expect(isEnabled).toBe(true);
-    });
-
-    it("should return true if Mergify is enabled on the repo with no config", () => {
-        injectFixtureInDOM("github_pr_opened");
-        const isEnabled = isMergifyEnabledOnTheRepo(false);
-        expect(isEnabled).toBe(true);
-    });
-
-    it("should return false if Mergify is not enabled on the repo", () => {
-        injectFixtureInDOM("github_pr_no_mergify");
-        const isEnabled = isMergifyEnabledOnTheRepo(false);
-        expect(isEnabled).toBe(false);
-    });
-
     it("should still return true if cache have false and the repo is enabled", () => {
-        injectFixtureInDOM("github_pr_opened");
+        // Detection itself is covered per DOM era in githubDomContract.test.js;
+        // this pins cache-vs-DOM precedence, so any era's enabled page works.
+        injectEraFixtureInDOM("github_dom_2025_02", "github_pr_opened");
         const cache = new MergifyCache();
         cache.update("cypress-io", "cypress", false);
 
