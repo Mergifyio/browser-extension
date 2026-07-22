@@ -1,7 +1,7 @@
 {
     "era": "github_dom_2026_07",
     "recordedAt": "2026-07-19",
-    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running. Gone vs 2025_02: span.State, .merge-pr, .gh-header-meta (so Mergify authorship and batch-PR classification resolve false even on real batch PRs), .commit-ref.base-ref (base branch only lives in embedded JSON), and the Mergify app avatar on pages whose checks are collapsed (so page-alone detection fails on quiet PRs of Mergify-enabled repos). Captured from synthetic PRs on mergify-sandbox repos, sanitized.",
+    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running, and PR metadata carried in the react-app.embeddedData JSON rather than as markup. Gone vs 2025_02: .merge-pr, .gh-header-meta and .commit-ref.base-ref (authorship and base branch now read from the embedded payload), and the Mergify app avatar on pages whose checks are collapsed — so mergifyDetectableFromPage stays false on quiet PRs of Mergify-enabled repos, where the configuration lookup resolves it instead. span.State survives here only on cross-referenced PRs in the timeline, never for the viewed PR. Captured from synthetic PRs on mergify-sandbox repos, sanitized.",
     "pages": {
         "github_pr_opened": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/6",
@@ -10,7 +10,7 @@
             "authoredByMergify": false,
             "mergedByMergify": false,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued"
         },
@@ -21,7 +21,7 @@
             "authoredByMergify": false,
             "mergedByMergify": false,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "draft"
         },
@@ -32,7 +32,7 @@
             "authoredByMergify": false,
             "mergedByMergify": false,
             "queued": true,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "queued"
         },
@@ -40,12 +40,12 @@
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/9",
             "state": "draft",
             "mergifyDetectableFromPage": true,
-            "authoredByMergify": false,
+            "authoredByMergify": true,
             "mergedByMergify": false,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "draft"
+            "queueButtonState": "batch"
         },
         "github_pr_no_timeline_actions": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/3",
@@ -55,7 +55,7 @@
             "mergedByMergify": false,
             "queued": false,
             "mergeBoxRowVariants": ["default"],
-            "baseRef": null,
+            "baseRef": "main",
             "queueButtonState": "closed"
         },
         "github_pr_merged": {
@@ -65,7 +65,7 @@
             "authoredByMergify": false,
             "mergedByMergify": true,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "merged"
         },
@@ -73,10 +73,10 @@
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/4",
             "state": "closed",
             "mergifyDetectableFromPage": true,
-            "authoredByMergify": false,
+            "authoredByMergify": true,
             "mergedByMergify": false,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "closed"
         },
@@ -87,7 +87,7 @@
             "authoredByMergify": false,
             "mergedByMergify": false,
             "queued": false,
-            "baseRef": null,
+            "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued"
         }

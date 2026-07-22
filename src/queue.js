@@ -4,6 +4,8 @@ import {
     getPullRequestData,
     isGitHubPullRequestPage,
     isMergifyBotComment,
+    MERGIFY_APP_LOGIN,
+    readEmbeddedPullRequestPayload,
     readPrStatusFromDocument,
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
@@ -128,10 +130,15 @@ export function isPullRequestDraft() {
     return readPrStatusFromDocument(document) === "draft";
 }
 
-// True when the PR opener is the Mergify GitHub App. Scope the mergify-author
-// check to the PR header meta so a Mergify bot *comment* further down the
-// timeline can't be mistaken for the PR author.
+// True when the PR opener is the Mergify GitHub App. The embedded payload
+// names the author outright and is authoritative wherever it exists; the
+// header-meta path stays for the DOM generation that has no payload, scoped to
+// the header so a Mergify bot *comment* further down the timeline can't be
+// mistaken for the PR author.
 export function isPullRequestAuthoredByMergify() {
+    const payload = readEmbeddedPullRequestPayload();
+    if (payload) return payload.author?.login === MERGIFY_APP_LOGIN;
+
     const header = document.querySelector(".gh-header-meta");
     return header ? isMergifyBotComment(header) : false;
 }
@@ -569,6 +576,9 @@ export function getBatchActivityLogLink() {
 // contain ":", so everything after the first colon is the branch (which may
 // itself contain "/").
 export function getBaseRef() {
+    const payload = readEmbeddedPullRequestPayload();
+    if (payload?.baseBranch) return payload.baseBranch;
+
     const title = document
         .querySelector(".commit-ref.base-ref")
         ?.getAttribute("title");
