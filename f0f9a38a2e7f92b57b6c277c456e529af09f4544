@@ -1,0 +1,1 @@
+code review: skip the Conversation-page fallback when the timeline is rendered (the narrowed comment match had put every stack-comment-only PR on a 500KB/60s refetch loop); match the legacy pr_status keys on their whole shape so the sweep spares a github.com/pr/status* repo's own cache; drop the now-dead subpath from the context payload
