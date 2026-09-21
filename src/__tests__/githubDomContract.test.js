@@ -93,8 +93,9 @@ describe.each(listGitHubDomEras())("%s", (era) => {
             expect(isPullRequestDraft()).toBe(expected.state === "draft");
         });
 
-        // The reader stack dots use for other PRs' pages. It must resolve the
-        // real state on every era, not just the one carrying data-status.
+        // The reader behind isPullRequestOpen/isPullRequestDraft. It must
+        // resolve the real state on every era, not just the one carrying
+        // data-status.
         it("reads the pull request state from the page scope", () => {
             expect(readPrStatusFromDocument(document)).toBe(expected.state);
         });
