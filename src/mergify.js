@@ -11,8 +11,8 @@
 
 import {
     MergifyCache as _MergifyCache,
-    PrStatusCache as _PrStatusCache,
     StackContextCache as _StackContextCache,
+    removeLegacyPrStatusEntries,
 } from "./cache.js";
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
@@ -43,21 +43,11 @@ export * from "./timestamps.js";
 // jest.spyOn can replace them on the module object in tests.
 export {
     _MergifyCache as MergifyCache,
-    _PrStatusCache as PrStatusCache,
     _StackContextCache as StackContextCache,
+    removeLegacyPrStatusEntries,
 };
 
-// Clear cached PR statuses on a page reload (covers force-reload too —
-// browsers don't expose hard-vs-soft reload to JS, so we treat any reload
-// the same way). Normal SPA navigations stay cached.
-try {
-    const navType = performance.getEntriesByType?.("navigation")?.[0]?.type;
-    if (navType === "reload") {
-        new _PrStatusCache().clearAll();
-    }
-} catch (_e) {
-    // Best effort.
-}
+removeLegacyPrStatusEntries();
 
 // Orchestrator-owned state
 let lastPullRequestUrl = null;
@@ -158,11 +148,10 @@ export function injectRowIntoMergeBox() {
 
 async function _tryInject() {
     if (!isGitHubPullRequestPage()) {
-        // SPA-navigated away from a PR (e.g., back to /pulls). The
-        // floating stack-nav pill is body-fixed and outside Turbo's
-        // tree, so Turbo won't sweep it for us — clean up our own
-        // surfaces. Guarded so MutationObserver re-firing on the new
-        // page doesn't churn cleanup work.
+        // SPA-navigated away from a PR (e.g., back to /pulls). Drop the
+        // queue/context state we built for it so the next PR starts clean.
+        // Guarded so MutationObserver re-firing on the new page doesn't
+        // churn cleanup work.
         if (lastPullRequestUrl !== null) {
             resetForNavigation();
         }
@@ -195,7 +184,6 @@ async function _tryInject() {
         org: _data.org,
         repo: _data.repo,
         number: Number.parseInt(_data.pull, 10),
-        subpath: _data.subpath,
     };
 
     // injectRowIntoMergeBox is idempotent per anchor (data-attr guard inside)

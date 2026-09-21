@@ -53,56 +53,30 @@ export class MergifyCache {
     }
 }
 
-export class PrStatusCache {
-    constructor(expirationMs = 60 * 60 * 1000) {
-        this.PREFIX = "mergify_browser_extension_pr_status";
-        this.expirationMs = expirationMs;
-    }
+// The per-PR status cache that used to colour the stack rows' dots. Its only
+// reader went with the stack list, so entries written by an earlier version
+// would otherwise sit there unread for ever: they expired on read, and
+// nothing reads them now. Safe to delete once installs have turned over.
+//
+// Matched on the whole key shape rather than the prefix alone. The prefix is
+// MergifyCache's own with `_pr_status` appended, so `startsWith` also claims
+// the repo-enabled entry of `github.com/pr/status*` — and this sweep runs on
+// every load, where the clearAll() it replaces ran only on a reload, so that
+// repo's cache could never survive. The trailing `_<num>_<sha>` is what no
+// MergifyCache key has.
+const LEGACY_PR_STATUS_KEY_RE =
+    /^mergify_browser_extension_pr_status_.+_\d+_[^_]+$/;
 
-    key(org, repo, num, headSha) {
-        return `${this.PREFIX}_${org}_${repo}_${num}_${headSha}`;
-    }
-
-    get(org, repo, num, headSha) {
-        const k = this.key(org, repo, num, headSha);
-        try {
-            const raw = localStorage.getItem(k);
-            if (!raw) return null;
-            const data = JSON.parse(raw);
-            if (Date.now() - data.timestamp > this.expirationMs) {
-                localStorage.removeItem(k);
-                return null;
-            }
-            return data.status;
-        } catch (e) {
-            console.error("PrStatusCache get failed:", e);
-            return null;
+export function removeLegacyPrStatusEntries() {
+    try {
+        const stale = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && LEGACY_PR_STATUS_KEY_RE.test(k)) stale.push(k);
         }
-    }
-
-    update(org, repo, num, headSha, status) {
-        const k = this.key(org, repo, num, headSha);
-        try {
-            localStorage.setItem(
-                k,
-                JSON.stringify({ status, timestamp: Date.now() }),
-            );
-        } catch (e) {
-            console.error("PrStatusCache update failed:", e);
-        }
-    }
-
-    clearAll() {
-        try {
-            const keys = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k?.startsWith(this.PREFIX)) keys.push(k);
-            }
-            for (const k of keys) localStorage.removeItem(k);
-        } catch (e) {
-            console.error("PrStatusCache clearAll failed:", e);
-        }
+        for (const k of stale) localStorage.removeItem(k);
+    } catch (e) {
+        console.error("removeLegacyPrStatusEntries failed:", e);
     }
 }
 
@@ -126,26 +100,19 @@ export class StackContextCache {
                 localStorage.removeItem(k);
                 return null;
             }
-            return {
-                stackData: data.stackData ?? null,
-                revisionData: data.revisionData ?? null,
-            };
+            return { revisionData: data.revisionData ?? null };
         } catch (e) {
             console.error("StackContextCache get failed:", e);
             return null;
         }
     }
 
-    update(org, repo, num, stackData, revisionData) {
+    update(org, repo, num, revisionData) {
         const k = this.key(org, repo, num);
         try {
             localStorage.setItem(
                 k,
-                JSON.stringify({
-                    stackData,
-                    revisionData,
-                    timestamp: Date.now(),
-                }),
+                JSON.stringify({ revisionData, timestamp: Date.now() }),
             );
         } catch (e) {
             console.error("StackContextCache update failed:", e);

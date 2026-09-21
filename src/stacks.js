@@ -1,14 +1,10 @@
-import { PrStatusCache, StackContextCache } from "./cache.js";
+import { StackContextCache } from "./cache.js";
 import { debug } from "./debug.js";
-import { findFirstElement, readPrStatusFromDocument } from "./dom.js";
+import { findFirstElement } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 
-export const STACK_MARKER_PREFIX = "<!-- mergify-stack-data: ";
 export const REVISION_MARKER_PREFIX = "<!-- mergify-revision-data: ";
 export const MARKER_SUFFIX = " -->";
-
-export const STACK_TITLE_ROW_RE =
-    /^\| \d+ \| (.+?) \| \[#(\d+)\]\([^)]+\) \|/gm;
 
 export const DOT_COLORS = {
     initial: "var(--fgColor-muted, #7d8590)",
@@ -28,8 +24,6 @@ export const CONTEXT_PANEL_TARGETS = [
 
 // Module-level state
 export const _commentBodyCache = new Map();
-export const _inflightStatusFetches = new Map();
-export const _prStatusCache = new PrStatusCache();
 export const _stackContextCache = new StackContextCache();
 export let _contextRenderGeneration = 0;
 
@@ -46,15 +40,6 @@ export function extractMarkerJson(body, prefix) {
         idx = end + MARKER_SUFFIX.length;
     }
     return results;
-}
-
-export function extractStackTitles(body) {
-    const titles = {};
-    for (const match of body.matchAll(STACK_TITLE_ROW_RE)) {
-        const title = match[1].replace(/\\\|/g, "|").trim();
-        titles[Number.parseInt(match[2], 10)] = title;
-    }
-    return titles;
 }
 
 // Extract the per-row reason ("note") from the rendered revision-history
@@ -76,38 +61,6 @@ export function extractRevisionRowReasons(body) {
         if (cells[3]) out[num] = cells[3];
     }
     return out;
-}
-
-export function parseStackMarker(commentBodies, pullNumber) {
-    let latest = null;
-    for (const body of commentBodies) {
-        for (const raw of extractMarkerJson(body, STACK_MARKER_PREFIX)) {
-            try {
-                const parsed = JSON.parse(raw);
-                if (parsed.schema_version !== 1) continue;
-                // Each PR in a stack has its own stack comment; the only
-                // difference is which entry has is_current=true. If the marker
-                // doesn't mark *this* PR as current, we fetched the wrong
-                // comment (e.g. SPA navigation grabbed a stale DOM ID). Reject
-                // it and let the next tick try again with a settled DOM.
-                const matchesCurrent = parsed.pulls?.some(
-                    (p) => p.is_current && p.number === pullNumber,
-                );
-                if (!matchesCurrent) continue;
-                const titles = extractStackTitles(body);
-                latest = {
-                    ...parsed,
-                    pulls: parsed.pulls.map((p) => ({
-                        ...p,
-                        title: titles[p.number] || `PR #${p.number}`,
-                    })),
-                };
-            } catch (_e) {
-                debug("parseStackMarker: failed to parse marker JSON", _e);
-            }
-        }
-    }
-    return latest;
 }
 
 export function parseRevisionMarker(commentBodies, pullNumber) {
@@ -134,16 +87,30 @@ export function parseRevisionMarker(commentBodies, pullNumber) {
     return latest;
 }
 
+// The visible heading mergify-cli gives the revision-history comment. It is
+// the only comment we read: the sticky stack comment is GitHub's job now
+// (its native Stacks UI lists the pull requests), so matching it here would
+// only buy an edit_form fetch of a body carrying no marker we parse.
+const MERGIFY_COMMENT_TEXT_RE = /Revision history/i;
+
+const COMMENT_CONTAINERS =
+    ".TimelineItem, .js-comment-container, .timeline-comment";
+
+// Whether GitHub rendered the conversation timeline into this scope at all.
+// A scope that has it is authoritative about which comments the pull request
+// carries, so a miss there needs no second opinion from the network.
+function hasConversationTimeline(scope) {
+    return scope.querySelector(COMMENT_CONTAINERS) !== null;
+}
+
 function findMergifyCommentIdsIn(scope) {
     const ids = new Set();
-    const containers = scope.querySelectorAll(
-        ".TimelineItem, .js-comment-container, .timeline-comment",
-    );
+    const containers = scope.querySelectorAll(COMMENT_CONTAINERS);
     for (const c of containers) {
         const body = c.querySelector(".comment-body");
         if (!body) continue;
         const text = body.textContent || "";
-        if (!/Mergify stack|Revision history/i.test(text)) continue;
+        if (!MERGIFY_COMMENT_TEXT_RE.test(text)) continue;
         const idEl = c.querySelector('[id^="issuecomment-"]');
         const m = idEl?.id?.match(/issuecomment-(\d+)/);
         if (m) ids.add(m[1]);
@@ -207,9 +174,17 @@ export async function fetchCommentBodyMarkdown(org, repo, commentId) {
 
 export async function fetchCommentBodies(org, repo, prNumber) {
     let ids = findMergifyCommentIds();
-    if (ids.length === 0) {
+    if (ids.length === 0 && !hasConversationTimeline(document)) {
         // The Files tab doesn't render conversation comments — fall back to
         // the Conversation page HTML to discover Mergify-related comment IDs.
+        // Only when the timeline is absent: where it IS rendered, a miss is
+        // the answer, and the fallback costs a ~500KB download that the
+        // negative cache only holds for COMMENTS_NEGATIVE_CACHE_TTL_MS. Every
+        // pull request carrying no Mergify comment sits on this path, so
+        // without the guard a tab left open re-downloads that page a minute
+        // for as long as it stays open. The trade is a Mergify comment folded
+        // behind GitHub's "load more" on a long timeline, which the fallback
+        // would not have surfaced either — the server HTML elides it too.
         ids = await findMergifyCommentIdsRemote(org, repo, prNumber);
     }
     if (ids.length === 0) return [];
@@ -249,78 +224,8 @@ export function clearCommentsCache() {
     _remoteCommentIdsCache.clear();
 }
 
-export async function fetchPrStatus(org, repo, num) {
-    try {
-        const r = await fetch(`/${org}/${repo}/pull/${num}`);
-        if (!r.ok) return "unknown";
-        const html = await r.text();
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        return readPrStatusFromDocument(doc) || "unknown";
-    } catch (_e) {
-        return "unknown";
-    }
-}
-
-function _statusKey(item) {
-    return `${item.org}/${item.repo}/${item.num}/${item.head_sha}`;
-}
-
-export async function gatherPrStatuses(
-    items,
-    cache,
-    onResolve,
-    concurrency = 4,
-) {
-    const queue = items.slice();
-    const workerCount = Math.min(concurrency, queue.length);
-    const workers = Array.from({ length: workerCount }, async () => {
-        while (queue.length > 0) {
-            const item = queue.shift();
-            const cached = cache.get(
-                item.org,
-                item.repo,
-                item.num,
-                item.head_sha,
-            );
-            if (cached !== null) {
-                onResolve(item, cached);
-                continue;
-            }
-            // Dedupe concurrent fetches for the same PR — multiple tryInject
-            // ticks during React reconciliation can otherwise spawn the same
-            // request many times before the first response lands.
-            const key = _statusKey(item);
-            let promise = _inflightStatusFetches.get(key);
-            if (!promise) {
-                promise = fetchPrStatus(item.org, item.repo, item.num);
-                _inflightStatusFetches.set(key, promise);
-                promise.finally(() => _inflightStatusFetches.delete(key));
-            }
-            const status = await promise;
-            // Don't cache "unknown" — it usually means a transient fetch
-            // failure, and we want the next tick to retry rather than serve
-            // gray for the full TTL.
-            if (status !== "unknown") {
-                cache.update(
-                    item.org,
-                    item.repo,
-                    item.num,
-                    item.head_sha,
-                    status,
-                );
-            }
-            onResolve(item, status);
-        }
-    });
-    await Promise.all(workers);
-}
-
-export function readCurrentPrStatus() {
-    return readPrStatusFromDocument(document);
-}
-
-export function buildContextPanel(stackData, revisionData, currentPull) {
-    if (!stackData && !revisionData) return null;
+export function buildContextPanel(revisionData, currentPull) {
+    if (!revisionData) return null;
 
     const root = document.createElement("div");
     root.id = "mergify-context";
@@ -346,45 +251,20 @@ export function buildContextPanel(stackData, revisionData, currentPull) {
         "font-weight:600;color:inherit;text-decoration:none;";
     titleLink.title = "Open Mergify Stacks documentation";
     header.appendChild(titleLink);
-    if (stackData) {
-        const sep = document.createElement("span");
-        sep.style.color = "var(--fgColor-muted, #7d8590)";
-        sep.textContent = "·";
-        header.appendChild(sep);
-        const stackChip = document.createElement("code");
-        stackChip.style.cssText =
-            "background:var(--bgColor-default, #0d1117);padding:1px 6px;" +
-            "border-radius:3px;font-size:12px;";
-        stackChip.textContent = stackData.stack_id;
-        header.appendChild(stackChip);
-    }
     root.appendChild(header);
 
     const body = document.createElement("div");
     body.style.cssText = "display:flex;flex-direction:column;";
-    if (stackData)
-        body.appendChild(
-            buildStackColumn(stackData, revisionData, currentPull),
-        );
-    if (revisionData)
-        body.appendChild(buildRevisionColumn(revisionData, currentPull));
+    body.appendChild(buildRevisionColumn(revisionData, currentPull));
     root.appendChild(body);
 
     const hashInput = JSON.stringify({
-        s: stackData
-            ? {
-                  id: stackData.stack_id,
-                  nums: stackData.pulls.map((p) => `${p.number}@${p.head_sha}`),
-              }
-            : null,
-        r: revisionData
-            ? {
-                  n: revisionData.pull_number,
-                  es: revisionData.entries.map(
-                      (e) => `${e.number}/${e.change_type}/${e.new_sha}`,
-                  ),
-              }
-            : null,
+        r: {
+            n: revisionData.pull_number,
+            es: revisionData.entries.map(
+                (e) => `${e.number}/${e.change_type}/${e.new_sha}`,
+            ),
+        },
     });
     let hash = 0;
     for (let i = 0; i < hashInput.length; i++) {
@@ -393,84 +273,6 @@ export function buildContextPanel(stackData, revisionData, currentPull) {
     root.setAttribute("data-mergify-hash", String(hash));
 
     return root;
-}
-
-export function buildStackColumn(stackData, revisionData, currentPull) {
-    const col = document.createElement("div");
-    col.setAttribute("data-mergify-section", "stack");
-    col.style.cssText = revisionData
-        ? "padding:10px 14px;border-bottom:1px solid var(--borderColor-default, #30363d);"
-        : "padding:10px 14px;";
-
-    const sectionLabel = document.createElement("div");
-    sectionLabel.style.cssText =
-        "color:var(--fgColor-muted, #7d8590);font-weight:600;" +
-        "text-transform:uppercase;font-size:10px;letter-spacing:0.5px;" +
-        "margin-bottom:6px;";
-    const currentIdx = stackData.pulls.findIndex(
-        (p) => p.number === currentPull.number,
-    );
-    sectionLabel.textContent =
-        currentIdx >= 0
-            ? `STACK · ${stackData.pulls.length} PRs · you are #${currentIdx + 1}`
-            : `STACK · ${stackData.pulls.length} PRs`;
-    col.appendChild(sectionLabel);
-
-    const rows = document.createElement("div");
-    rows.style.cssText = "display:flex;flex-direction:column;gap:1px;";
-
-    for (const pull of stackData.pulls) {
-        const a = document.createElement("a");
-        a.setAttribute("data-mergify-pr-row", String(pull.number));
-        if (pull.is_current) {
-            a.setAttribute("data-mergify-current", "true");
-        }
-        a.href = `/${currentPull.org}/${currentPull.repo}/pull/${pull.number}`;
-        a.style.cssText =
-            "display:grid;grid-template-columns:14px auto 1fr auto;" +
-            "gap:8px;align-items:center;padding:3px 8px 3px 16px;" +
-            "border-radius:3px;" +
-            "color:inherit;text-decoration:none;font-size:12px;" +
-            (pull.is_current
-                ? "background:rgba(31,111,235,0.12);" +
-                  "box-shadow:inset 2px 0 0 var(--fgColor-accent, #1f6feb);"
-                : "");
-
-        const dot = document.createElement("span");
-        dot.setAttribute("data-mergify-status-dot", "");
-        dot.setAttribute("data-mergify-status", "unknown");
-        dot.setAttribute("data-mergify-pr-num", String(pull.number));
-        dot.setAttribute("data-mergify-head-sha", pull.head_sha);
-        dot.style.cssText =
-            "display:inline-block;width:8px;height:8px;border-radius:50%;" +
-            "background:var(--fgColor-muted, #7d8590);";
-        a.appendChild(dot);
-
-        const num = document.createElement("span");
-        num.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);font-variant-numeric:tabular-nums;";
-        num.textContent = `#${pull.number}`;
-        a.appendChild(num);
-
-        const title = document.createElement("span");
-        title.textContent = pull.title;
-        title.style.cssText =
-            "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-        if (pull.is_current) title.style.fontWeight = "600";
-        a.appendChild(title);
-
-        const statusLabel = document.createElement("span");
-        statusLabel.setAttribute("data-mergify-status-label", "");
-        statusLabel.style.cssText =
-            "color:var(--fgColor-muted, #7d8590);font-size:10px;" +
-            "text-transform:uppercase;letter-spacing:0.4px;";
-        a.appendChild(statusLabel);
-
-        rows.appendChild(a);
-    }
-
-    col.appendChild(rows);
-    return col;
 }
 
 export function buildRevisionColumn(revisionData, currentPull) {
@@ -661,27 +463,6 @@ export function buildRevisionColumn(revisionData, currentPull) {
     return col;
 }
 
-export function updateStackDotStatus(panelEl, prNumber, status) {
-    const dot = panelEl.querySelector(
-        `[data-mergify-status-dot][data-mergify-pr-num="${prNumber}"]`,
-    );
-    if (!dot) return;
-    dot.setAttribute("data-mergify-status", status);
-    const colors = {
-        open: "var(--fgColor-success, #3fb950)",
-        merged: "var(--fgColor-done, #a371f7)",
-        closed: "var(--fgColor-danger, #f85149)",
-        draft: "var(--fgColor-muted, #7d8590)",
-        unknown: "var(--fgColor-muted, #7d8590)",
-    };
-    dot.style.background = colors[status] || colors.unknown;
-    const row = dot.closest("[data-mergify-pr-row]");
-    if (row) {
-        const lbl = row.querySelector("[data-mergify-status-label]");
-        if (lbl) lbl.textContent = status === "unknown" ? "" : status;
-    }
-}
-
 export function findContextPanelTarget() {
     return findFirstElement(CONTEXT_PANEL_TARGETS);
 }
@@ -701,18 +482,17 @@ export function injectContextPanel(panel) {
     target.insertBefore(panel, target.firstChild);
 }
 
-export function removeContextSurfaces(currentPull) {
+export function removeContextPanel() {
     document.querySelector("#mergify-context")?.remove();
-    injectStackNav(null, currentPull);
 }
 
 export async function renderMergifyContext(currentPull) {
     const generation = ++_contextRenderGeneration;
 
-    // Cache-first render: build the panel + nav from the last known good
-    // stack/revision data so the surfaces appear before the network roundtrips
-    // settle. The network refresh below replaces them in place (injectContextPanel
-    // / injectStackNav dedupe via data-mergify-hash, so identical data is a no-op).
+    // Cache-first render: build the panel from the last known good revision
+    // data so it appears before the network roundtrips settle. The network
+    // refresh below replaces it in place (injectContextPanel dedupes via
+    // data-mergify-hash, so identical data is a no-op).
     const cached = _stackContextCache.get(
         currentPull.org,
         currentPull.repo,
@@ -721,14 +501,10 @@ export async function renderMergifyContext(currentPull) {
     if (cached) {
         try {
             const cachedPanel = buildContextPanel(
-                cached.stackData,
                 cached.revisionData,
                 currentPull,
             );
-            if (cachedPanel) {
-                injectContextPanel(cachedPanel);
-                injectStackNav(cached.stackData, currentPull);
-            }
+            if (cachedPanel) injectContextPanel(cachedPanel);
         } catch (e) {
             debug("Cache-first render failed; discarding entry:", e);
             _stackContextCache.remove(
@@ -751,20 +527,19 @@ export async function renderMergifyContext(currentPull) {
             currentPull.repo,
             currentPull.number,
         );
-        removeContextSurfaces(currentPull);
+        removeContextPanel();
         return;
     }
 
-    const stackData = parseStackMarker(bodies, currentPull.number);
     const revisionData = parseRevisionMarker(bodies, currentPull.number);
-    const panel = buildContextPanel(stackData, revisionData, currentPull);
+    const panel = buildContextPanel(revisionData, currentPull);
     if (!panel) {
         _stackContextCache.remove(
             currentPull.org,
             currentPull.repo,
             currentPull.number,
         );
-        removeContextSurfaces(currentPull);
+        removeContextPanel();
         return;
     }
 
@@ -772,331 +547,15 @@ export async function renderMergifyContext(currentPull) {
         currentPull.org,
         currentPull.repo,
         currentPull.number,
-        stackData,
         revisionData,
     );
 
     injectContextPanel(panel);
-    injectStackNav(stackData, currentPull);
-
-    if (!stackData) return;
-    const items = stackData.pulls
-        .filter((p) => !p.is_current)
-        .map((p) => ({
-            org: currentPull.org,
-            repo: currentPull.repo,
-            num: p.number,
-            head_sha: p.head_sha,
-        }));
-
-    // Apply the current PR's own live status from the page, and write it
-    // through to the cache so a stale entry from a previous visit doesn't
-    // outlive a status change the user has now seen with their own eyes.
-    const currentStatus = readCurrentPrStatus();
-    if (currentStatus) {
-        const live = document.querySelector("#mergify-context");
-        if (live) {
-            updateStackDotStatus(live, currentPull.number, currentStatus);
-        }
-        const currentEntry = stackData.pulls.find(
-            (p) => p.number === currentPull.number,
-        );
-        if (currentEntry) {
-            _prStatusCache.update(
-                currentPull.org,
-                currentPull.repo,
-                currentPull.number,
-                currentEntry.head_sha,
-                currentStatus,
-            );
-        }
-    }
-
-    if (items.length === 0) return;
-
-    gatherPrStatuses(items, _prStatusCache, (item, status) => {
-        if (generation !== _contextRenderGeneration) return;
-        const panel = document.querySelector("#mergify-context");
-        if (panel) updateStackDotStatus(panel, item.num, status);
-        const nav = document.querySelector("#mergify-stack-nav");
-        if (nav) updateStackDotStatus(nav, item.num, status);
-    }).catch((e) => debug("status fetch failed:", e));
-}
-
-// In-memory dismiss flag: × hides the pill for the current page only. A
-// page refresh or an SPA navigation to another PR brings it back. This
-// matches "× hides this view" intent and avoids the dead-end where the
-// only restore path is clearing storage in DevTools.
-let _stackNavHidden = false;
-
-function isStackNavHidden() {
-    return _stackNavHidden;
-}
-
-function setStackNavHidden() {
-    _stackNavHidden = true;
-}
-
-export function clearStackNavHidden() {
-    _stackNavHidden = false;
-}
-
-function djb2Hash(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) {
-        h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-    }
-    return String(h);
-}
-
-export function buildStackNav(stackData, currentPull) {
-    if (!stackData?.pulls || stackData.pulls.length < 2) {
-        return null;
-    }
-    const idx = stackData.pulls.findIndex(
-        (p) => p.number === currentPull.number,
-    );
-    if (idx === -1) return null;
-    const prev = idx > 0 ? stackData.pulls[idx - 1] : null;
-    const next =
-        idx < stackData.pulls.length - 1 ? stackData.pulls[idx + 1] : null;
-
-    // Standalone floating pill anchored to the viewport — fully decoupled
-    // from GitHub's layout so toolbar/header redesigns don't break us. Lives
-    // directly under <body>.
-    const root = document.createElement("div");
-    root.id = "mergify-stack-nav";
-    // Hash of the displayed content. Used by injectStackNav to skip
-    // identical re-renders. This matters during hover storms: GitHub's
-    // hover-card popover mutates the DOM, our MutationObserver re-fires
-    // tryInject → renderMergifyContext → injectStackNav. Without the
-    // dedup, we'd `replaceWith` on every hover and detach the anchor mid-
-    // click, eating the click event.
-    root.setAttribute(
-        "data-mergify-hash",
-        djb2Hash(
-            JSON.stringify({
-                cur: currentPull.number,
-                sub: currentPull.subpath || "",
-                org: currentPull.org,
-                repo: currentPull.repo,
-                len: stackData.pulls.length,
-                idx,
-                prev: prev ? `${prev.number}/${prev.title}` : null,
-                next: next ? `${next.number}/${next.title}` : null,
-            }),
-        ),
-    );
-    root.style.cssText =
-        "position:fixed;bottom:16px;right:16px;z-index:50;" +
-        "display:inline-flex;align-items:center;gap:10px;" +
-        "padding:6px 8px 6px 12px;font-size:12px;" +
-        "background:var(--bgColor-default, #0d1117);" +
-        "color:var(--fgColor-default, #f0f6fc);" +
-        "border:1px solid var(--borderColor-default, #30363d);" +
-        "border-radius:999px;box-sizing:border-box;" +
-        "box-shadow:0 8px 24px rgba(0,0,0,0.25);" +
-        "font-variant-numeric:tabular-nums;max-width:560px;";
-
-    const stackLabel = document.createElement("span");
-    stackLabel.style.cssText =
-        "color:var(--fgColor-muted, #7d8590);font-weight:600;font-size:11px;flex-shrink:0;";
-    stackLabel.textContent = `${idx + 1}/${stackData.pulls.length}`;
-
-    function buildArrow(direction) {
-        return direction === "prev" ? "←" : "→";
-    }
-
-    function buildLink(pull, direction) {
-        const a = document.createElement("a");
-        a.setAttribute("data-mergify-stack-nav", direction);
-        a.setAttribute("data-mergify-stack-nav-num", String(pull.number));
-        // Opt out of GitHub's Turbo Drive — without this, Turbo intercepts
-        // the click, calls preventDefault, then fails to actually navigate
-        // because our anchor isn't in any Turbo frame. The data-turbo
-        // attribute makes Turbo ignore the link so the browser's default
-        // navigation runs.
-        a.setAttribute("data-turbo", "false");
-        const tail = currentPull.subpath ? `/${currentPull.subpath}` : "";
-        a.href = `/${currentPull.org}/${currentPull.repo}/pull/${pull.number}${tail}`;
-        a.title = `Open #${pull.number}: ${pull.title}`;
-        a.style.cssText =
-            "display:inline-flex;align-items:center;gap:6px;min-width:0;" +
-            "color:var(--fgColor-accent, #58a6ff);text-decoration:none;";
-        return a;
-    }
-
-    function buildDot(prNumber) {
-        const dot = document.createElement("span");
-        dot.setAttribute("data-mergify-status-dot", "");
-        dot.setAttribute("data-mergify-pr-num", String(prNumber));
-        dot.setAttribute("data-mergify-status", "unknown");
-        dot.style.cssText =
-            "width:8px;height:8px;border-radius:50%;flex-shrink:0;" +
-            "background:var(--fgColor-muted, #7d8590);";
-        return dot;
-    }
-
-    function renderPrev(pull, { withTitle } = {}) {
-        if (!pull) return null;
-        const a = buildLink(pull, "prev");
-        const arrow = document.createElement("span");
-        arrow.textContent = buildArrow("prev");
-        arrow.style.cssText = "flex-shrink:0;";
-        const dot = buildDot(pull.number);
-        const num = document.createElement("span");
-        num.textContent = `#${pull.number}`;
-        num.style.cssText = "flex-shrink:0;";
-        a.append(arrow, dot, num);
-        if (withTitle) {
-            const title = document.createElement("span");
-            title.textContent = pull.title;
-            title.style.cssText =
-                "color:var(--fgColor-default, #f0f6fc);" +
-                "max-width:280px;overflow:hidden;text-overflow:ellipsis;" +
-                "white-space:nowrap;min-width:0;";
-            a.append(title);
-        }
-        return a;
-    }
-
-    function renderNext(pull) {
-        if (!pull) return null;
-        const a = buildLink(pull, "next");
-        const dot = buildDot(pull.number);
-        const num = document.createElement("span");
-        num.textContent = `#${pull.number}`;
-        num.style.cssText = "flex-shrink:0;";
-        const title = document.createElement("span");
-        title.textContent = pull.title;
-        title.style.cssText =
-            "color:var(--fgColor-default, #f0f6fc);" +
-            "max-width:280px;overflow:hidden;text-overflow:ellipsis;" +
-            "white-space:nowrap;min-width:0;";
-        const arrow = document.createElement("span");
-        arrow.textContent = buildArrow("next");
-        arrow.style.cssText = "flex-shrink:0;";
-        a.append(dot, num, title, arrow);
-        return a;
-    }
-
-    const close = document.createElement("button");
-    close.setAttribute("type", "button");
-    close.setAttribute("data-mergify-stack-nav-close", "");
-    close.setAttribute(
-        "aria-label",
-        "Hide Mergify stack navigation (returns on refresh or PR navigation)",
-    );
-    close.setAttribute("title", "Hide (returns on refresh or PR navigation)");
-    close.textContent = "×";
-    close.style.cssText =
-        "background:transparent;border:none;cursor:pointer;flex-shrink:0;" +
-        "padding:0 4px;color:var(--fgColor-muted, #7d8590);" +
-        "font-size:16px;line-height:1;border-radius:50%;";
-
-    for (const child of [
-        renderPrev(prev, { withTitle: !next }),
-        stackLabel,
-        renderNext(next),
-        close,
-    ]) {
-        if (child) root.append(child);
-    }
-    return root;
-}
-
-// Hover styling lives in a one-time `<style>` rule rather than on each
-// element via .onmouseenter/.onmouseleave: those JS properties don't
-// survive Turbo DOM morphs and the hash dedup in injectStackNav means we
-// might not re-render the pill after a morph to re-attach them. CSS is
-// painted by the browser from the document stylesheet which is unaffected.
-const STACK_NAV_STYLE_ID = "mergify-stack-nav-style";
-function ensureStackNavStyle() {
-    if (document.getElementById(STACK_NAV_STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STACK_NAV_STYLE_ID;
-    style.textContent =
-        "#mergify-stack-nav a[data-mergify-stack-nav]:hover{text-decoration:underline}" +
-        "#mergify-stack-nav [data-mergify-stack-nav-close]:hover{color:var(--fgColor-default,#f0f6fc)}";
-    document.head.appendChild(style);
-}
-
-// Document-level capture-phase click delegation, installed exactly once.
-// We can't bind handlers directly on the pill's elements because Turbo
-// morphs the DOM during navigation/scroll updates and matches our pill by
-// id — preserving the markup but stripping inline event-handler properties
-// (.onclick is a JS property, not part of the morphed HTML). Delegating at
-// document level survives any DOM swap. Capture phase ensures we run before
-// Turbo's own bubble-phase clickBubbled handler can preventDefault without
-// actually navigating.
-let _stackNavDelegated = false;
-function ensureStackNavClickDelegate() {
-    if (_stackNavDelegated) return;
-    _stackNavDelegated = true;
-    document.addEventListener(
-        "click",
-        (e) => {
-            if (
-                e.button !== 0 ||
-                e.metaKey ||
-                e.ctrlKey ||
-                e.shiftKey ||
-                e.altKey
-            ) {
-                return;
-            }
-            const close = e.target?.closest?.(
-                "#mergify-stack-nav [data-mergify-stack-nav-close]",
-            );
-            if (close) {
-                e.preventDefault();
-                e.stopPropagation();
-                setStackNavHidden();
-                document.querySelector("#mergify-stack-nav")?.remove();
-                return;
-            }
-            const link = e.target?.closest?.(
-                "#mergify-stack-nav a[data-mergify-stack-nav]",
-            );
-            if (link?.href) {
-                e.preventDefault();
-                e.stopPropagation();
-                window.location.href = link.href;
-            }
-        },
-        true,
-    );
-}
-
-export function injectStackNav(stackData, currentPull) {
-    ensureStackNavClickDelegate();
-    ensureStackNavStyle();
-    const existing = document.querySelector("#mergify-stack-nav");
-    if (isStackNavHidden()) {
-        if (existing) existing.remove();
-        return;
-    }
-    const fresh = buildStackNav(stackData, currentPull);
-    if (!fresh) {
-        if (existing) existing.remove();
-        return;
-    }
-    if (existing) {
-        const oldHash = existing.getAttribute("data-mergify-hash");
-        const newHash = fresh.getAttribute("data-mergify-hash");
-        if (oldHash && newHash && oldHash === newHash) return;
-        existing.replaceWith(fresh);
-    } else {
-        document.body.appendChild(fresh);
-    }
 }
 
 export function resetStackState() {
     _contextRenderGeneration += 1;
     _commentBodyCache.clear();
     _remoteCommentIdsCache.clear();
-    const panel = document.querySelector("#mergify-context");
-    if (panel) panel.remove();
-    document.querySelector("#mergify-stack-nav")?.remove();
-    clearStackNavHidden();
+    removeContextPanel();
 }

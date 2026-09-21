@@ -1160,7 +1160,7 @@ function deriveQueueButtonStateFromPayload(state) {
 // mutation observed by the orchestrator's body MutationObserver, it would
 // re-fire tryInject in a self-sustaining rAF loop that pegs the main thread
 // and destroys the row's buttons mid-click. Mirrors the data-mergify-hash
-// dedup already used by the stack-nav pill and context panel.
+// dedup already used by the context panel.
 function _richRowHash(payload, variant, data) {
     const input = JSON.stringify({
         v: variant,

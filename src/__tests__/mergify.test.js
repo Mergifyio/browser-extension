@@ -1,7 +1,7 @@
 const {
     MergifyCache,
-    PrStatusCache,
     StackContextCache,
+    removeLegacyPrStatusEntries,
     injectRowIntoMergeBox,
     isPullRequestOpen,
     isPullRequestDraft,
@@ -17,21 +17,13 @@ const {
     convertMergifyTimestamps,
     isMergifyBotComment,
     formatLocalTime,
-    parseStackMarker,
     parseRevisionMarker,
-    STACK_MARKER_PREFIX,
     REVISION_MARKER_PREFIX,
     MARKER_SUFFIX,
-    fetchPrStatus,
-    gatherPrStatuses,
     buildContextPanel,
-    updateStackDotStatus,
     injectContextPanel,
     renderMergifyContext,
     clearCommentsCache,
-    buildStackNav,
-    injectStackNav,
-    resetStackState,
 } = require("../mergify");
 const {
     loadFixture,
@@ -1032,176 +1024,6 @@ describe("convertMergifyTimestamps", () => {
     });
 });
 
-describe("parseStackMarker", () => {
-    function makeBody(payload, titleRows = "") {
-        return (
-            "Stack:\n" +
-            "| # | Pull Request | Link | |\n" +
-            "|--:|---|---|---|\n" +
-            titleRows +
-            `\n<!-- mergify-stack-data: ${JSON.stringify(payload)} -->\n`
-        );
-    }
-
-    it("returns null when no comment carries the marker", () => {
-        expect(
-            parseStackMarker(["plain text", "no marker here"], 122),
-        ).toBeNull();
-    });
-
-    it("parses a well-formed marker and merges titles from the table", () => {
-        const payload = {
-            schema_version: 1,
-            stack_id: "feature/auth",
-            pulls: [
-                {
-                    number: 121,
-                    change_id: "Ia",
-                    head_sha: "ab12cd3",
-                    base_branch: "main",
-                    dest_branch: "feature/auth",
-                    is_current: false,
-                },
-                {
-                    number: 122,
-                    change_id: "Ib",
-                    head_sha: "ef45gh6",
-                    base_branch: "feature/auth",
-                    dest_branch: "feature/auth",
-                    is_current: true,
-                },
-            ],
-        };
-        const titleRows =
-            "| 0 | Auth scaffolding | [#121](https://x/121) |  |\n" +
-            "| 1 | Token refresh | [#122](https://x/122) | 👈 |\n";
-        const result = parseStackMarker([makeBody(payload, titleRows)], 122);
-        expect(result.stack_id).toBe("feature/auth");
-        expect(result.pulls).toHaveLength(2);
-        expect(result.pulls[0]).toMatchObject({
-            number: 121,
-            title: "Auth scaffolding",
-            is_current: false,
-        });
-        expect(result.pulls[1]).toMatchObject({
-            number: 122,
-            title: "Token refresh",
-            is_current: true,
-        });
-    });
-
-    it("uses the latest marker when multiple are present", () => {
-        function payload(stack_id) {
-            return {
-                schema_version: 1,
-                stack_id,
-                pulls: [
-                    {
-                        number: 1,
-                        change_id: "i",
-                        head_sha: "h",
-                        base_branch: "main",
-                        dest_branch: stack_id,
-                        is_current: true,
-                    },
-                ],
-            };
-        }
-        const a = `<!-- mergify-stack-data: ${JSON.stringify(payload("old"))} -->`;
-        const b = `<!-- mergify-stack-data: ${JSON.stringify(payload("new"))} -->`;
-        expect(parseStackMarker([a, b], 1).stack_id).toBe("new");
-    });
-
-    it("returns null on malformed JSON", () => {
-        const body = `${STACK_MARKER_PREFIX}{not json}${MARKER_SUFFIX}`;
-        expect(parseStackMarker([body], 122)).toBeNull();
-    });
-
-    it("returns null on schema_version != 1", () => {
-        const body = `<!-- mergify-stack-data: ${JSON.stringify({
-            schema_version: 2,
-            stack_id: "x",
-            pulls: [],
-        })} -->`;
-        expect(parseStackMarker([body], 122)).toBeNull();
-    });
-
-    it("returns null when the marker's is_current PR doesn't match — guards against stale-DOM SPA fetches", () => {
-        // Marker says #30163 is the current PR, but we're rendering for #30164.
-        // The fetched comment came from #30163's page during a navigation race.
-        const payload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 30163,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-                {
-                    number: 30164,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "x",
-                    dest_branch: "x",
-                    is_current: false,
-                },
-            ],
-        };
-        const body = `<!-- mergify-stack-data: ${JSON.stringify(payload)} -->`;
-        expect(parseStackMarker([body], 30164)).toBeNull();
-        // Same marker matches when rendering for #30163.
-        expect(parseStackMarker([body], 30163)).not.toBeNull();
-    });
-
-    it("falls back to 'PR #N' when title row is missing", () => {
-        const payload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 999,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-            ],
-        };
-        const body = `<!-- mergify-stack-data: ${JSON.stringify(payload)} -->`;
-        expect(parseStackMarker([body], 999).pulls[0].title).toBe("PR #999");
-    });
-
-    it("unescapes \\| in titles", () => {
-        const payload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 5,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-            ],
-        };
-        const titleRows = "| 0 | Pipe \\| in title | [#5](https://x/5) |  |\n";
-        const body =
-            "| # | Pull Request | Link | |\n|--:|---|---|---|\n" +
-            titleRows +
-            `<!-- mergify-stack-data: ${JSON.stringify(payload)} -->`;
-        expect(parseStackMarker([body], 5).pulls[0].title).toBe(
-            "Pipe | in title",
-        );
-    });
-});
-
 describe("parseRevisionMarker", () => {
     function makeMarker(payload) {
         return `<!-- mergify-revision-data: ${JSON.stringify(payload)} -->`;
@@ -1323,98 +1145,46 @@ describe("parseRevisionMarker", () => {
     });
 });
 
-describe("PrStatusCache", () => {
-    beforeEach(() => {
-        localStorage.clear();
-        jest.spyOn(Date, "now").mockImplementation(() => 1000);
-    });
+describe("removeLegacyPrStatusEntries", () => {
     afterEach(() => {
-        jest.restoreAllMocks();
-    });
-
-    it("returns null on cache miss", () => {
-        const cache = new PrStatusCache();
-        expect(cache.get("o", "r", 1, "abc")).toBeNull();
-    });
-
-    it("returns stored status on cache hit", () => {
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 1, "abc", "open");
-        expect(cache.get("o", "r", 1, "abc")).toBe("open");
-    });
-
-    it("treats different head_sha as a miss", () => {
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 1, "abc", "open");
-        expect(cache.get("o", "r", 1, "def")).toBeNull();
-    });
-
-    it("expires entries after TTL", () => {
-        const cache = new PrStatusCache(500);
-        cache.update("o", "r", 1, "abc", "open");
-        Date.now.mockImplementation(() => 1501);
-        expect(cache.get("o", "r", 1, "abc")).toBeNull();
-    });
-
-    it("returns null on corrupted entry", () => {
-        const cache = new PrStatusCache();
-        const k = cache.key("o", "r", 1, "abc");
-        localStorage.setItem(k, "not-json");
-        const errSpy = jest
-            .spyOn(console, "error")
-            .mockImplementation(() => {});
-        expect(cache.get("o", "r", 1, "abc")).toBeNull();
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-    });
-
-    it("clearAll removes only entries with our prefix", () => {
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 1, "h", "open");
-        cache.update("o", "r", 2, "h", "merged");
-        localStorage.setItem("unrelated_key", "keep me");
-        cache.clearAll();
-        expect(cache.get("o", "r", 1, "h")).toBeNull();
-        expect(cache.get("o", "r", 2, "h")).toBeNull();
-        expect(localStorage.getItem("unrelated_key")).toBe("keep me");
-    });
-
-    it("expires after 1h by default", () => {
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 1, "h", "open");
-        // 59 minutes — still valid
-        Date.now.mockImplementation(() => 1000 + 59 * 60 * 1000);
-        expect(cache.get("o", "r", 1, "h")).toBe("open");
-        // 61 minutes — expired
-        Date.now.mockImplementation(() => 1000 + 61 * 60 * 1000);
-        expect(cache.get("o", "r", 1, "h")).toBeNull();
-    });
-
-    it("clears localStorage entries on a page reload at module load", () => {
-        jest.resetModules();
         localStorage.clear();
+    });
+
+    // The per-PR status cache that coloured the stack rows' dots expired on
+    // read, and its only reader went with the stack list — so without this
+    // sweep its entries would sit in the user's storage for ever.
+    it("removes only the legacy pr_status entries", () => {
         localStorage.setItem(
-            "mergify_browser_extension_pr_status_o_r_1_h",
-            JSON.stringify({ status: "open", timestamp: Date.now() }),
+            "mergify_browser_extension_pr_status_o_r_1_sha",
+            '{"status":"open","timestamp":1}',
         );
-        localStorage.setItem("unrelated_key", "keep me");
-        const originalGetEntries = performance.getEntriesByType;
-        performance.getEntriesByType = jest.fn(() => [{ type: "reload" }]);
-        try {
-            // Re-importing the orchestrator triggers its module-load reload-
-            // clear path. With the bug (PrStatusCache reference out of scope),
-            // the try/catch swallows the ReferenceError and the cache is
-            // never cleared. With the fix, the entry is gone.
-            jest.isolateModules(() => {
-                require("../mergify");
-            });
-        } finally {
-            performance.getEntriesByType = originalGetEntries;
-        }
+        localStorage.setItem("mergify_browser_extension_o_r", "{}");
+        localStorage.setItem("mergify_browser_extension_stack_ctx_o_r_1", "{}");
+        localStorage.setItem("unrelated", "x");
+
+        removeLegacyPrStatusEntries();
+
         expect(
-            localStorage.getItem("mergify_browser_extension_pr_status_o_r_1_h"),
+            localStorage.getItem(
+                "mergify_browser_extension_pr_status_o_r_1_sha",
+            ),
         ).toBeNull();
-        expect(localStorage.getItem("unrelated_key")).toBe("keep me");
+        expect(
+            localStorage.getItem("mergify_browser_extension_o_r"),
+        ).not.toBeNull();
+        expect(
+            localStorage.getItem("mergify_browser_extension_stack_ctx_o_r_1"),
+        ).not.toBeNull();
+        expect(localStorage.getItem("unrelated")).not.toBeNull();
+    });
+
+    // MergifyCache keys are `mergify_browser_extension_<org>_<repo>`, so
+    // github.com/pr/status-page produces one that a prefix match would claim.
+    it("keeps the repo-enabled entry of an org/repo that shares the prefix", () => {
+        const collision = "mergify_browser_extension_pr_status-page";
+        localStorage.setItem(collision, '{"isMergifyEnabled":true}');
+        removeLegacyPrStatusEntries();
+        expect(localStorage.getItem(collision)).not.toBeNull();
     });
 });
 
@@ -1432,20 +1202,18 @@ describe("StackContextCache", () => {
         expect(cache.get("o", "r", 1)).toBeNull();
     });
 
-    it("returns stored stackData and revisionData on cache hit", () => {
+    it("returns stored revisionData on cache hit", () => {
         const cache = new StackContextCache();
-        const stackData = { schema_version: 1, pulls: [{ number: 1 }] };
         const revisionData = { schema_version: 1, entries: [] };
-        cache.update("o", "r", 1, stackData, revisionData);
+        cache.update("o", "r", 1, revisionData);
         const got = cache.get("o", "r", 1);
         expect(got).not.toBeNull();
-        expect(got.stackData).toEqual(stackData);
         expect(got.revisionData).toEqual(revisionData);
     });
 
     it("expires entries after TTL", () => {
         const cache = new StackContextCache(500);
-        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
         Date.now.mockImplementation(() => 1501);
         expect(cache.get("o", "r", 1)).toBeNull();
     });
@@ -1464,7 +1232,7 @@ describe("StackContextCache", () => {
 
     it("remove deletes the entry", () => {
         const cache = new StackContextCache();
-        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
         expect(cache.get("o", "r", 1)).not.toBeNull();
         cache.remove("o", "r", 1);
         expect(cache.get("o", "r", 1)).toBeNull();
@@ -1472,191 +1240,32 @@ describe("StackContextCache", () => {
 
     it("expires after 1h by default", () => {
         const cache = new StackContextCache();
-        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
         Date.now.mockImplementation(() => 1000 + 59 * 60 * 1000);
         expect(cache.get("o", "r", 1)).not.toBeNull();
         Date.now.mockImplementation(() => 1000 + 61 * 60 * 1000);
         expect(cache.get("o", "r", 1)).toBeNull();
     });
 
-    it("preserves null revisionData", () => {
+    it("reads an entry written before the stack list was removed", () => {
+        // Entries carrying the old { stackData, revisionData } shape outlive
+        // the upgrade in the user's localStorage; only the revision half is
+        // read now, and a stack-only entry degrades to null rather than
+        // throwing on the cache-first render.
         const cache = new StackContextCache();
-        cache.update("o", "r", 1, { schema_version: 1, pulls: [] }, null);
-        const got = cache.get("o", "r", 1);
-        expect(got.stackData).not.toBeNull();
-        expect(got.revisionData).toBeNull();
-    });
-});
-
-describe("fetchPrStatus", () => {
-    afterEach(() => {
-        jest.restoreAllMocks();
-    });
-
-    function mockFetchHtml(html, ok = true) {
-        global.fetch = jest.fn().mockResolvedValue({
-            ok,
-            text: () => Promise.resolve(html),
-        });
-    }
-
-    it("returns 'open' for an opened PR", async () => {
-        mockFetchHtml('<html><span data-status="pullOpened"></span></html>');
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("open");
-    });
-
-    it("returns 'merged' for a merged PR", async () => {
-        mockFetchHtml('<span data-status="pullMerged"></span>');
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("merged");
-    });
-
-    it("returns 'closed' for a closed PR", async () => {
-        mockFetchHtml('<span data-status="pullClosed"></span>');
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("closed");
-    });
-
-    it("returns 'draft' for a draft PR", async () => {
-        mockFetchHtml('<span data-status="draft"></span>');
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("draft");
-    });
-
-    // Stack status dots resolve other PRs by fetching their pages. Enterprise
-    // Server serves the legacy badge, so reading only data-status left every
-    // dot on those deployments stuck at "unknown".
-    it("resolves state from a legacy-DOM page", async () => {
-        mockFetchHtml(
-            '<span class="State" title="Status: Merged">Merged</span>',
+        const k = cache.key("o", "r", 1);
+        localStorage.setItem(
+            k,
+            JSON.stringify({
+                stackData: { schema_version: 1, pulls: [] },
+                timestamp: 1000,
+            }),
         );
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("merged");
-    });
-
-    it("returns 'unknown' on non-OK response", async () => {
-        mockFetchHtml("", false);
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("unknown");
-    });
-
-    it("returns 'unknown' on fetch error", async () => {
-        global.fetch = jest.fn().mockRejectedValue(new Error("net"));
-        await expect(fetchPrStatus("o", "r", 1)).resolves.toBe("unknown");
-    });
-});
-
-describe("gatherPrStatuses", () => {
-    beforeEach(() => {
-        // Navigate away from any PR URL left by earlier tests so that
-        // background RAF callbacks from the MutationObserver / onPageUpdate
-        // path do not trigger extra fetch() calls during the concurrency test.
-        History.prototype.pushState.call(window.history, {}, "", "/");
-    });
-    afterEach(() => {
-        jest.restoreAllMocks();
-        localStorage.clear();
-    });
-
-    it("uses cached statuses without calling fetch", async () => {
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 1, "h", "open");
-        const fetchSpy = jest.fn();
-        global.fetch = fetchSpy;
-        const items = [{ org: "o", repo: "r", num: 1, head_sha: "h" }];
-        const resolved = [];
-        await gatherPrStatuses(items, cache, (item, status) => {
-            resolved.push([item.num, status]);
-        });
-        expect(fetchSpy).not.toHaveBeenCalled();
-        expect(resolved).toEqual([[1, "open"]]);
-    });
-
-    it("fetches misses, caches results, and calls onResolve", async () => {
-        const cache = new PrStatusCache();
-        global.fetch = jest.fn().mockResolvedValue({
-            ok: true,
-            text: () =>
-                Promise.resolve('<span data-status="pullMerged"></span>'),
-        });
-        const items = [{ org: "o", repo: "r", num: 2, head_sha: "h2" }];
-        const resolved = [];
-        await gatherPrStatuses(items, cache, (item, status) => {
-            resolved.push([item.num, status]);
-        });
-        expect(resolved).toEqual([[2, "merged"]]);
-        expect(cache.get("o", "r", 2, "h2")).toBe("merged");
-    });
-
-    it("respects the concurrency cap", async () => {
-        const cache = new PrStatusCache();
-        let inflight = 0;
-        let peak = 0;
-        global.fetch = jest.fn(async () => {
-            inflight += 1;
-            peak = Math.max(peak, inflight);
-            await new Promise((r) => setTimeout(r, 5));
-            inflight -= 1;
-            return {
-                ok: true,
-                text: () =>
-                    Promise.resolve('<span data-status="pullOpened"></span>'),
-            };
-        });
-        const items = Array.from({ length: 8 }, (_, i) => ({
-            org: "o",
-            repo: "r",
-            num: i,
-            head_sha: `h${i}`,
-        }));
-        await gatherPrStatuses(items, cache, () => {}, 3);
-        expect(peak).toBeLessThanOrEqual(3);
-    });
-
-    it("dedupes concurrent fetches for the same PR (org/repo/num/head_sha)", async () => {
-        const cache = new PrStatusCache();
-        let resolveFetch;
-        let fetchCallCount = 0;
-        global.fetch = jest.fn(() => {
-            fetchCallCount += 1;
-            return new Promise((res) => {
-                resolveFetch = () =>
-                    res({
-                        ok: true,
-                        text: () =>
-                            Promise.resolve(
-                                '<span data-status="pullOpened"></span>',
-                            ),
-                    });
-            });
-        });
-        const items = [{ org: "o", repo: "r", num: 1, head_sha: "h" }];
-        const p1 = gatherPrStatuses(items, cache, () => {});
-        const p2 = gatherPrStatuses(items, cache, () => {});
-        await Promise.resolve();
-        await Promise.resolve();
-        // Two concurrent gathers for the same PR → only one network fetch.
-        expect(fetchCallCount).toBe(1);
-        resolveFetch();
-        await p1;
-        await p2;
+        expect(cache.get("o", "r", 1)).toEqual({ revisionData: null });
     });
 });
 
 describe("buildContextPanel", () => {
-    function stack() {
-        return {
-            schema_version: 1,
-            stack_id: "feature/auth",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "feature/auth",
-                    is_current: true,
-                    title: "PR title",
-                },
-            ],
-        };
-    }
-
     function rev() {
         return {
             schema_version: 1,
@@ -1678,219 +1287,25 @@ describe("buildContextPanel", () => {
         return { org: "o", repo: "r", number: 122 };
     }
 
-    it("returns null when both inputs are null", () => {
-        expect(buildContextPanel(null, null, ctx())).toBeNull();
+    it("returns null when there is no revision data", () => {
+        expect(buildContextPanel(null, ctx())).toBeNull();
     });
 
-    it("returns a panel with id 'mergify-context' when at least one is present", () => {
-        const el = buildContextPanel(stack(), null, ctx());
+    it("returns a panel with id 'mergify-context'", () => {
+        const el = buildContextPanel(rev(), ctx());
         expect(el.id).toBe("mergify-context");
     });
 
-    it("renders only the stack column when revision is null", () => {
-        const el = buildContextPanel(stack(), null, ctx());
-        expect(
-            el.querySelector('[data-mergify-section="stack"]'),
-        ).not.toBeNull();
+    // GitHub's native Stacks UI lists the pull requests of a stack on the
+    // pull request page, so the panel carries the revision history alone.
+    it("renders the revisions column and no stack column", () => {
+        const el = buildContextPanel(rev(), ctx());
         expect(
             el.querySelector('[data-mergify-section="revisions"]'),
-        ).toBeNull();
-    });
-
-    it("renders only the revisions column when stack is null", () => {
-        const el = buildContextPanel(null, rev(), ctx());
+        ).not.toBeNull();
         expect(el.querySelector('[data-mergify-section="stack"]')).toBeNull();
-        expect(
-            el.querySelector('[data-mergify-section="revisions"]'),
-        ).not.toBeNull();
-    });
-
-    it("renders both columns when both inputs are present", () => {
-        const el = buildContextPanel(stack(), rev(), ctx());
-        expect(
-            el.querySelector('[data-mergify-section="stack"]'),
-        ).not.toBeNull();
-        expect(
-            el.querySelector('[data-mergify-section="revisions"]'),
-        ).not.toBeNull();
-    });
-
-    it("renders stack rows in base-on-top order with current PR accent", () => {
-        const stackData = {
-            schema_version: 1,
-            stack_id: "feature/auth",
-            pulls: [
-                {
-                    number: 121,
-                    change_id: "i1",
-                    head_sha: "h1",
-                    base_branch: "main",
-                    dest_branch: "feature/auth",
-                    is_current: false,
-                    title: "Auth scaffolding",
-                },
-                {
-                    number: 122,
-                    change_id: "i2",
-                    head_sha: "h2",
-                    base_branch: "feature/auth",
-                    dest_branch: "feature/auth",
-                    is_current: true,
-                    title: "Token refresh",
-                },
-                {
-                    number: 123,
-                    change_id: "i3",
-                    head_sha: "h3",
-                    base_branch: "feature/auth",
-                    dest_branch: "feature/auth",
-                    is_current: false,
-                    title: "Logout flow",
-                },
-            ],
-        };
-        const el = buildContextPanel(stackData, null, ctx());
-        const rows = el.querySelectorAll("[data-mergify-pr-row]");
-        expect(rows).toHaveLength(3);
-        expect(rows[0].getAttribute("data-mergify-pr-row")).toBe("121");
-        expect(rows[1].getAttribute("data-mergify-pr-row")).toBe("122");
-        expect(rows[2].getAttribute("data-mergify-pr-row")).toBe("123");
-        expect(rows[1].getAttribute("data-mergify-current")).toBe("true");
-        expect(rows[0].getAttribute("data-mergify-current")).toBeNull();
-        const dot121 = el.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="121"]',
-        );
-        expect(dot121.getAttribute("data-mergify-head-sha")).toBe("h1");
-        const dot122 = el.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="122"]',
-        );
-        expect(dot122.getAttribute("data-mergify-head-sha")).toBe("h2");
-        const dot123 = el.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="123"]',
-        );
-        expect(dot123.getAttribute("data-mergify-head-sha")).toBe("h3");
-        // Current row uses inset box-shadow (not border-left) so its content
-        // doesn't shift right and stays aligned with non-current rows.
-        const currentRow = rows[1];
-        expect(currentRow.style.cssText).toMatch(/box-shadow:[^;]*inset/);
-        expect(currentRow.style.cssText).not.toMatch(/border-left:/);
-    });
-
-    it("section label includes the position-in-stack indicator", () => {
-        const stackData = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 1,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: false,
-                    title: "a",
-                },
-                {
-                    number: 2,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "x",
-                    dest_branch: "x",
-                    is_current: true,
-                    title: "b",
-                },
-                {
-                    number: 3,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "x",
-                    dest_branch: "x",
-                    is_current: false,
-                    title: "c",
-                },
-            ],
-        };
-        const el = buildContextPanel(stackData, null, {
-            org: "o",
-            repo: "r",
-            number: 2,
-        });
-        const sectionLabel = el.querySelector(
-            '[data-mergify-section="stack"] div',
-        );
-        expect(sectionLabel.textContent).toBe("STACK · 3 PRs · you are #2");
-    });
-
-    it("makes each stack row an anchor to its PR", () => {
-        const stackData = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                    title: "x",
-                },
-            ],
-        };
-        const el = buildContextPanel(stackData, null, {
-            org: "o",
-            repo: "r",
-            number: 122,
-        });
-        const row = el.querySelector('[data-mergify-pr-row="122"]');
-        expect(row.tagName).toBe("A");
-        expect(row.getAttribute("href")).toBe("/o/r/pull/122");
-    });
-
-    it("renders stack rows with a status-dot placeholder by default", () => {
-        const stackData = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                    title: "x",
-                },
-            ],
-        };
-        const el = buildContextPanel(stackData, null, ctx());
-        const dot = el.querySelector("[data-mergify-status-dot]");
-        expect(dot).not.toBeNull();
-        expect(dot.getAttribute("data-mergify-status")).toBe("unknown");
-    });
-
-    it("updateStackDotStatus paints the dot and label", () => {
-        const stackData = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                    title: "x",
-                },
-            ],
-        };
-        const el = buildContextPanel(stackData, null, ctx());
-        updateStackDotStatus(el, 122, "merged");
-        const dot = el.querySelector("[data-mergify-status-dot]");
-        expect(dot.getAttribute("data-mergify-status")).toBe("merged");
-        const lbl = el.querySelector("[data-mergify-status-label]");
-        expect(lbl.textContent).toBe("merged");
+        expect(el.querySelector("[data-mergify-pr-row]")).toBeNull();
+        expect(el.querySelector("[data-mergify-status-dot]")).toBeNull();
     });
 
     it("renders revision dots in oldest→newest order", () => {
@@ -1916,7 +1331,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const dots = el.querySelectorAll("[data-mergify-rev-dot]");
         expect(dots).toHaveLength(2);
         expect(dots[0].getAttribute("data-mergify-change-type")).toBe(
@@ -1948,7 +1363,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, {
+        const el = buildContextPanel(revData, {
             org: "o",
             repo: "r",
             number: 122,
@@ -1984,7 +1399,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const dots = el.querySelectorAll("[data-mergify-rev-dot]");
         expect(dots[0].getAttribute("data-mergify-latest")).toBeNull();
         expect(dots[1].getAttribute("data-mergify-latest")).toBe("true");
@@ -2000,7 +1415,7 @@ describe("buildContextPanel", () => {
             compare_url: i === 0 ? null : `u${i}`,
         }));
         const revData = { schema_version: 1, pull_number: 122, entries };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const ellipsis = el.querySelector("[data-mergify-rev-ellipsis]");
         expect(ellipsis).not.toBeNull();
         const dots = el.querySelectorAll("[data-mergify-rev-dot]");
@@ -2018,7 +1433,7 @@ describe("buildContextPanel", () => {
             compare_url: i === 0 ? null : `u${i}`,
         }));
         const revData = { schema_version: 1, pull_number: 122, entries };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const ellipsis = el.querySelector("[data-mergify-rev-ellipsis]");
         ellipsis.click();
         const dots = el.querySelectorAll("[data-mergify-rev-dot]");
@@ -2031,7 +1446,7 @@ describe("buildContextPanel", () => {
             pull_number: 122,
             entries: [],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         expect(
             el.querySelector("[data-mergify-revisions-empty]"),
         ).not.toBeNull();
@@ -2053,7 +1468,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const dot = el.querySelector("[data-mergify-rev-dot]");
         expect(dot.getAttribute("aria-label")).toMatch(/Revision 1 \(amend\)/);
     });
@@ -2092,7 +1507,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const reasons = el.querySelectorAll("[data-mergify-rev-reason]");
         // Exactly the two entries with non-null reasons render the label.
         expect(reasons).toHaveLength(2);
@@ -2143,7 +1558,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, {
+        const el = buildContextPanel(revData, {
             org: "o",
             repo: "r",
             number: 122,
@@ -2195,7 +1610,7 @@ describe("buildContextPanel", () => {
                 },
             ],
         };
-        const el = buildContextPanel(null, revData, ctx());
+        const el = buildContextPanel(revData, ctx());
         const dots = el.querySelectorAll("[data-mergify-rev-dot]");
         expect(dots).toHaveLength(3);
         for (const dot of dots) {
@@ -2204,8 +1619,8 @@ describe("buildContextPanel", () => {
     });
 
     it("produces a stable data-mergify-hash across rebuilds with equal inputs", () => {
-        const a = buildContextPanel(stack(), rev(), ctx());
-        const b = buildContextPanel(stack(), rev(), ctx());
+        const a = buildContextPanel(rev(), ctx());
+        const b = buildContextPanel(rev(), ctx());
         expect(a.getAttribute("data-mergify-hash")).toBe(
             b.getAttribute("data-mergify-hash"),
         );
@@ -2263,74 +1678,53 @@ describe("injectContextPanel", () => {
 describe("renderMergifyContext", () => {
     beforeEach(() => {
         History.prototype.pushState.call(window.history, {}, "", "/");
+        localStorage.clear();
         clearCommentsCache();
     });
 
     afterEach(() => {
         document.body.innerHTML = "";
         jest.restoreAllMocks();
+        localStorage.clear();
         clearCommentsCache();
     });
 
-    // Sets up the page DOM so findMergifyCommentIds picks up our fake
-    // comments, and mocks fetch to handle the two URL patterns we hit:
-    //   - /<org>/<repo>/issue_comments/<id>/edit_form → textarea HTML with raw body
-    //   - /<org>/<repo>/pull/<n>                      → HTML with data-status span
-    function mockFetch({
-        commentBodies = [],
-        statusHtml = "",
-        currentPrStatus = null,
-    } = {}) {
-        const visibleText = (body) =>
-            /revision-data/i.test(body) ? "Revision history" : "Mergify stack";
-        let html = '<div id="discussion_bucket"></div>';
-        if (currentPrStatus) {
-            html += `<span data-status="${currentPrStatus}"></span>`;
-        }
-        html += commentBodies
-            .map(
-                (body, i) =>
-                    '<div class="TimelineItem">' +
-                    `<div id="issuecomment-${i + 1}"></div>` +
-                    `<div class="comment-body">${visibleText(body)}</div>` +
-                    "</div>",
-            )
-            .join("");
-        document.body.innerHTML = html;
-
-        global.fetch = jest.fn((url) => {
-            if (typeof url === "string") {
-                const m = url.match(/\/issue_comments\/(\d+)\/edit_form$/);
-                if (m) {
-                    const idx = Number.parseInt(m[1], 10) - 1;
-                    const body = commentBodies[idx] ?? "";
-                    const escaped = body
-                        .replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;");
-                    return Promise.resolve({
-                        ok: true,
-                        text: () =>
-                            Promise.resolve(
-                                `<html><body><textarea>${escaped}</textarea></body></html>`,
-                            ),
-                    });
-                }
-            }
-            return Promise.resolve({
-                ok: true,
-                text: () => Promise.resolve(statusHtml),
-            });
-        });
+    // The revision-history comment mergify-cli posts: a rendered table plus
+    // the JSON marker the panel is built from.
+    function revisionBody(pullNumber) {
+        const payload = {
+            schema_version: 1,
+            pull_number: pullNumber,
+            entries: [
+                {
+                    number: 1,
+                    change_type: "initial",
+                    old_sha: null,
+                    new_sha: "ab12cd3",
+                    timestamp_iso: "2026-04-22T09:14:00Z",
+                    compare_url: null,
+                },
+            ],
+        };
+        return (
+            "### Revision history\n\n" +
+            "| # | Type | Changes | Reason | Date |\n" +
+            "|---|------|---------|--------|------|\n" +
+            "| 1 | initial | [link](u) | first push | 2026-04-22 09:14 UTC |\n" +
+            `${REVISION_MARKER_PREFIX}${JSON.stringify(payload)}${MARKER_SUFFIX}`
+        );
     }
 
-    it("renders the panel when a stack marker is present", async () => {
-        const stackPayload = {
+    // The sticky stack comment mergify-cli used to post. Nothing reads it any
+    // more — GitHub's native Stacks UI lists the stack on the pull request
+    // page — so it must not even be fetched.
+    function stackBody(pullNumber) {
+        const payload = {
             schema_version: 1,
             stack_id: "feature/auth",
             pulls: [
                 {
-                    number: 122,
+                    number: pullNumber,
                     change_id: "i",
                     head_sha: "h",
                     base_branch: "main",
@@ -2339,60 +1733,123 @@ describe("renderMergifyContext", () => {
                 },
             ],
         };
-        const stackBody =
+        return (
             "Stack:\n" +
-            "| 0 | Token refresh | [#122](https://x/122) | 👈 |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayload)} -->`;
-        mockFetch({
-            commentBodies: [stackBody],
-            statusHtml: '<span data-status="pullOpened"></span>',
+            `| 0 | Token refresh | [#${pullNumber}](https://x/${pullNumber}) | 👈 |\n` +
+            `<!-- mergify-stack-data: ${JSON.stringify(payload)} -->`
+        );
+    }
+
+    function escapeBody(body) {
+        return body
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    function timelineItem(id, visibleText) {
+        return (
+            '<div class="TimelineItem">' +
+            `<div id="issuecomment-${id}"></div>` +
+            `<div class="comment-body">${visibleText}</div>` +
+            "</div>"
+        );
+    }
+
+    // Sets up the page DOM so findMergifyCommentIds picks up our fake
+    // comments, and mocks fetch for the edit_form URL that carries each
+    // comment's raw markdown.
+    function mockFetch({ commentBodies = [] } = {}) {
+        const visibleText = (body) =>
+            /revision-data/i.test(body) ? "Revision history" : "Mergify stack";
+        document.body.innerHTML =
+            '<div id="discussion_bucket"></div>' +
+            commentBodies
+                .map((body, i) => timelineItem(i + 1, visibleText(body)))
+                .join("");
+
+        global.fetch = jest.fn((url) => {
+            if (typeof url === "string") {
+                const m = url.match(/\/issue_comments\/(\d+)\/edit_form$/);
+                if (m) {
+                    const idx = Number.parseInt(m[1], 10) - 1;
+                    const body = commentBodies[idx] ?? "";
+                    return Promise.resolve({
+                        ok: true,
+                        text: () =>
+                            Promise.resolve(
+                                `<html><body><textarea>${escapeBody(body)}</textarea></body></html>`,
+                            ),
+                    });
+                }
+            }
+            return Promise.resolve({
+                ok: true,
+                text: () => Promise.resolve(""),
+            });
         });
+    }
+
+    it("renders the panel when a revision marker is present", async () => {
+        mockFetch({ commentBodies: [revisionBody(122)] });
         await renderMergifyContext({ org: "o", repo: "r", number: 122 });
         const panel = document.querySelector("#mergify-context");
         expect(panel).not.toBeNull();
         expect(
-            panel.querySelector('[data-mergify-pr-row="122"]'),
+            panel.querySelector('[data-mergify-rev-num="1"]'),
         ).not.toBeNull();
     });
 
-    it("does not render when no Mergify-looking comment is present", async () => {
-        // Empty commentBodies → no candidate IDs → no fetches → no panel.
-        mockFetch({ commentBodies: [] });
+    it("paints neither a stack list nor a floating stack-nav pill", async () => {
+        mockFetch({ commentBodies: [stackBody(122), revisionBody(122)] });
         await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
+        expect(document.querySelector("[data-mergify-pr-row]")).toBeNull();
+        expect(
+            document.querySelector('[data-mergify-section="stack"]'),
+        ).toBeNull();
+    });
+
+    // What every freshly pushed stack looks like once mergify-cli stops
+    // posting the stack comment: the revision history is the only comment
+    // left, and it must still render.
+    it("renders from the revision comment alone when no stack comment exists", async () => {
+        mockFetch({ commentBodies: [revisionBody(122)] });
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+    });
+
+    it("does not fetch a stack comment that carries no revision history", async () => {
+        mockFetch({ commentBodies: [stackBody(122)] });
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).toBeNull();
+        // The stack comment is never a candidate, so its edit_form is never
+        // asked for — and the rendered timeline answers the question, so the
+        // ~500KB Conversation download is not asked for either.
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    // Every pull request with no Mergify comment sits on this path. Without
+    // the guard each one re-downloads the Conversation page once a minute,
+    // for as long as the tab stays open.
+    it("does not download the Conversation page when the timeline is rendered", async () => {
+        document.body.innerHTML =
+            '<div id="discussion_bucket"></div>' +
+            timelineItem(1, "Someone else's comment");
+        global.fetch = jest.fn(() =>
+            Promise.resolve({ ok: true, text: () => Promise.resolve("") }),
+        );
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(global.fetch).not.toHaveBeenCalled();
         expect(document.querySelector("#mergify-context")).toBeNull();
     });
 
-    it("writes the current PR's live status into PrStatusCache", async () => {
-        // Seed cache with a stale value the user couldn't have seen
-        const cache = new PrStatusCache();
-        cache.update("o", "r", 122, "h", "draft");
-        expect(cache.get("o", "r", 122, "h")).toBe("draft");
-
-        const stackPayload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-            ],
-        };
-        const stackBody =
-            "Stack:\n" +
-            "| 0 | T | [#122](https://x/122) | 👈 |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayload)} -->`;
-        mockFetch({
-            commentBodies: [stackBody],
-            currentPrStatus: "pullOpened",
-        });
+    it("does not render when no Mergify-looking comment is present", async () => {
+        // Empty commentBodies → no candidate IDs → no panel.
+        mockFetch({ commentBodies: [] });
         await renderMergifyContext({ org: "o", repo: "r", number: 122 });
-        // The stale "draft" entry must have been overwritten by the live "open".
-        expect(cache.get("o", "r", 122, "h")).toBe("open");
+        expect(document.querySelector("#mergify-context")).toBeNull();
     });
 
     it("does not render when edit_form fetches fail", async () => {
@@ -2401,10 +1858,7 @@ describe("renderMergifyContext", () => {
         // the user lacks read access). Result: no body collected, no panel.
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
-            '<div class="TimelineItem">' +
-            '<div id="issuecomment-1"></div>' +
-            '<div class="comment-body">Mergify stack</div>' +
-            "</div>";
+            timelineItem(1, "Revision history");
         global.fetch = jest.fn(() =>
             Promise.resolve({ ok: false, status: 404 }),
         );
@@ -2415,10 +1869,7 @@ describe("renderMergifyContext", () => {
     it("backs off after an edit_form failure (negative cache)", async () => {
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
-            '<div class="TimelineItem">' +
-            '<div id="issuecomment-1"></div>' +
-            '<div class="comment-body">Mergify stack</div>' +
-            "</div>";
+            timelineItem(1, "Revision history");
         const fetchSpy = jest.fn(() =>
             Promise.resolve({ ok: false, status: 404 }),
         );
@@ -2433,48 +1884,15 @@ describe("renderMergifyContext", () => {
     it("falls back to Conversation HTML when local DOM has no comments (Files tab)", async () => {
         // Simulate the Files tab: no .TimelineItem in the local DOM, only
         // the panel injection target. The Conversation page HTML, fetched
-        // on demand, contains the Mergify-stack comment we need.
-        const stackPayload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 11335,
-                    change_id: "i",
-                    head_sha: "h",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-                {
-                    number: 11336,
-                    change_id: "j",
-                    head_sha: "h2",
-                    base_branch: "x",
-                    dest_branch: "x",
-                    is_current: false,
-                },
-            ],
-        };
-        const stackBody =
-            "Stack:\n" +
-            "| 0 | T1 | [#11335](https://x/11335) | 👈 |\n" +
-            "| 1 | T2 | [#11336](https://x/11336) |  |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayload)} -->`;
+        // on demand, carries the revision-history comment we need.
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
             '<section class="use-sticky-header-module__stickyHeader__abc"></section>';
         const conversationHtml =
             "<html><body>" +
-            '<div class="TimelineItem">' +
-            '<div id="issuecomment-9001"></div>' +
-            '<div class="comment-body">Mergify stack</div>' +
-            "</div>" +
+            timelineItem(9001, "Revision history") +
             "</body></html>";
-        const escaped = stackBody
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
+        const escaped = escapeBody(revisionBody(11335));
         global.fetch = jest.fn((url) => {
             if (typeof url !== "string") {
                 return Promise.resolve({
@@ -2504,78 +1922,19 @@ describe("renderMergifyContext", () => {
         });
         await renderMergifyContext({ org: "o", repo: "r", number: 11335 });
         expect(document.querySelector("#mergify-context")).not.toBeNull();
-        expect(
-            document.querySelector('[data-mergify-pr-row="11335"]'),
-        ).not.toBeNull();
     });
 
-    it("removes a stale panel/nav when bodies become empty", async () => {
-        const stackPayload = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [
-                {
-                    number: 122,
-                    change_id: "i1",
-                    head_sha: "h1",
-                    base_branch: "main",
-                    dest_branch: "x",
-                    is_current: true,
-                },
-                {
-                    number: 123,
-                    change_id: "i2",
-                    head_sha: "h2",
-                    base_branch: "x",
-                    dest_branch: "x",
-                    is_current: false,
-                },
-            ],
-        };
-        const stackBody =
-            "Stack:\n" +
-            "| 0 | T1 | [#122](https://x/122) | 👈 |\n" +
-            "| 1 | T2 | [#123](https://x/123) |  |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayload)} -->`;
-        document.body.innerHTML =
-            '<div id="discussion_bucket"></div>' +
-            '<section class="use-sticky-header-module__stickyHeader__abc PullRequestFilesToolbar-module__toolbar__def"></section>' +
-            '<div class="TimelineItem">' +
-            '<div id="issuecomment-1"></div>' +
-            '<div class="comment-body">Mergify stack</div>' +
-            "</div>";
-        const escaped = stackBody
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-        global.fetch = jest.fn((url) => {
-            if (
-                typeof url === "string" &&
-                /\/issue_comments\/\d+\/edit_form$/.test(url)
-            ) {
-                return Promise.resolve({
-                    ok: true,
-                    text: () =>
-                        Promise.resolve(
-                            `<html><body><textarea>${escaped}</textarea></body></html>`,
-                        ),
-                });
-            }
-            return Promise.resolve({
-                ok: true,
-                text: () => Promise.resolve(""),
-            });
-        });
+    it("removes a stale panel when bodies become empty", async () => {
+        mockFetch({ commentBodies: [revisionBody(122)] });
         await renderMergifyContext({ org: "o", repo: "r", number: 122 });
         expect(document.querySelector("#mergify-context")).not.toBeNull();
-        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
         // Now the comments disappear.
         for (const el of document.querySelectorAll(".TimelineItem")) {
             el.remove();
         }
+        clearCommentsCache();
         await renderMergifyContext({ org: "o", repo: "r", number: 122 });
         expect(document.querySelector("#mergify-context")).toBeNull();
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
     });
 
     it("resetQueueState removes any existing #mergify-context panel", () => {
@@ -2585,382 +1944,36 @@ describe("renderMergifyContext", () => {
         expect(document.querySelector("#mergify-context")).toBeNull();
     });
 
-    it("does not paint stale-PR statuses onto a re-rendered panel", async () => {
-        const stackPayloadA = {
-            schema_version: 1,
-            stack_id: "a",
-            pulls: [
-                {
-                    number: 1,
-                    change_id: "i1",
-                    head_sha: "h1",
-                    base_branch: "main",
-                    dest_branch: "a",
-                    is_current: true,
-                },
-                {
-                    number: 2,
-                    change_id: "i2",
-                    head_sha: "h2",
-                    base_branch: "a",
-                    dest_branch: "a",
-                    is_current: false,
-                },
-            ],
-        };
-        const stackBodyA =
-            "Stack:\n" +
-            "| 0 | A1 | [#1](https://x/1) | 👈 |\n" +
-            "| 1 | A2 | [#2](https://x/2) |  |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayloadA)} -->`;
-        // Mount the first PR's DOM, then mock fetch with a slow status response
-        // so we can navigate before it resolves.
-        let resolveStatusFetch;
+    it("discards a render that resolves after a navigation", async () => {
+        // The comment fetch is held open while an SPA navigation bumps the
+        // render generation. The panel it was building belongs to the PR we
+        // left, so it must never reach the DOM.
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
-            '<div class="TimelineItem">' +
-            '<div id="issuecomment-1"></div>' +
-            '<div class="comment-body">Mergify stack</div>' +
-            "</div>";
-        const escapedA = stackBodyA
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-        global.fetch = jest.fn((url) => {
-            if (
-                typeof url === "string" &&
-                /\/issue_comments\/\d+\/edit_form$/.test(url)
-            ) {
-                return Promise.resolve({
-                    ok: true,
-                    text: () =>
-                        Promise.resolve(
-                            `<html><body><textarea>${escapedA}</textarea></body></html>`,
-                        ),
-                });
-            }
-            return new Promise((res) => {
-                resolveStatusFetch = () =>
-                    res({
-                        ok: true,
-                        text: () =>
-                            Promise.resolve(
-                                '<span data-status="pullMerged"></span>',
-                            ),
-                    });
-            });
-        });
+            timelineItem(1, "Revision history");
+        let resolveEditForm;
+        global.fetch = jest.fn(
+            () =>
+                new Promise((res) => {
+                    resolveEditForm = () =>
+                        res({
+                            ok: true,
+                            text: () =>
+                                Promise.resolve(
+                                    `<html><body><textarea>${escapeBody(revisionBody(122))}</textarea></body></html>`,
+                                ),
+                        });
+                }),
+        );
         const renderPromise = renderMergifyContext({
             org: "o",
             repo: "r",
-            number: 1,
+            number: 122,
         });
-        // Wait so the panel mounts before we simulate navigation.
-        await Promise.resolve();
         await Promise.resolve();
         resetQueueState();
-        // Now mount the second PR's DOM and mock fetch for it.
-        const stackPayloadB = {
-            schema_version: 1,
-            stack_id: "b",
-            pulls: [
-                {
-                    number: 5,
-                    change_id: "i",
-                    head_sha: "hb",
-                    base_branch: "main",
-                    dest_branch: "b",
-                    is_current: true,
-                },
-            ],
-        };
-        const stackBodyB =
-            "Stack:\n" +
-            "| 0 | B1 | [#5](https://x/5) | 👈 |\n" +
-            `<!-- mergify-stack-data: ${JSON.stringify(stackPayloadB)} -->`;
-        mockFetch({ commentBodies: [stackBodyB] });
-        await renderMergifyContext({ org: "o", repo: "r", number: 5 });
-        // Resolve the stale fetch from the first render.
-        if (resolveStatusFetch) resolveStatusFetch();
-        await renderPromise.catch(() => {});
-        const dot = document.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="5"]',
-        );
-        expect(dot.getAttribute("data-mergify-status")).not.toBe("merged");
-    });
-});
-
-describe("buildStackNav", () => {
-    function pull(number, opts = {}) {
-        return {
-            number,
-            change_id: `i${number}`,
-            head_sha: `h${number}`,
-            base_branch: "main",
-            dest_branch: "x",
-            is_current: opts.is_current || false,
-            title: opts.title || `Title ${number}`,
-        };
-    }
-    function stackOf(...pulls) {
-        return { schema_version: 1, stack_id: "x", pulls };
-    }
-    function ctx(num) {
-        return { org: "o", repo: "r", number: num };
-    }
-
-    it("returns null when stack has fewer than 2 PRs", () => {
-        const single = stackOf(pull(1, { is_current: true }));
-        expect(buildStackNav(single, ctx(1))).toBeNull();
-    });
-
-    it("returns null when stackData is null", () => {
-        expect(buildStackNav(null, ctx(1))).toBeNull();
-    });
-
-    it("returns null when current PR is not in the stack", () => {
-        const stack = stackOf(pull(1), pull(2));
-        expect(buildStackNav(stack, ctx(99))).toBeNull();
-    });
-
-    it("renders prev and next halves when in the middle", () => {
-        const stack = stackOf(pull(1), pull(2, { is_current: true }), pull(3));
-        const el = buildStackNav(stack, ctx(2));
-        expect(el.id).toBe("mergify-stack-nav");
-        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
-        const next = el.querySelector('[data-mergify-stack-nav="next"]');
-        expect(prev.getAttribute("href")).toBe("/o/r/pull/1");
-        expect(prev.getAttribute("data-mergify-stack-nav-num")).toBe("1");
-        expect(next.getAttribute("href")).toBe("/o/r/pull/3");
-        expect(next.getAttribute("data-mergify-stack-nav-num")).toBe("3");
-    });
-
-    it("middle label shows position-in-stack as N/M", () => {
-        const stack = stackOf(
-            pull(1),
-            pull(2, { is_current: true }),
-            pull(3),
-            pull(4),
-            pull(5),
-        );
-        const el = buildStackNav(stack, ctx(2));
-        // The middle label sits between prev and next, exposing the position.
-        const labels = Array.from(el.children).map((c) => c.textContent);
-        expect(labels.some((t) => t === "2/5")).toBe(true);
-    });
-
-    it("omits the prev side entirely when at the base of the stack", () => {
-        const stack = stackOf(pull(1, { is_current: true }), pull(2));
-        const el = buildStackNav(stack, ctx(1));
-        expect(el.querySelector('[data-mergify-stack-nav="prev"]')).toBeNull();
-        expect(
-            el.querySelector('[data-mergify-stack-nav="prev-empty"]'),
-        ).toBeNull();
-        expect(
-            el.querySelector('[data-mergify-stack-nav="next"]'),
-        ).not.toBeNull();
-    });
-
-    it("omits the next side entirely when at the tip of the stack", () => {
-        const stack = stackOf(pull(1), pull(2, { is_current: true }));
-        const el = buildStackNav(stack, ctx(2));
-        expect(
-            el.querySelector('[data-mergify-stack-nav="prev"]'),
-        ).not.toBeNull();
-        expect(el.querySelector('[data-mergify-stack-nav="next"]')).toBeNull();
-        expect(
-            el.querySelector('[data-mergify-stack-nav="next-empty"]'),
-        ).toBeNull();
-    });
-
-    it("shows the prev PR title when at the tip of the stack", () => {
-        const stack = stackOf(
-            pull(1, { title: "feat(api): land the new thing" }),
-            pull(2, { is_current: true }),
-        );
-        const el = buildStackNav(stack, ctx(2));
-        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
-        expect(prev.textContent).toContain("feat(api): land the new thing");
-    });
-
-    it("does NOT show the prev PR title when not at the tip", () => {
-        const stack = stackOf(
-            pull(1, { title: "feat(api): land the new thing" }),
-            pull(2, { is_current: true }),
-            pull(3),
-        );
-        const el = buildStackNav(stack, ctx(2));
-        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
-        expect(prev.textContent).not.toContain("feat(api): land the new thing");
-    });
-
-    it("preserves the current subpath in prev/next links", () => {
-        const stack = stackOf(pull(1), pull(2, { is_current: true }), pull(3));
-        const el = buildStackNav(stack, {
-            org: "o",
-            repo: "r",
-            number: 2,
-            subpath: "changes",
-        });
-        expect(
-            el
-                .querySelector('[data-mergify-stack-nav="prev"]')
-                .getAttribute("href"),
-        ).toBe("/o/r/pull/1/changes");
-        expect(
-            el
-                .querySelector('[data-mergify-stack-nav="next"]')
-                .getAttribute("href"),
-        ).toBe("/o/r/pull/3/changes");
-    });
-
-    it("prev link carries a status-dot keyed to the prev PR number", () => {
-        const stack = stackOf(pull(1), pull(2, { is_current: true }), pull(3));
-        const el = buildStackNav(stack, ctx(2));
-        const prev = el.querySelector('[data-mergify-stack-nav="prev"]');
-        const dot = prev.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="1"]',
-        );
-        expect(dot).not.toBeNull();
-        // Status-fetch pipeline paints all non-current pulls — the prev dot
-        // updates via updateStackDotStatus just like the next dot.
-        updateStackDotStatus(el, 1, "merged");
-        expect(dot.getAttribute("data-mergify-status")).toBe("merged");
-    });
-
-    it("next link shows the next PR's title and a status-dot keyed to its number", () => {
-        const stack = stackOf(
-            pull(1),
-            pull(2, { is_current: true }),
-            pull(3, { title: "feat(api): land the new thing" }),
-        );
-        const el = buildStackNav(stack, ctx(2));
-        const next = el.querySelector('[data-mergify-stack-nav="next"]');
-        expect(next.textContent).toContain("feat(api): land the new thing");
-        const dot = next.querySelector(
-            '[data-mergify-status-dot][data-mergify-pr-num="3"]',
-        );
-        expect(dot).not.toBeNull();
-        // updateStackDotStatus should paint the dot
-        updateStackDotStatus(el, 3, "open");
-        expect(dot.getAttribute("data-mergify-status")).toBe("open");
-    });
-
-    it("close button hides the pill until clearStackNavHidden runs", () => {
-        const stack = stackOf(pull(1, { is_current: true }), pull(2));
-        // Go through injectStackNav so the document-level click delegate
-        // (which the close button relies on) is installed.
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const close = document.querySelector(
-            "#mergify-stack-nav [data-mergify-stack-nav-close]",
-        );
-        expect(close).not.toBeNull();
-        close.click();
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        // Re-injecting while hidden is a no-op.
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        // resetStackState (URL change / refresh proxy) clears the flag.
-        resetStackState();
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
-    });
-});
-
-describe("injectStackNav", () => {
-    afterEach(() => {
-        document.body.innerHTML = "";
-    });
-
-    function pull(number, opts = {}) {
-        return {
-            number,
-            change_id: `i${number}`,
-            head_sha: `h${number}`,
-            base_branch: "main",
-            dest_branch: "x",
-            is_current: opts.is_current || false,
-            title: opts.title || `Title ${number}`,
-        };
-    }
-
-    it("renders a fixed-position pill anchored to the body", () => {
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const nav = document.querySelector("#mergify-stack-nav");
-        expect(nav).not.toBeNull();
-        expect(nav.parentElement).toBe(document.body);
-        expect(nav.style.position).toBe("fixed");
-    });
-
-    it("is idempotent — replaces existing nav when called again", () => {
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelectorAll("#mergify-stack-nav").length).toBe(1);
-    });
-
-    it("preserves the existing pill DOM node when nothing changed", () => {
-        // Hover-induced MutationObserver storms re-call injectStackNav. If we
-        // replaceWith() on every call, an in-flight click lands on a detached
-        // anchor and the click event never reaches our document delegate.
-        // The hash check makes the call a no-op when the content is identical.
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const firstNode = document.querySelector("#mergify-stack-nav");
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        const secondNode = document.querySelector("#mergify-stack-nav");
-        expect(secondNode).toBe(firstNode);
-    });
-
-    it("removes the nav when stackData becomes null", () => {
-        document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
-        injectStackNav(null, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-    });
-
-    it("does not require any GitHub anchor to inject", () => {
-        // Empty body — pill still attaches to body since it's viewport-fixed
-        // and doesn't depend on GitHub's DOM. This is the whole point of the
-        // floating design: GitHub layout changes can't break it.
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelector("#mergify-stack-nav")).not.toBeNull();
-    });
-
-    it("removes a stale pill if the in-memory hide flag is set", () => {
-        const stack = {
-            schema_version: 1,
-            stack_id: "x",
-            pulls: [pull(1, { is_current: true }), pull(2)],
-        };
-        // Inject + dismiss to set the flag.
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        document
-            .querySelector("#mergify-stack-nav [data-mergify-stack-nav-close]")
-            .click();
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        // A stale pill in the DOM (e.g. from a Turbo morph) gets swept.
-        document.body.innerHTML = '<div id="mergify-stack-nav"></div>';
-        injectStackNav(stack, { org: "o", repo: "r", number: 1 });
-        expect(document.querySelector("#mergify-stack-nav")).toBeNull();
-        // Reset to clear the flag for subsequent tests.
-        resetStackState();
+        resolveEditForm();
+        await renderPromise;
+        expect(document.querySelector("#mergify-context")).toBeNull();
     });
 });
