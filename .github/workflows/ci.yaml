@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   actionlint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -56,7 +56,7 @@ jobs:
     needs:
       - actionlint
       - test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Verify all jobs succeeded
         uses: Mergifyio/gha-mergify-ci@5e8176734bc525c7fd8b2e812f0fa47246f601b7  # v25
