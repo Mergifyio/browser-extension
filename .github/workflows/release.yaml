@@ -189,7 +189,7 @@ jobs:
   assert-assets-present:
     name: assert artifacts attached
     if: github.event_name == 'release' && github.event.action == 'published'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -243,7 +243,7 @@ jobs:
     name: publish to Chrome Web Store
     needs: assert-assets-present
     if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       # Read-only: download the asset off the published release.
       contents: read
@@ -291,7 +291,7 @@ jobs:
     name: publish to Firefox Add-ons (AMO)
     needs: assert-assets-present
     if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:

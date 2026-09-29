@@ -1,0 +1,7 @@
+# actionlint (run by ci.yaml) validates `runs-on` against its own list of
+# GitHub-hosted labels, and no release knows `ubuntu-26.04` yet. The key
+# is named `self-hosted-runner`, but it is just the list of extra labels
+# actionlint should accept: drop this entry once actionlint ships 26.04.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
