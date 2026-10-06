@@ -1,0 +1,27 @@
+<!-- Fragment of a "Mergify Merge Queue" check run page (/<org>/<repo>/runs/<id>)
+     as GitHub renders it, for a pull request waiting on its queue entry
+     conditions: one queue rule carrying two merge protection rules
+     ("Features ship a changelog", "Require 2 approvals"), on the sandbox case
+     mergify-sandbox/ext-mq-conditions-protections#1. The engine's summary ends
+     with the payload span; GitHub wraps it in a paragraph and keeps the
+     itemprop as is (verified on a real check page, 2026-10-13). The payload is
+     MergeQueueStatePayload as its serializer writes it: groups carry their
+     "all of" / "any of" label and no name. -->
+<section class="js-selected-check-run d-flex flex-auto border-top border-left">
+  <div class="flex-auto min-width-0">
+    <div class="js-socket-channel js-updatable-content">
+      <h2 class="f4">Waiting for queue conditions to match</h2>
+      <div class="markdown-body f5 tmp-mb-4 tmp-mx-4">
+        <div class="ml-0">
+          <h3 dir="auto">Queue entry conditions</h3>
+          <ul class="contains-task-list">
+            <li class="task-list-item"><input type="checkbox" id="" disabled="" class="task-list-item-checkbox"> any of [🔀 queue conditions]: …</li>
+          </ul>
+          <hr>
+          <p dir="auto">All conditions must match for automatic queuing.</p>
+          <p dir="auto"><span itemprop="mergify.v1.eyJ2ZXJzaW9uIjoxLCJzdGF0ZSI6IndhaXRpbmciLCJxdWV1ZV9ydWxlX25hbWUiOm51bGwsInF1ZXVlZF9hdCI6bnVsbCwiZXN0aW1hdGVkX3RpbWVfb2ZfbWVyZ2UiOm51bGwsInNwZWN1bGF0aXZlX2NoZWNrX3ByIjpudWxsLCJyZXF1aXJlZF9jb25kaXRpb25zIjpbeyJkZXNjcmlwdGlvbiI6ImFueSBvZiIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W3siZGVzY3JpcHRpb24iOiJjaGVjay1uZXV0cmFsID0gQG1lcmdpZnkvTWVyZ2lmeSBNZXJnZSBQcm90ZWN0aW9ucyIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiJjaGVjay1za2lwcGVkID0gQG1lcmdpZnkvTWVyZ2lmeSBNZXJnZSBQcm90ZWN0aW9ucyIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiJjaGVjay1zdWNjZXNzID0gQG1lcmdpZnkvTWVyZ2lmeSBNZXJnZSBQcm90ZWN0aW9ucyIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W119XX0seyJkZXNjcmlwdGlvbiI6ImFueSBvZiIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W3siZGVzY3JpcHRpb24iOiJhbGwgb2YiLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOlt7ImRlc2NyaXB0aW9uIjoibGFiZWwgPSByZWFkeS10by1xdWV1ZSIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiJhbGwgb2YiLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOlt7ImRlc2NyaXB0aW9uIjoiY2hlY2stc3VjY2VzcyA9IGRvY3MiLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOltdfSx7ImRlc2NyaXB0aW9uIjoibGFiZWwgPSBjaGFuZ2Vsb2ciLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOltdfV19LHsiZGVzY3JpcHRpb24iOiJhbGwgb2YiLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOlt7ImRlc2NyaXB0aW9uIjoiI2FwcHJvdmVkLXJldmlld3MtYnkgPj0gMiIsIm1hdGNoIjpmYWxzZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiIjY2hhbmdlcy1yZXF1ZXN0ZWQtcmV2aWV3cy1ieSA9IDAiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W119XX0seyJkZXNjcmlwdGlvbiI6ImJhc2UgPSBtYWluIiwibWF0Y2giOnRydWUsInN1YmNvbmRpdGlvbnMiOltdfV19XX0seyJkZXNjcmlwdGlvbiI6Ii1jbG9zZWQiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiItY29uZmxpY3QiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiItZHJhZnQiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiJhbnkgb2YiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W3siZGVzY3JpcHRpb24iOiItbWVyZ2lmeS1jb25maWd1cmF0aW9uLWNoYW5nZWQiLCJtYXRjaCI6dHJ1ZSwic3ViY29uZGl0aW9ucyI6W119LHsiZGVzY3JpcHRpb24iOiJjaGVjay1zdWNjZXNzID0gQG1lcmdpZnkvQ29uZmlndXJhdGlvbiBjaGFuZ2VkIiwibWF0Y2giOmZhbHNlLCJzdWJjb25kaXRpb25zIjpbXX0seyJkZXNjcmlwdGlvbiI6ImNoZWNrLXN1Y2Nlc3MgPSBAbWVyZ2lmeS9Db25maWd1cmF0aW9uIGhhcyBiZWVuIGRlbGV0ZWQiLCJtYXRjaCI6ZmFsc2UsInN1YmNvbmRpdGlvbnMiOltdfV19XX0"></span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
