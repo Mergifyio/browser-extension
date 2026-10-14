@@ -1,1 +1,6 @@
-PR description states that paused rides on payload version 1
+Revision history for #842:
+
+rev 2 (rebase) 2026-10-14 21:42 UTC — PR description states that paused rides on payload version 1
+rev 1 (initial) 2026-10-14 21:42 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":842,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"a524180f7944919b196bd9ec2481cb6af44983d3","timestamp_iso":"2026-10-14T21:42:11Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"rebase","old_sha":"a524180f7944919b196bd9ec2481cb6af44983d3","new_sha":"9b50ee902bd6a3ce31476d5c21fd67c483350f2b","timestamp_iso":"2026-10-14T21:42:11Z","reason":"PR description states that paused rides on payload version 1","replay_sha":null,"compare_url":"https://github.com/Mergifyio/browser-extension/compare/a524180f7944919b196bd9ec2481cb6af44983d3...9b50ee902bd6a3ce31476d5c21fd67c483350f2b"}]} -->
