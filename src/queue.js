@@ -886,7 +886,8 @@ export function renderConditionsBlock(conditions) {
 const STATE_PILL_COPY = {
     waiting: { label: "Waiting", note: "queued conditions not yet met" },
     checking: { label: "Checking", note: "" },
-    frozen: { label: "Frozen", note: "queue paused — freeze in effect" },
+    paused: { label: "Paused", note: "queue paused — checks suspended" },
+    frozen: { label: "Frozen", note: "merge freeze in effect" },
     bisecting: {
         label: "Bisecting",
         note: "train split — isolating a failure",
@@ -908,6 +909,12 @@ const STATE_PILL_COLORS = {
         fg: "#dbab09",
         border: "#dbab0966",
         pulse: true,
+    },
+    paused: {
+        bg: "#bb800922",
+        fg: "#e3b341",
+        border: "#bb800966",
+        pulse: false,
     },
     frozen: {
         bg: "#bb800922",
@@ -1146,7 +1153,12 @@ function deriveQueueButtonStateFromPayload(state) {
     // and this must win over the payload state — a batch payload can say
     // "checking", which would otherwise surface an active dequeue button.
     if (isMergeQueueBatchPr()) return "batch";
-    if (state === "checking" || state === "frozen" || state === "bisecting")
+    if (
+        state === "checking" ||
+        state === "paused" ||
+        state === "frozen" ||
+        state === "bisecting"
+    )
         return "queued";
     if (isPullRequestDraft()) return "draft";
     return "unqueued";

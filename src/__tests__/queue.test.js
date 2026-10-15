@@ -218,11 +218,33 @@ describe("buildRichRow", () => {
         expect(row.querySelector("[data-mergify-conditions]")).toBeNull();
     });
 
+    test("paused state shows a still pill, names the pause, and keeps the remove button", () => {
+        const row = buildRichRow(
+            payload({
+                state: "paused",
+                speculative_check_pr: null,
+                required_conditions: [],
+            }),
+        );
+        const pill = row.querySelector("[data-mergify-state-pill]");
+        expect(pill.textContent).toContain("Paused");
+        expect(pill.getAttribute("data-state")).toBe("paused");
+        expect(pill.querySelector("span").style.animation).toBe("");
+        expect(row.querySelector("[data-mergify-eta]").textContent).toContain(
+            "queue paused — checks suspended",
+        );
+        const btn = row.querySelector("[data-mergify-queue-btn]");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("queued");
+    });
+
     test("frozen state shows amber pill and surfaces draft-PR link", () => {
         const row = buildRichRow(payload({ state: "frozen" }));
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Frozen");
         expect(pill.getAttribute("data-state")).toBe("frozen");
+        expect(row.querySelector("[data-mergify-eta]").textContent).toContain(
+            "merge freeze in effect",
+        );
         expect(row.querySelector("[data-mergify-spec-pr]")).not.toBeNull();
     });
 
