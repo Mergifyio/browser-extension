@@ -7,6 +7,7 @@ export const PAYLOAD_VERSION = 1;
 const PAYLOAD_STATES = new Set([
     "waiting",
     "checking",
+    "paused",
     "frozen",
     "bisecting",
     "merged",

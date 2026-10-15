@@ -63,6 +63,18 @@ describe("parsePayload", () => {
         expect(parsePayload(wrap(future))).toBeNull();
     });
 
+    test("accepts the paused state", () => {
+        const paused = JSON.stringify({
+            ...JSON.parse(validJson),
+            state: "paused",
+            speculative_check_pr: null,
+            required_conditions: [],
+        });
+        const out = parsePayload(wrap(paused));
+        expect(out).not.toBeNull();
+        expect(out.state).toBe("paused");
+    });
+
     test("returns null when state literal is unknown", () => {
         const bad = JSON.stringify({
             ...JSON.parse(validJson),
