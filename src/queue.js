@@ -18,6 +18,7 @@ import {
     buildQueueSection,
     CONDITIONS_SECTION_ATTR,
     placeQueueConditionsSection,
+    QUEUE_PAYLOAD_STATES,
     sectionStartsExpanded,
 } from "./queueConditionsSection.js";
 import { resetStackState } from "./stacks.js";
@@ -96,6 +97,14 @@ export let lastKnownQueueConditions = null;
 // every pull request, differently for each teammate. null until a click, the row's
 // own default (unfolded only when no rule can match) until then.
 let conditionsSectionExpanded = null;
+// A queue command this page just posted on a pull request whose conditions
+// matched: { pull, at }. Until the queue confirms (a payload queued since),
+// the row says the pull request is joining, rather than reading a check and a
+// status comment the queue is still rewriting.
+let queueJoinRequest = null;
+const QUEUE_JOIN_WINDOW_MS = 3 * 60 * 1000;
+// A payload's queued_at may be stamped slightly before the click reached us.
+const QUEUE_JOIN_CLOCK_SKEW_MS = 60 * 1000;
 export let queueStateInitialized = false;
 export let queuePollTimer = null;
 export const QUEUE_POLL_INTERVAL = 15000;
@@ -110,6 +119,7 @@ export function resetQueueState() {
     lastKnownQueueState = false;
     lastKnownQueueConditions = null;
     conditionsSectionExpanded = null;
+    queueJoinRequest = null;
     queueStateInitialized = false;
     if (queuePollTimer) {
         clearTimeout(queuePollTimer);
@@ -446,9 +456,34 @@ export function postCommand(command) {
 
 export function postCommandAndUpdate(command) {
     postCommand(command);
+    if (command === "queue" && lastKnownQueueConditions?.met) {
+        queueJoinRequest = { pull: getPullRequestData().pull, at: Date.now() };
+    }
     for (const row of document.querySelectorAll(`[${MERGE_BOX_ROW_ATTR}]`)) {
         updateMergifyRow(row);
     }
+    syncQueueConditionsSections();
+}
+
+// Whether the queue command posted from this page still waits for the queue
+// to confirm it: no payload queued since the click, within the window.
+function _joiningQueue(payload) {
+    const request = queueJoinRequest;
+    if (!request) return false;
+    if (
+        request.pull !== getPullRequestData().pull ||
+        Date.now() - request.at > QUEUE_JOIN_WINDOW_MS
+    ) {
+        queueJoinRequest = null;
+        return false;
+    }
+    const queuedAt = Date.parse(payload?.queued_at ?? "");
+    const confirmed =
+        payload &&
+        QUEUE_PAYLOAD_STATES.has(payload.state) &&
+        queuedAt >= request.at - QUEUE_JOIN_CLOCK_SKEW_MS;
+    if (confirmed) queueJoinRequest = null;
+    return !confirmed;
 }
 
 export function buildMergeBoxButton(
@@ -846,16 +881,53 @@ export function updateAllMergifyRows() {
     syncQueueConditionsSections();
 }
 
-// What the merge-box row shows: the queue conditions before the pull request
-// is queued, and while a queue command waits on them.
+// What the merge-box row shows: the queue's state from the status report's
+// payload once the pull request is queued (merged and dequeued included), the
+// queue conditions before that and while a queue command waits on them.
 function _sectionModel() {
     if (isMergeQueueBatchPr()) return null;
     const payload = _currentPayload();
+    // Before the merge-queue states: a status comment left by an earlier
+    // queue entry (removed, say) is not the answer to this click.
+    if (isPullRequestOpen() && _joiningQueue(payload)) return { joining: true };
+    if (payload && QUEUE_PAYLOAD_STATES.has(payload.state)) {
+        // A status comment keeps its last state after the PR is closed.
+        if (payload.state !== "merged" && !isPullRequestOpen()) return null;
+        const data = getPullRequestData();
+        return {
+            queue: {
+                state: payload.state,
+                queuedAt: payload.queued_at ?? null,
+                eta: payload.estimated_time_of_merge ?? null,
+                specPr: _pullNumber(payload.speculative_check_pr),
+                required: payload.required_conditions ?? [],
+                mergedMessage:
+                    payload.state === "merged" ? getMergedMessage() : null,
+                repoPath: `/${data.org}/${data.repo}`,
+            },
+        };
+    }
     if (!isPullRequestOpen() || isPullRequestDraft()) return null;
     const conditions = payload
         ? waitingConditions(payload)
         : legacyConditions(deriveQueueButtonState());
     return conditions ? { conditions } : null;
+}
+
+function _pullNumber(value) {
+    const n = Number.parseInt(value, 10);
+    return Number.isFinite(n) && n > 0 && String(n) === String(value)
+        ? n
+        : null;
+}
+
+// "queued 12m ago · merging in ~20m", for the row and its ticker: plain
+// text, as GitHub's own subtitles are.
+function _queueTimes(payload) {
+    const text = buildEtaMetaContent({ ...payload, state: "times" })
+        .map((node) => node.textContent)
+        .join("");
+    return text ? [document.createTextNode(text)] : [];
 }
 
 // The merge boxes the conditions row goes in: GitHub's bottom one, the same
@@ -878,21 +950,36 @@ function _mergeBoxContainers() {
 // observer does not spin.
 export function syncQueueConditionsSections() {
     const model = _sectionModel();
+    const pull = String(getPullRequestData().pull);
     for (const container of _mergeBoxContainers()) {
         const existing = container.querySelector(
             `:scope > [${CONDITIONS_SECTION_ATTR}]`,
         );
-        const section = model ? _sectionFor(model, existing) : null;
+        const section = model ? _sectionFor(model, existing, pull) : null;
         if (!section) {
-            existing?.remove();
+            // No answer is not an answer: between two states the check and
+            // the status comment are rewritten one after the other, and the
+            // row would blink out. It goes only once it cannot apply any more.
+            if (existing && !_rowStillApplies(existing, pull))
+                existing.remove();
             continue;
         }
         placeQueueConditionsSection(container, section);
     }
 }
 
-function _sectionFor(model, existing) {
+function _rowStillApplies(section, pull) {
+    return (
+        section.dataset.mergifyPull === pull &&
+        isPullRequestOpen() &&
+        !isPullRequestDraft() &&
+        !isMergeQueueBatchPr()
+    );
+}
+
+function _sectionFor(model, existing, pull) {
     const expanded = conditionsSectionExpanded ?? sectionStartsExpanded(model);
+    // The times text is left out: the ticker keeps it current in place.
     const key = JSON.stringify([model, expanded]);
     if (existing && existing.dataset.mergifyKey === key) return existing;
     const section = buildQueueSection(model, {
@@ -901,9 +988,17 @@ function _sectionFor(model, existing) {
             conditionsSectionExpanded = next;
             section.dataset.mergifyKey = JSON.stringify([model, next]);
         },
+        times: () =>
+            model.queue
+                ? _queueTimes({
+                      queued_at: model.queue.queuedAt,
+                      estimated_time_of_merge: model.queue.eta,
+                  })
+                : [],
     });
     if (!section) return null;
     section.dataset.mergifyKey = key;
+    section.dataset.mergifyPull = pull;
     existing?.remove();
     return section;
 }
@@ -1269,7 +1364,11 @@ function buildEtaMetaContent(payload) {
         const queuedMin = (Date.now() - Date.parse(payload.queued_at)) / 60000;
         const strong = document.createElement("strong");
         strong.style.color = "var(--fgColor-default, #e6edf3)";
-        strong.textContent = `${formatDurationMinutes(queuedMin)} ago`;
+        // "0m ago" reads as broken: under a minute it is "just now".
+        strong.textContent =
+            queuedMin < 1
+                ? "just now"
+                : `${formatDurationMinutes(queuedMin)} ago`;
         frag.appendChild(strong);
         parts.push(frag);
     }
@@ -1283,7 +1382,8 @@ function buildEtaMetaContent(payload) {
         frag.appendChild(strong);
         parts.push(frag);
     }
-    const waiting = waitingConditions(payload);
+    const waiting =
+        payload.state === "times" ? null : waitingConditions(payload);
     if (waiting) {
         parts.push(
             document.createTextNode(
@@ -1360,6 +1460,14 @@ function buildMergedRow() {
     return row;
 }
 
+function _linksRow() {
+    const row = document.createElement("div");
+    row.style.cssText =
+        "display:flex;align-items:center;gap:12px;padding:var(--base-size-16,16px)!important;";
+    row.appendChild(buildBrandAndLinks());
+    return row;
+}
+
 function deriveQueueButtonStateFromPayload(state) {
     // Mirrors deriveQueueButtonState(): a batch PR renders no action buttons,
     // and this must win over the payload state — a batch payload can say
@@ -1428,13 +1536,18 @@ export function buildRichRow(payload, variant = "default") {
             ? "border-top border-bottom color-border-subtle"
             : "bgColor-muted borderColor-muted border-top rounded-bottom-2";
 
+    // In the bottom merge box the queue's state is Mergify's own row above
+    // (queueConditionsSection.js): this row keeps the actions and the links.
+    // The merge-status sidebar has no such row and keeps the state line.
+    const sidebar = variant === "sidebar";
     if (payload.state === "merged") {
-        row.appendChild(buildMergedRow());
+        row.appendChild(sidebar ? buildMergedRow() : _linksRow());
         return row;
     }
 
     const queueBtnState = deriveQueueButtonStateFromPayload(payload.state);
     row.appendChild(buildButtonsRow(queueBtnState));
+    if (!sidebar) return row;
     row.appendChild(buildStateRow(payload, data.org, data.repo));
     if (!waitingConditions(payload)) {
         const conditions = renderConditionsBlock(payload.required_conditions);
@@ -1454,7 +1567,11 @@ function _tickAllEtaMetas() {
     const metas = document.querySelectorAll(
         `[${MERGE_BOX_ROW_ATTR}] [data-mergify-eta]`,
     );
-    if (metas.length === 0) {
+    const times = document.querySelectorAll("[data-mergify-queue-times]");
+    for (const span of times) {
+        span.replaceChildren(..._queueTimes(_etaPayload));
+    }
+    if (metas.length === 0 && times.length === 0) {
         // No live rows to tick anymore (all detached).
         stopEtaTicker();
         return;
@@ -1466,7 +1583,8 @@ function _tickAllEtaMetas() {
 
 export function startEtaTicker(payload) {
     stopEtaTicker();
-    if (!payload?.estimated_time_of_merge) return;
+    // The queued-at time ticks too, with or without an estimate.
+    if (!payload?.estimated_time_of_merge && !payload?.queued_at) return;
     _etaPayload = payload;
     _etaTimer = setInterval(_tickAllEtaMetas, 1000);
 }
