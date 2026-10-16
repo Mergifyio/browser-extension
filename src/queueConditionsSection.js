@@ -17,6 +17,7 @@ import {
     buildQueueConditionsTree,
     conditionsVerdict,
 } from "./queueConditionsTree.js";
+import { describeQueueStep } from "./queueDetail.js";
 
 export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 
@@ -162,22 +163,29 @@ function _view(model) {
             body: null,
         };
     }
+    // What the queue is doing, when the payload says more than its state.
+    const step = describeQueueStep(queue.state, queue.detail ?? null);
     // What the merge conditions still miss, while the batch runs. Paused,
     // frozen or bisecting, they describe a batch that is held or already
-    // failed: the state says it better than a count would.
-    const entry =
-        queue.state === "checking"
-            ? parseRequiredConditions(queue.required)
-            : null;
+    // failed: the state says it better than a count would. So does a step
+    // other than the checks running.
+    const countsConditions =
+        queue.state === "checking" &&
+        (!step || step.title === "Checks running");
+    const entry = countsConditions
+        ? parseRequiredConditions(queue.required)
+        : null;
     const conditions = entry ? { met: false, entry, runUrl: null } : null;
     const unmet = conditions && entry.some((n) => !n.match);
-    const summary = look.note ? [look.note] : [];
+    const summary = step ? [...step.notes] : look.note ? [look.note] : [];
     if (unmet) summary.push(conditionsVerdict(conditions).summary);
     else if (conditions) summary.push("Merge conditions met");
     summary.push(_TIMES);
     const hasBody = Boolean(unmet || queue.specPr);
     return {
         state: queue.state,
+        title: step?.title,
+        icon: step?.icon,
         label: "Merge queue",
         summary,
         body: hasBody
@@ -272,7 +280,7 @@ export function buildQueueSection(
     // The class is GitHub's; the inline colour covers the pages that do not
     // load that Primer utility (the neutral one is missing on PR pages).
     circle.style.cssText = `display:flex;width:32px;height:32px;align-items:center;justify-content:center;background-color:${look.fill};color:var(--fgColor-onEmphasis, #fff);`;
-    circle.appendChild(_octicon(look.icon));
+    circle.appendChild(_octicon(view.icon ?? look.icon));
     iconClip.appendChild(circle);
     iconColumn.appendChild(iconClip);
 
@@ -281,7 +289,7 @@ export function buildQueueSection(
     const title = document.createElement("h3");
     title.style.cssText =
         "margin:0;font-family:var(--fontStack-sansSerifDisplay, inherit);font-size:16px;font-weight:600;line-height:24px;display:flex;align-items:center;gap:8px;";
-    title.textContent = look.title;
+    title.textContent = view.title ?? look.title;
     const subtitle = document.createElement("p");
     subtitle.className = "fgColor-muted mb-0";
     subtitle.setAttribute("data-mergify-conditions-summary", "");

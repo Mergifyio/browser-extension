@@ -21,6 +21,7 @@ import {
     QUEUE_PAYLOAD_STATES,
     sectionStartsExpanded,
 } from "./queueConditionsSection.js";
+import { readQueueDetail } from "./queueDetail.js";
 import { resetStackState } from "./stacks.js";
 
 const QUEUE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm3.75-1.5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5ZM3 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>`;
@@ -904,6 +905,7 @@ function _sectionModel() {
                 mergedMessage:
                     payload.state === "merged" ? getMergedMessage() : null,
                 repoPath: `/${data.org}/${data.repo}`,
+                detail: readQueueDetail(payload),
             },
         };
     }

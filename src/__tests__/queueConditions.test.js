@@ -1494,6 +1494,44 @@ describe("queue states in the merge-box row", () => {
         }
     });
 
+    // One payload per in-queue state, with the optional fields proposed in
+    // Mergifyio/monorepo#46755 (fixtures/queue_states.json).
+    const QUEUE_STATE_FIXTURES = require("./fixtures/queue_states.json");
+    const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    test.each(QUEUE_STATE_FIXTURES.map((f) => [f.name, f]))(
+        "optional fields: %s",
+        async (_name, fixture) => {
+            const section = await rowFor(fixture.payload);
+            const { clockTime } = require("../queueDetail");
+            const expected = fixture.summary.replace(
+                "{T}",
+                clockTime("2026-10-16T12:50:00+00:00"),
+            );
+
+            expect(look(section).title).toBe(fixture.title);
+            expect(look(section).summary).toMatch(
+                new RegExp(`^${escapeRegExp(expected)}( · queued .+)?$`),
+            );
+        },
+    );
+
+    test("optional fields of the wrong shape draw the state alone", async () => {
+        const section = await rowFor({
+            ...QUEUED,
+            step: "teleporting",
+            position: "3",
+            batch: { size: "1", target: 2 },
+            checks: [],
+            freeze: { name: "" },
+        });
+
+        expect(look(section)).toMatchObject({
+            title: "In the merge queue",
+            summary: "1 check expected · queued 12m ago",
+        });
+    });
+
     test("just queued: 'queued just now', then minutes that tick without an estimate", async () => {
         jest.useFakeTimers();
         try {
