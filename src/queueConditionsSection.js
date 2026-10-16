@@ -10,7 +10,10 @@
 // layout is mirrored with inline styles over Primer's stable utility classes
 // and colour variables.
 
-import { conditionsVerdict } from "./queueConditionsTree.js";
+import {
+    buildQueueConditionsTree,
+    conditionsVerdict,
+} from "./queueConditionsTree.js";
 
 export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 
@@ -58,7 +61,9 @@ function _view(model) {
         body:
             verdict.state === "met"
                 ? null
-                : () => _detailsOnly(model.conditions.runUrl),
+                : () =>
+                      buildQueueConditionsTree(model.conditions) ??
+                      _detailsOnly(model.conditions.runUrl),
     };
 }
 function _octicon(name) {
@@ -188,7 +193,8 @@ export function buildQueueSection(
     return section;
 }
 
-// What the row unfolds to: the check page, which lists the conditions.
+// The check carried no tree (an engine that does not write it, or a tree too
+// large for it): point at the check page, which lists the conditions.
 function _detailsOnly(runUrl) {
     const line = document.createElement("div");
     line.setAttribute("data-mergify-conditions-tree", "");

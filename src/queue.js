@@ -10,6 +10,7 @@ import {
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 import {
+    conditionMark,
     parseQueueConditionsPage,
     readCheckStates,
 } from "./queueConditions.js";
@@ -1015,20 +1016,10 @@ export function renderConditionsBlock(conditions) {
     if (!conditions || conditions.length === 0) return null;
     const blockers = _collectBlockers(conditions);
 
-    const block = document.createElement("div");
-    block.setAttribute("data-mergify-conditions", "");
-    // No background fill — let the conditions block share the parent row's
-    // surface so it reads as a continuation of the state row above, with
-    // a subtle border + indent for separation.
-    block.style.cssText =
-        "padding:6px 16px 12px 40px;border-top:1px dashed var(--borderColor-muted, #30363d);";
-
-    const heading = document.createElement("h4");
-    heading.style.cssText =
-        "margin:0 0 6px;font-size:11px;text-transform:none;letter-spacing:0;color:#7d8590;font-weight:600;display:flex;align-items:center;gap:6px;";
+    const heading = document.createElement("span");
     if (blockers.length === 0) {
         const allMet = document.createElement("span");
-        allMet.style.color = "#3fb950";
+        allMet.style.color = "var(--fgColor-success, #1a7f37)";
         allMet.textContent = "✓ All required conditions met";
         heading.appendChild(allMet);
     } else {
@@ -1037,17 +1028,36 @@ export function renderConditionsBlock(conditions) {
                 ? "Blocking the merge:"
                 : `Blocking the merge (${blockers.length}):`;
     }
+    // No background fill — let the conditions block share the parent row's
+    // surface so it reads as a continuation of the state row above, with
+    // a subtle border + indent for separation.
+    return _buildBlockersBlock(
+        blockers,
+        heading,
+        "padding:6px var(--base-size-16,16px) 12px;border-top:1px dashed var(--borderColor-muted, #d1d9e0);",
+    );
+}
+
+// Colours come from GitHub's own Primer variables so the block follows the
+// viewer's light or dark theme; the fallbacks are the light theme's values.
+function _buildBlockersBlock(blockers, headingContent, blockCss) {
+    const block = document.createElement("div");
+    block.setAttribute("data-mergify-conditions", "");
+    block.style.cssText = blockCss;
+
+    const heading = document.createElement("h4");
+    heading.style.cssText =
+        "margin:0 0 6px;font-size:12px;text-transform:none;letter-spacing:0;color:var(--fgColor-muted, #59636e);font-weight:600;display:flex;align-items:center;gap:6px;";
+    heading.appendChild(headingContent);
     block.appendChild(heading);
 
     for (const text of blockers) {
         const row = document.createElement("div");
         row.setAttribute("data-mergify-condition", "");
         row.style.cssText =
-            "display:flex;align-items:flex-start;gap:8px;padding:2px 0;color:#c9d1d9;font-size:12px;";
-        const dot = document.createElement("span");
-        dot.className = "pending";
-        dot.style.cssText = "color:#dbab09;flex-shrink:0;line-height:1.4;";
-        dot.textContent = "●";
+            "display:flex;align-items:flex-start;gap:8px;padding:2px 0;color:var(--fgColor-default, #1f2328);font-size:12px;";
+        const dot = conditionMark("todo");
+        dot.style.marginTop = "2px";
         const label = document.createElement("span");
         label.style.cssText =
             "word-break:break-word;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;";
