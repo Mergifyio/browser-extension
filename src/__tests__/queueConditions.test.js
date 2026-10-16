@@ -12,6 +12,7 @@ const {
 } = require("../queue");
 const { parseQueueConditionsPage } = require("../queueConditions");
 const { placeQueueConditionsSection } = require("../queueConditionsSection");
+const { conditionsVerdict } = require("../queueConditionsTree");
 
 const RUN_URL = "/acme/widget/runs/999";
 const CHECKS_HTML = `<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>`;
@@ -187,6 +188,124 @@ describe("parseQueueConditionsPage", () => {
     });
 });
 
+describe("conditionsVerdict", () => {
+    const verdict = (rules, requirements) =>
+        conditionsVerdict(parsed(entry(rules, requirements)));
+
+    test("counts what the closest rule misses", () => {
+        expect(
+            verdict([
+                rule(
+                    "#approved-reviews-by >= 1",
+                    "label = ready-to-queue",
+                    "check-success = unit",
+                    "check-success = lint",
+                    "✓base = main",
+                ),
+            ]),
+        ).toEqual({
+            state: "waiting",
+            summary: "2 checks expected · 1 approval missing · 1 label missing",
+        });
+    });
+
+    test("waits while nothing fails for good", () => {
+        expect(
+            verdict([
+                rule("#approved-reviews-by >= 2", "check-success = ci", [
+                    "any of",
+                    "label = hotfix",
+                    "label = urgent",
+                ]),
+            ]),
+        ).toEqual({
+            state: "waiting",
+            summary:
+                "1 check expected · approvals missing (2 required) · 1 condition missing",
+        });
+    });
+
+    test("a protection's conditions count one by one, the check repeating them not at all", () => {
+        expect(
+            conditionsVerdict(
+                parseQueueConditionsPage(PROTECTIONS_RUN_HTML, RUN_URL),
+            ),
+        ).toEqual({
+            state: "waiting",
+            summary:
+                "1 check expected · approvals missing (2 required) · 2 labels missing",
+        });
+    });
+
+    test("the wrong base branch, files the rule is not about and a conflict can't match", () => {
+        expect(verdict([rule("base = main")]).state).toBe("blocked");
+        expect(verdict([rule("files ~= ^docs/", "label = a")])).toEqual({
+            state: "blocked",
+            summary: "files outside the rule · 1 label missing",
+        });
+        expect(
+            verdict([rule("✓label = a")], ["✓-closed", "-conflict", "✓-draft"]),
+        ).toEqual({
+            state: "blocked",
+            summary: "conflicts with the base branch",
+        });
+    });
+
+    test("can't match only when every queue rule has a failure", () => {
+        expect(
+            verdict([
+                rule("base = release", "label = a"),
+                rule("label = urgent"),
+            ]),
+        ).toEqual({
+            state: "waiting",
+            summary: "1 label missing · closest of 2 queue rules",
+        });
+        expect(
+            verdict([
+                rule("base = release", "label = a"),
+                rule("files ~= ^docs/", "label = urgent"),
+            ]).state,
+        ).toBe("blocked");
+    });
+
+    test("a group that can't match blocks, and counts as one condition", () => {
+        expect(
+            verdict([
+                rule("#approved-reviews-by >= 1", [
+                    "any of",
+                    "base = release",
+                    "base = stable",
+                ]),
+            ]),
+        ).toEqual({
+            state: "blocked",
+            summary: "1 approval missing · 1 condition missing",
+        });
+    });
+
+    test("a label to remove and a draft", () => {
+        expect(
+            verdict(
+                [rule("-label = wip")],
+                ["✓-closed", "✓-conflict", "-draft"],
+            ).summary,
+        ).toBe("1 label to remove · still a draft");
+    });
+
+    test("met when the check says the queue is ready; waiting when it carries no tree", () => {
+        expect(conditionsVerdict({ met: true, entry: null })).toEqual({
+            state: "met",
+            summary: "Ready to enter the merge queue",
+        });
+        expect(conditionsVerdict({ met: false, entry: null })).toEqual({
+            state: "waiting",
+            summary: "Some queue conditions are unmet",
+        });
+        expect(conditionsVerdict(null)).toBeNull();
+    });
+});
+
 // GitHub's merge box, with the rows it draws itself around ours.
 function mergeBox({ checks = true } = {}) {
     document.body.innerHTML = `<div data-testid="mergebox-partial"><div data-testid="mergebox-border-container"><section aria-label="Reviews"></section>${checks ? '<section aria-label="Checks"></section>' : ""}<section aria-label="Merging is blocked"></section><div class="bgColor-muted"></div></div></div>`;
@@ -201,6 +320,10 @@ function rowOrder(container) {
         (el) => el.getAttribute("aria-label") ?? el.tagName,
     );
 }
+
+const BLOCKED_PAGE = checkPage(
+    entry([rule("#approved-reviews-by >= 1", "base = release")]),
+);
 
 describe("merge-box conditions row", () => {
     beforeEach(() => {
@@ -245,7 +368,7 @@ describe("merge-box conditions row", () => {
         ]);
     });
 
-    test("waiting: GitHub's row layout, neutral circle, folded", async () => {
+    test("waiting: GitHub's row layout, neutral circle, the count, folded", async () => {
         mergeBox();
         mockCheckRun(PROTECTIONS_RUN_HTML);
         await fetchQueueState();
@@ -262,7 +385,9 @@ describe("merge-box conditions row", () => {
         expect(
             section.querySelector("[data-mergify-conditions-summary]")
                 .textContent,
-        ).toBe("Some queue conditions are unmet");
+        ).toBe(
+            "1 check expected · approvals missing (2 required) · 2 labels missing",
+        );
         const circle = section.querySelector(".fgColor-onEmphasis");
         expect(circle.classList.contains("bgColor-neutral-emphasis")).toBe(
             true,
@@ -306,6 +431,31 @@ describe("merge-box conditions row", () => {
                 .querySelector("[data-mergify-queue-btn]")
                 .getAttribute("title"),
         ).toBe("Add the pull request to the merge queue");
+    });
+
+    test("can't match: red x, unfolded", async () => {
+        mergeBox();
+        mockCheckRun(BLOCKED_PAGE);
+        await fetchQueueState();
+
+        updateAllMergifyRows();
+
+        const section = conditionsSection();
+        expect(section.querySelector("h3").textContent).toBe(
+            "Queue conditions can't match",
+        );
+        expect(
+            section
+                .querySelector(".fgColor-onEmphasis")
+                .classList.contains("bgColor-danger-emphasis"),
+        ).toBe(true);
+        expect(
+            section.querySelector("[data-mergify-conditions-summary]")
+                .textContent,
+        ).toBe("wrong base branch · 1 approval missing");
+        const body = section.querySelector("[data-mergify-conditions-body]");
+        expect(body.hidden).toBe(false);
+        expect(body.textContent).toBe("View details");
     });
 
     test("without a tree on the check, points at the details", async () => {
@@ -521,7 +671,7 @@ describe("rich row while the queue request waits", () => {
         jest.dontMock("../mqPayload");
     });
 
-    test("says the conditions are unmet; the merge-box row says it too", async () => {
+    test("says the conditions are unmet; the count is in the merge-box row", async () => {
         await jest.isolateModulesAsync(async () => {
             withPayload(WAITING_PAYLOAD);
             const queue = require("../queue");
@@ -543,7 +693,9 @@ describe("rich row while the queue request waits", () => {
                 conditionsSection().querySelector(
                     "[data-mergify-conditions-summary]",
                 ).textContent,
-            ).toBe("Some queue conditions are unmet");
+            ).toBe(
+                "1 check expected · approvals missing (2 required) · 2 labels missing",
+            );
         });
     });
 
