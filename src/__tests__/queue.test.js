@@ -183,6 +183,9 @@ function payload(overrides = {}) {
     };
 }
 
+// The state line (pill, times, draft PR, blockers) stays on the merge-status
+// sidebar's row; in the bottom merge box Mergify's own row carries the state
+// (queueConditions.test.js, "queue states in the merge-box row").
 describe("buildRichRow", () => {
     beforeEach(() => {
         // jsdom doesn't allow replacing window.location; use replaceState to
@@ -198,7 +201,7 @@ describe("buildRichRow", () => {
     });
 
     test("renders checking state with pill, ETA, draft-PR link, and conditions block", () => {
-        const row = buildRichRow(payload({ state: "checking" }));
+        const row = buildRichRow(payload({ state: "checking" }), "sidebar");
         expect(row.dataset.mergifyShape).toBe("rich");
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Checking");
@@ -206,6 +209,36 @@ describe("buildRichRow", () => {
         const draft = row.querySelector("[data-mergify-spec-pr]");
         expect(draft.getAttribute("href")).toBe("/acme/widget/pull/12345");
         expect(row.querySelector("[data-mergify-conditions]")).not.toBeNull();
+    });
+
+    test("in the bottom merge box, keeps only the actions and links", () => {
+        const row = buildRichRow(payload({ state: "checking" }));
+        expect(row.querySelector("[data-mergify-queue-btn]")).not.toBeNull();
+        expect(row.querySelector("[data-mergify-state-pill]")).toBeNull();
+        expect(row.querySelector("[data-mergify-eta]")).toBeNull();
+        expect(row.querySelector("[data-mergify-conditions]")).toBeNull();
+
+        const merged = buildRichRow(payload({ state: "merged" }));
+        expect(merged.querySelector("[data-mergify-queue-btn]")).toBeNull();
+        expect(merged.querySelector("[data-mergify-merged-msg]")).toBeNull();
+        expect(merged.textContent).toContain("Mergify");
+    });
+
+    test("in the bottom merge box, a recorded request keeps its cancel button", () => {
+        const row = buildRichRow(
+            payload({
+                state: "waiting",
+                queued_at: null,
+                estimated_time_of_merge: null,
+                speculative_check_pr: null,
+                required_conditions: [],
+            }),
+        );
+        const btn = row.querySelector("[data-mergify-queue-btn]");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("requested");
+        expect(btn.textContent).toBe("Cancel queue request");
+        // The state is Mergify's own row's to say.
+        expect(row.querySelector("[data-mergify-state-pill]")).toBeNull();
     });
 
     test("waiting state reads as a recorded request, not a place in the queue", () => {
@@ -217,6 +250,7 @@ describe("buildRichRow", () => {
                 speculative_check_pr: null,
                 required_conditions: [],
             }),
+            "sidebar",
         );
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent.trim()).toBe("Requested");
@@ -238,6 +272,7 @@ describe("buildRichRow", () => {
                 speculative_check_pr: null,
                 required_conditions: [],
             }),
+            "sidebar",
         );
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Paused");
@@ -251,7 +286,7 @@ describe("buildRichRow", () => {
     });
 
     test("frozen state shows amber pill and surfaces draft-PR link", () => {
-        const row = buildRichRow(payload({ state: "frozen" }));
+        const row = buildRichRow(payload({ state: "frozen" }), "sidebar");
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Frozen");
         expect(pill.getAttribute("data-state")).toBe("frozen");
@@ -262,7 +297,7 @@ describe("buildRichRow", () => {
     });
 
     test("bisecting state shows red pill and surfaces draft-PR link", () => {
-        const row = buildRichRow(payload({ state: "bisecting" }));
+        const row = buildRichRow(payload({ state: "bisecting" }), "sidebar");
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Bisecting");
         expect(pill.getAttribute("data-state")).toBe("bisecting");
@@ -276,6 +311,7 @@ describe("buildRichRow", () => {
                 required_conditions: [],
                 speculative_check_pr: null,
             }),
+            "sidebar",
         );
         expect(row.querySelector("[data-mergify-queue-btn]")).toBeNull();
         expect(row.querySelector("[data-mergify-merged-msg]")).not.toBeNull();
@@ -288,6 +324,7 @@ describe("buildRichRow", () => {
                 required_conditions: [],
                 speculative_check_pr: null,
             }),
+            "sidebar",
         );
         const pill = row.querySelector("[data-mergify-state-pill]");
         expect(pill.textContent).toContain("Dequeued");
@@ -310,13 +347,17 @@ describe("buildRichRow", () => {
     });
 
     test("does not render draft-PR link when speculative_check_pr is null", () => {
-        const row = buildRichRow(payload({ speculative_check_pr: null }));
+        const row = buildRichRow(
+            payload({ speculative_check_pr: null }),
+            "sidebar",
+        );
         expect(row.querySelector("[data-mergify-spec-pr]")).toBeNull();
     });
 
     test("does not render draft-PR link when speculative_check_pr is not a positive integer", () => {
         const row = buildRichRow(
             payload({ speculative_check_pr: "12345; alert(1)" }),
+            "sidebar",
         );
         expect(row.querySelector("[data-mergify-spec-pr]")).toBeNull();
     });
@@ -424,7 +465,7 @@ describe("buildMergifyRow dispatcher", () => {
                 }),
             }));
             const queue = require("../queue");
-            const row = queue.buildMergifyRow();
+            const row = queue.buildMergifyRow("sidebar");
             expect(row.dataset.mergifyShape).toBe("rich");
             expect(
                 row.querySelector("[data-mergify-state-pill]").textContent,
@@ -542,7 +583,7 @@ describe("updateMergifyRow rich-row idempotency (freeze regression #34031)", () 
             let state = "checking";
             mockPayloadState(() => state);
             const queue = require("../queue");
-            const row = queue.buildMergifyRow();
+            const row = queue.buildMergifyRow("sidebar");
             document.body.appendChild(row);
             expect(
                 row.querySelector("[data-mergify-state-pill]").textContent,
@@ -580,7 +621,7 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const row = buildRichRow(payload);
+        const row = buildRichRow(payload, "sidebar");
         document.body.appendChild(row);
         startEtaTicker(payload);
         const meta = row.querySelector("[data-mergify-eta]");
@@ -602,7 +643,7 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const row = buildRichRow(payload);
+        const row = buildRichRow(payload, "sidebar");
         document.body.appendChild(row);
         startEtaTicker(payload);
         stopEtaTicker();
@@ -623,7 +664,7 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const row = buildRichRow(payload);
+        const row = buildRichRow(payload, "sidebar");
         document.body.appendChild(row);
         startEtaTicker(payload);
         const meta = row.querySelector("[data-mergify-eta]");
@@ -644,7 +685,7 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const richRow = buildRichRow(payload);
+        const richRow = buildRichRow(payload, "sidebar");
         document.body.appendChild(richRow);
         startEtaTicker(payload);
         const meta = richRow.querySelector("[data-mergify-eta]");
@@ -668,7 +709,7 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const row = buildRichRow(payload);
+        const row = buildRichRow(payload, "sidebar");
         document.body.appendChild(row);
         startEtaTicker(payload);
         const meta = row.querySelector("[data-mergify-eta]");
@@ -690,8 +731,8 @@ describe("ETA ticker", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        const a = buildRichRow(payload);
-        const b = buildRichRow(payload);
+        const a = buildRichRow(payload, "sidebar");
+        const b = buildRichRow(payload, "sidebar");
         document.body.appendChild(a);
         document.body.appendChild(b);
         startEtaTicker(payload);
