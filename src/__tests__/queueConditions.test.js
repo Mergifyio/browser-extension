@@ -5,6 +5,7 @@ const { TextDecoder, TextEncoder } = require("node:util");
 global.TextEncoder ??= TextEncoder;
 global.TextDecoder ??= TextDecoder;
 const {
+    buildMergifyRow,
     fetchQueueState,
     resetQueueState,
     updateAllMergifyRows,
@@ -300,6 +301,11 @@ describe("merge-box conditions row", () => {
         expect(
             section.querySelector("[data-mergify-conditions-toggle]"),
         ).toBeNull();
+        expect(
+            buildMergifyRow("default")
+                .querySelector("[data-mergify-queue-btn]")
+                .getAttribute("title"),
+        ).toBe("Add the pull request to the merge queue");
     });
 
     test("without a tree on the check, points at the details", async () => {
@@ -435,5 +441,154 @@ describe("merge-box conditions row", () => {
         await fetchQueueState();
         updateAllMergifyRows();
         expect(conditionsSection()).toBeNull();
+    });
+
+    test("no row on a closed pull request, even with a waiting status comment", async () => {
+        await jest.isolateModulesAsync(async () => {
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () => ({
+                    source: "payload",
+                    payload: {
+                        version: 1,
+                        state: "waiting",
+                        required_conditions: [],
+                    },
+                }),
+            }));
+            const queue = require("../queue");
+            const box = mergeBox();
+            box.insertAdjacentHTML(
+                "beforebegin",
+                '<span data-status="pullClosed">Closed</span>',
+            );
+            mockCheckRun(PROTECTIONS_RUN_HTML);
+            await queue.fetchQueueState();
+
+            queue.updateAllMergifyRows();
+
+            expect(conditionsSection()).toBeNull();
+        });
+        // doMock outlives isolateModulesAsync: drop it for the next tests.
+        jest.dontMock("../mqPayload");
+    });
+
+    test("the Mergify row keeps only its buttons, which say they will wait", async () => {
+        mockCheckRun(PROTECTIONS_RUN_HTML);
+        await fetchQueueState();
+
+        for (const variant of ["default", "sidebar"]) {
+            const row = buildMergifyRow(variant);
+            expect(
+                row.querySelector("[data-mergify-conditions-tree]"),
+            ).toBeNull();
+            const btn = row.querySelector("[data-mergify-queue-btn]");
+            expect(btn.hasAttribute("disabled")).toBe(false);
+            expect(btn.getAttribute("title")).toContain(
+                "enters once its queue conditions match",
+            );
+        }
+    });
+});
+
+describe("rich row while the queue request waits", () => {
+    // The engine's payload for this state never carries the conditions.
+    const WAITING_PAYLOAD = {
+        version: 1,
+        state: "waiting",
+        queue_rule_name: null,
+        queued_at: null,
+        estimated_time_of_merge: null,
+        speculative_check_pr: null,
+        required_conditions: [],
+    };
+
+    const withPayload = (payload) =>
+        jest.doMock("../mqPayload", () => ({
+            ...jest.requireActual("../mqPayload"),
+            getCurrent: () => ({ source: "payload", payload }),
+        }));
+
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        document.body.innerHTML = "";
+        resetQueueState();
+    });
+
+    afterEach(() => {
+        resetQueueState();
+        jest.restoreAllMocks();
+        jest.dontMock("../mqPayload");
+    });
+
+    test("says the conditions are unmet; the merge-box row says it too", async () => {
+        await jest.isolateModulesAsync(async () => {
+            withPayload(WAITING_PAYLOAD);
+            const queue = require("../queue");
+            mergeBox();
+            mockCheckRun(PROTECTIONS_RUN_HTML);
+            await queue.fetchQueueState();
+
+            const row = queue.buildRichRow(WAITING_PAYLOAD);
+            queue.updateAllMergifyRows();
+
+            // The count is the merge-box row's: this line only says why.
+            expect(row.querySelector("[data-mergify-eta]").textContent).toBe(
+                "queue conditions not met",
+            );
+            expect(
+                row.querySelector("[data-mergify-conditions-tree]"),
+            ).toBeNull();
+            expect(
+                conditionsSection().querySelector(
+                    "[data-mergify-conditions-summary]",
+                ).textContent,
+            ).toBe("Some queue conditions are unmet");
+        });
+    });
+
+    test("keeps the generic note when the check says the queue is ready", async () => {
+        await jest.isolateModulesAsync(async () => {
+            withPayload(WAITING_PAYLOAD);
+            const queue = require("../queue");
+            mergeBox();
+            mockCheckRun(
+                checkPage(entry([rule("✓label = a")]), { title: READY_TITLE }),
+            );
+            await queue.fetchQueueState();
+
+            queue.updateAllMergifyRows();
+
+            expect(
+                queue
+                    .buildRichRow(WAITING_PAYLOAD, "sidebar")
+                    .querySelector("[data-mergify-eta]").textContent,
+            ).toBe("queued conditions not yet met");
+            expect(conditionsSection()).toBeNull();
+        });
+    });
+
+    test("re-rendering an unchanged waiting row touches nothing (freeze #34031)", async () => {
+        await jest.isolateModulesAsync(async () => {
+            withPayload(WAITING_PAYLOAD);
+            const queue = require("../queue");
+            const box = mergeBox();
+            mockCheckRun(PROTECTIONS_RUN_HTML);
+            await queue.fetchQueueState();
+            box.appendChild(queue.buildRichRow(WAITING_PAYLOAD));
+            queue.updateAllMergifyRows();
+            // A second poll with the same page keeps the same tree.
+            await queue.fetchQueueState();
+
+            const mutations = [];
+            const observer = new MutationObserver((m) => mutations.push(...m));
+            observer.observe(document.body, { childList: true, subtree: true });
+            queue.updateAllMergifyRows();
+            queue.updateAllMergifyRows();
+            await Promise.resolve();
+            observer.disconnect();
+
+            expect(mutations).toHaveLength(0);
+        });
     });
 });
