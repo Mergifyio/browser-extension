@@ -1,0 +1,1 @@
+address Copilot review: restore original global.fetch in afterEach (jest.restoreAllMocks doesn't undo direct global assignments) to avoid leaking the fetch mock into later tests

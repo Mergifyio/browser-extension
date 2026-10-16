@@ -1,0 +1,1 @@
+Rebased on main. 627: the DOM contract suite now parses each recorded page once per describe instead of once per test — jsdom retains every tree it parses (~22MB each), so 108 parses overran the CI worker's 2GB heap once the second era landed.

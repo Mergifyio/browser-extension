@@ -1,0 +1,1 @@
+Address Copilot review: assert cursor is unset rather than dropping the assertion, so the fix is regression-covered

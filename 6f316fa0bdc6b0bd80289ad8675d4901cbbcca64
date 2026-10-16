@@ -1,0 +1,1 @@
+address review #475: drop export on QUEUE_ICON_SVG/LOGS_ICON_SVG (Copilot gc6DcMgl), mark decorative SVGs as aria-hidden/focusable=false (Copilot gc6DcMhT), break long ternary across multiple lines to satisfy biome formatter (Copilot gc6DcMiD, also fixes failing test CI)

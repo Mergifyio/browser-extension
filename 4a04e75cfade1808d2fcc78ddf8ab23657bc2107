@@ -1,0 +1,1 @@
+Split the single commit into two stacked PRs per author request: base = dashboard-link URL-format fix (path-scoped), top = MRGFY-7874 batch pill + detection + fixture. Same final tree.

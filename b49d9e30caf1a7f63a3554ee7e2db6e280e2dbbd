@@ -1,0 +1,1 @@
+address review: the rich shape also omits the queue button on batch PRs (deriveQueueButtonStateFromPayload returns batch); add the rich-shape test

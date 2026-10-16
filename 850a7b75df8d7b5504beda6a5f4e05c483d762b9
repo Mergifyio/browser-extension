@@ -1,0 +1,1 @@
+address PR #571 review: draft button now uses aria-disabled instead of the disabled attribute so its explanatory tooltip stays visible on hover (browsers suppress hover/pointer events on disabled controls), and its click is neutralized

@@ -1,0 +1,1 @@
+address review #479: wrap cache-first render in try/catch and discard the entry on shape mismatch (Copilot gc6Dfqot); export StackContextCache and add 7 unit tests mirroring PrStatusCache coverage (Copilot gc6Dfqp7)
