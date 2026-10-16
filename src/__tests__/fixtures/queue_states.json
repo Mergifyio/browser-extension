@@ -1,0 +1,323 @@
+[
+    {
+        "name": "waiting for a batch",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "step": "waiting_for_batch",
+            "batch": {
+                "size": 1,
+                "target": 2,
+                "max": 5,
+                "proceeds_at": "2026-10-16T12:50:00+00:00"
+            }
+        },
+        "title": "Waiting for a batch",
+        "summary": "1/2 pull requests · proceeds at {T}"
+    },
+    {
+        "name": "preparing checks",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "step": "preparing",
+            "position": 3
+        },
+        "title": "Preparing checks",
+        "summary": "#3 in the queue"
+    },
+    {
+        "name": "waiting for a checks slot",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "waiting_for_checks_slot"
+        },
+        "title": "Waiting for a checks slot",
+        "summary": "the checks already running must finish first"
+    },
+    {
+        "name": "checks running, retried, with a timeout",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "checks_running",
+            "checks": {
+                "attempt": 2,
+                "max_attempts": 3,
+                "timeout_at": "2026-10-16T12:50:00+00:00"
+            }
+        },
+        "title": "Checks running",
+        "summary": "attempt 2/3 · times out at {T} · 1 check expected"
+    },
+    {
+        "name": "waiting for the batches ahead",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "waiting_for_previous_batches",
+            "position": 2
+        },
+        "title": "Waiting for the batches ahead",
+        "summary": "#2 in the queue"
+    },
+    {
+        "name": "waiting for the merge schedule",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "waiting_for_schedule"
+        },
+        "title": "Waiting for the merge schedule",
+        "summary": "merges once the schedule allows"
+    },
+    {
+        "name": "blocked by a frozen batch ahead",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "blocked_by_frozen_batch",
+            "blocked_by": [12, 13]
+        },
+        "title": "Blocked by a frozen batch",
+        "summary": "#12, #13 must merge first"
+    },
+    {
+        "name": "checks deferred on a conflict",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "conflict_deferred",
+            "blocked_by": [9]
+        },
+        "title": "Checks deferred",
+        "summary": "conflicts with #9 ahead in the queue"
+    },
+    {
+        "name": "checks postponed",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "checks_postponed",
+            "checks": {
+                "attempt": 2
+            }
+        },
+        "title": "Checks postponed",
+        "summary": "retrying (attempt 2)"
+    },
+    {
+        "name": "waiting to be re-queued after a bisection",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "waiting_for_requeue"
+        },
+        "title": "Waiting to be re-queued",
+        "summary": "not the cause of the failure"
+    },
+    {
+        "name": "ready to merge",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "ready_to_merge"
+        },
+        "title": "Ready to merge",
+        "summary": "all checks passed"
+    },
+    {
+        "name": "bisecting, with its round",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "bisecting",
+            "bisection": {
+                "round": 1,
+                "max_rounds": 3
+            }
+        },
+        "title": "Bisecting a failed batch",
+        "summary": "round 1/3"
+    },
+    {
+        "name": "frozen, with the freeze",
+        "payload": {
+            "version": 1,
+            "state": "frozen",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "freeze": {
+                "name": "Release week",
+                "until": "2026-10-16T12:50:00+00:00"
+            }
+        },
+        "title": "Merge queue frozen",
+        "summary": "Release week · until {T}"
+    },
+    {
+        "name": "paused, with its reason",
+        "payload": {
+            "version": 1,
+            "state": "paused",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "pause": {
+                "reason": "Incident INC-42"
+            }
+        },
+        "title": "Merge queue paused",
+        "summary": "Incident INC-42"
+    },
+    {
+        "name": "dequeued, with its reason",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed"
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "checks failed"
+    }
+]
