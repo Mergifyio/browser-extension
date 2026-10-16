@@ -93,7 +93,7 @@ describe("renderConditionsBlock", () => {
         const rows = block.querySelectorAll("[data-mergify-condition]");
         expect(rows).toHaveLength(1);
         expect(rows[0].textContent).toContain("check-success=ci/test");
-        expect(rows[0].querySelector(".pending")).not.toBeNull();
+        expect(rows[0].querySelector('[data-mark="todo"]')).not.toBeNull();
     });
 
     test("when every condition is met, the heading shows an 'all met' marker and no rows are rendered", () => {

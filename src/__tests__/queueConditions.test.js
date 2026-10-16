@@ -11,11 +11,17 @@ const {
     updateAllMergifyRows,
 } = require("../queue");
 const {
+    conditionMark,
     parseQueueConditionsPage,
     readCheckStates,
 } = require("../queueConditions");
 const { placeQueueConditionsSection } = require("../queueConditionsSection");
-const { conditionsVerdict } = require("../queueConditionsTree");
+const {
+    MAX_TREE_ROWS,
+    buildQueueConditionsTree,
+    conditionsVerdict,
+    humanCondition,
+} = require("../queueConditionsTree");
 
 const RUN_URL = "/acme/widget/runs/999";
 const CHECKS_HTML = `<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>`;
@@ -113,6 +119,49 @@ function mockCheckRun(runHtml, { runOk = true, statusChecks = [] } = {}) {
         return Promise.resolve({ ok: false, text: () => Promise.resolve("") });
     });
 }
+
+// Every row of the unfolded tree as "<kind> <mark> <text>", in order.
+function treeRows(container) {
+    return Array.from(
+        container.querySelectorAll(
+            "[data-mergify-tree-rule], [data-mergify-tree-group], [data-mergify-tree-leaf], [data-mergify-tree-met], [data-mergify-tree-more]",
+        ),
+    ).map((el) => {
+        const mark = el.querySelector("[data-mark]")?.getAttribute("data-mark");
+        if (el.hasAttribute("data-mergify-tree-rule")) {
+            const name = el.getAttribute("data-mergify-tree-rule");
+            const closest = el.querySelector("[data-mergify-tree-closest]")
+                ? " (closest)"
+                : "";
+            const missing = el.querySelector("[data-mergify-tree-missing]");
+            return `rule ${mark}${name ? ` ${name}` : ""}${closest}${missing ? ` · ${missing.textContent}` : ""}`;
+        }
+        if (el.hasAttribute("data-mergify-tree-group")) {
+            const pill = el.querySelector("[data-mergify-tree-pill]");
+            return `group ${el.getAttribute("data-mergify-tree-group")} ${mark} ${pill.firstChild.textContent} ${pill.lastChild.textContent}`;
+        }
+        if (el.hasAttribute("data-mergify-tree-met"))
+            return `met ${el.textContent}`;
+        if (el.hasAttribute("data-mergify-tree-more"))
+            return `more ${el.querySelector("button").textContent}`;
+        return `leaf ${mark} ${el.textContent}`;
+    });
+}
+
+// The tree the recorded fixture page carries, with the docs check running.
+// Its payload names no group, so the protections' conditions read as the
+// rule's own, and the requirement on their check says they exist.
+const PROTECTIONS_TREE = [
+    "leaf todo Merge protections pass",
+    "rule todo",
+    "leaf todo Labeled ready-to-queue",
+    "leaf running CI · docs",
+    "leaf todo Labeled changelog",
+    "leaf todo Reviews · 2 approvals",
+    "met 2 conditions met",
+    "leaf met Reviews · No changes requested",
+    "leaf met Targets main",
+];
 
 describe("parseQueueConditionsPage", () => {
     test("reads the payload span off the check page, as the engine writes it", () => {
@@ -242,6 +291,59 @@ describe("readCheckStates", () => {
     });
 });
 
+describe("conditionMark", () => {
+    test("draws GitHub's merge-box marks at its 16px size, in its theme colours", () => {
+        const todo = conditionMark("todo");
+        expect([
+            todo.getAttribute("width"),
+            todo.getAttribute("height"),
+        ]).toEqual(["16", "16"]);
+        expect(todo.style.fill).toBe("var(--fgColor-muted, #59636e)");
+
+        // The Primer Spinner GitHub shows on a check in progress: a faint
+        // ring and an arc, both in the attention colour.
+        const running = conditionMark("running");
+        expect(running.getAttribute("width")).toBe("16");
+        expect(running.style.color).toBe("var(--fgColor-attention, #9a6700)");
+        expect(
+            running.querySelector("circle").getAttribute("stroke-opacity"),
+        ).toBe("0.25");
+        expect(running.querySelector("path").getAttribute("d")).toBe(
+            "M15 8a7.002 7.002 0 00-7-7",
+        );
+        // ...around an 8px dot, as GitHub's CheckSpinner draws it.
+        expect(
+            running
+                .querySelector('circle[fill="currentColor"]')
+                .getAttribute("r"),
+        ).toBe("4");
+    });
+
+    test("draws a failed check with GitHub's red x-circle", () => {
+        const failed = conditionMark("failed");
+
+        expect(failed.getAttribute("width")).toBe("16");
+        expect(failed.style.fill).toBe("var(--fgColor-danger, #d1242f)");
+        expect(failed.querySelector("path").getAttribute("d")).toMatch(
+            /^M2\.343 13\.657A8 8 0 1 1/,
+        );
+    });
+
+    test("spins a running mark, and holds it still under reduced motion", () => {
+        conditionMark("running");
+
+        const css = document.getElementById(
+            "mergify-condition-spin",
+        ).textContent;
+        expect(css).toContain(
+            "animation: mergify-condition-spin 1s linear infinite",
+        );
+        expect(css).toMatch(
+            /@media \(prefers-reduced-motion: reduce\) \{ \[data-mark="running"\] \{ animation: none; \} \}/,
+        );
+    });
+});
+
 describe("conditionsVerdict", () => {
     const verdict = (rules, states, requirements) =>
         conditionsVerdict(parsed(entry(rules, requirements), states));
@@ -283,7 +385,7 @@ describe("conditionsVerdict", () => {
         ).toEqual({
             state: "waiting",
             summary:
-                "1 check running · approvals missing (2 required) · 1 condition missing",
+                "1 check running · approvals missing (2 required) · Labeled hotfix or Labeled urgent",
         });
     });
 
@@ -377,6 +479,14 @@ describe("conditionsVerdict", () => {
         });
     });
 
+    test("names a two-option group on one check by what it must do", () => {
+        expect(
+            verdict([
+                rule(["any of", "check-skipped = ci", "check-success = ci"]),
+            ]).summary,
+        ).toBe("CI · ci must be skipped or pass");
+    });
+
     test("a label to remove and a draft", () => {
         expect(
             verdict([rule("-label = wip")], {}, [
@@ -397,6 +507,253 @@ describe("conditionsVerdict", () => {
             summary: "Some queue conditions are unmet",
         });
         expect(conditionsVerdict(null)).toBeNull();
+    });
+});
+
+describe("buildQueueConditionsTree", () => {
+    const tree = (rules, states, requirements) =>
+        buildQueueConditionsTree(parsed(entry(rules, requirements), states));
+
+    test("draws the recorded page: one rule, the requirement left, what matches folded", () => {
+        const drawn = buildQueueConditionsTree({
+            ...parseQueueConditionsPage(PROTECTIONS_RUN_HTML, RUN_URL),
+            checkStates: { docs: "running" },
+        });
+
+        expect(treeRows(drawn)).toEqual(PROTECTIONS_TREE);
+        // The words are ours; the condition stays in the tooltip.
+        expect(
+            drawn.querySelector(
+                '[data-mergify-tree-leaf][title="label = ready-to-queue"]',
+            ).textContent,
+        ).toBe("Labeled ready-to-queue");
+        expect(drawn.lastElementChild.textContent).toBe("View details");
+    });
+
+    test("names rules and protections when the payload notes them, and drops the check repeating them", () => {
+        const drawn = buildQueueConditionsTree(
+            parsed([
+                [
+                    "any of [🔀 queue conditions]",
+                    [
+                        "all of [📌 queue conditions of queue rule `default`]",
+                        "label = ready",
+                        [
+                            "all of [🛡 Merge Protections rule `Require 2 approvals`]",
+                            "#approved-reviews-by >= 2",
+                        ],
+                    ],
+                ],
+                [
+                    "any of [📌 queue requirement]",
+                    "check-success = @mergify/Mergify Merge Protections",
+                    "check-neutral = @mergify/Mergify Merge Protections",
+                ],
+                ...REQUIREMENTS,
+            ]),
+        );
+
+        expect(treeRows(drawn)).toEqual([
+            "rule todo default",
+            "leaf todo Labeled ready",
+            "group and todo Merge protection 0/1",
+            "leaf todo Reviews · 2 approvals",
+        ]);
+    });
+
+    test("several rules: the closest first, open and marked, the others folded", () => {
+        const drawn = tree([
+            rule("#approved-reviews-by >= 1", "label = queue"),
+            rule("label = urgent"),
+        ]);
+
+        expect(treeRows(drawn)).toEqual([
+            "rule todo 2 (closest) · 1 missing",
+            "leaf todo Labeled urgent",
+            "rule todo 1 · 2 missing",
+            "leaf todo Reviews · 1 approval",
+            "leaf todo Labeled queue",
+        ]);
+        expect(
+            Array.from(drawn.querySelectorAll(":scope > details")).map(
+                (d) => d.open,
+            ),
+        ).toEqual([true, false]);
+    });
+
+    test("a rule that can still match comes before one that can't, however close", () => {
+        const rows = treeRows(
+            tree(
+                [
+                    rule("check-success = ci"),
+                    rule("#approved-reviews-by >= 2", "label = queue"),
+                ],
+                { ci: "failed" },
+            ),
+        );
+
+        expect(rows[0]).toBe("rule todo 2 (closest) · 2 missing");
+        expect(rows).toContain("rule failed 1 · 1 missing");
+    });
+
+    test("drops an option out of the author's reach, and a lone option stands alone", () => {
+        expect(
+            treeRows(
+                tree([
+                    rule([
+                        "any of",
+                        "author = dependabot[bot]",
+                        "label = changelog",
+                    ]),
+                ]),
+            ),
+        ).toEqual(["rule todo", "leaf todo Labeled changelog"]);
+    });
+
+    test("folds what matches into one line that unfolds to the list", () => {
+        const drawn = tree([
+            rule(
+                "label = queue",
+                "✓check-success = lint",
+                "✓check-success = unit",
+                "✓check-success = e2e",
+                ["✓any of", "✓label = hotfix", "check-success = ci"],
+            ),
+        ]);
+        const met = drawn.querySelector("[data-mergify-tree-met]");
+
+        expect(met.textContent).toBe("4 conditions met");
+        const details = met.closest("details");
+        expect(details.open).toBe(false);
+        expect(
+            Array.from(
+                details.querySelectorAll("[data-mergify-tree-leaf]"),
+            ).map((l) => l.textContent),
+        ).toEqual(["CI · lint", "CI · unit", "CI · e2e"]);
+    });
+
+    test("only checks matched: 'N checks passed'", () => {
+        expect(
+            tree([
+                rule(
+                    "label = queue",
+                    "✓check-success = lint",
+                    "✓check-success = unit",
+                ),
+            ]).querySelector("[data-mergify-tree-met]").textContent,
+        ).toBe("2 checks passed");
+    });
+
+    test(`shows ${MAX_TREE_ROWS} conditions, then 'Show N more' and back`, () => {
+        const labels = Array.from({ length: 8 }, (_, i) => `label = l${i}`);
+        const more = tree([rule(...labels)]).querySelector(
+            "[data-mergify-tree-more]",
+        );
+        const button = more.querySelector("button");
+        const list = more.previousElementSibling;
+
+        expect(button.textContent).toBe("Show 2 more");
+        expect(list.hidden).toBe(true);
+        expect(list.querySelectorAll("[data-mergify-tree-leaf]")).toHaveLength(
+            2,
+        );
+        button.click();
+        expect(list.hidden).toBe(false);
+        expect(button.textContent).toBe("Show less");
+        expect(button.getAttribute("aria-expanded")).toBe("true");
+        button.click();
+        expect(button.textContent).toBe("Show 2 more");
+    });
+
+    test("three levels drawn; deeper ones behind 'Show more'", () => {
+        const rows = treeRows(
+            tree([
+                rule([
+                    "any of",
+                    "label = a",
+                    [
+                        "all of",
+                        "label = b",
+                        ["any of", "label = c", "label = d"],
+                    ],
+                ]),
+            ]),
+        );
+
+        expect(rows.slice(0, 4)).toEqual([
+            "rule todo",
+            "group or todo Any of 0/2",
+            "leaf todo Labeled a",
+            "group and todo All of 0/2",
+        ]);
+        expect(rows).toContain("more Show 2 more");
+    });
+
+    test("an unmet requirement comes first: a conflict can't match", () => {
+        expect(
+            treeRows(
+                tree([rule("✓label = queue")], {}, ["✓-closed", "-conflict"]),
+            )[0],
+        ).toBe("leaf failed No conflict with the base branch");
+    });
+
+    test("returns null when the check carried no tree", () => {
+        expect(
+            buildQueueConditionsTree({
+                met: false,
+                entry: null,
+                runUrl: RUN_URL,
+            }),
+        ).toBeNull();
+    });
+});
+
+describe("humanCondition", () => {
+    test.each([
+        ["check-success = test", ["CI", "test"]],
+        ["status-success = ci-gate", ["CI", "ci-gate"]],
+        ["check-skipped = ci", ["CI", "ci must be skipped"]],
+        [
+            "check-success-or-neutral = lint",
+            ["CI", "lint must pass or be neutral"],
+        ],
+        ["#approved-reviews-by >= 2", ["Reviews", "2 approvals"]],
+        ["#approved-reviews-by >= 1", ["Reviews", "1 approval"]],
+        [
+            "#changes-requested-reviews-by = 0",
+            ["Reviews", "No changes requested"],
+        ],
+        ["label = ready", [null, "Labeled ready"]],
+        ["-label = wip", [null, "Not labeled wip"]],
+        ["label != wip", [null, "Not labeled wip"]],
+        ["base = main", [null, "Targets main"]],
+        ["base != main", [null, "Doesn't target main"]],
+        ["author = dependabot[bot]", [null, "Opened by dependabot[bot]"]],
+        ["files ~= ^src/", ["Files", "^src/"]],
+        ["-draft", [null, "Not a draft"]],
+        ["-conflict", [null, "No conflict with the base branch"]],
+        [
+            "-mergify-configuration-changed",
+            [null, "Doesn't change the Mergify configuration"],
+        ],
+    ])("%s", (raw, words) => {
+        expect(humanCondition(raw)).toEqual(words);
+    });
+
+    test("says a freeze's or a schedule's condition in time", () => {
+        expect(
+            humanCondition(
+                "current-datetime < 2026-10-13T16:03:13[Europe/Paris]",
+            ),
+        ).toEqual(["Schedule", "before 2026-10-13 16:03 (Europe/Paris)"]);
+        expect(humanCondition("schedule = Mon-Fri 09:00-17:00")).toEqual([
+            "Schedule",
+            "Mon-Fri 09:00-17:00",
+        ]);
+    });
+
+    test("keeps the syntax for what it can't say better", () => {
+        expect(humanCondition("#commits-behind <= 3")).toBeNull();
     });
 });
 
@@ -508,7 +865,7 @@ describe("merge-box conditions row", () => {
         ).toBe("false");
         const body = section.querySelector("[data-mergify-conditions-body]");
         expect(body.hidden).toBe(true);
-        expect(body.textContent).toBe("View details");
+        expect(treeRows(body)).toEqual(PROTECTIONS_TREE);
         // The states come from the JSON GitHub's own merge box loads.
         expect(global.fetch).toHaveBeenCalledWith(
             "/acme/widget/pull/42/page_data/status_checks",
@@ -548,7 +905,7 @@ describe("merge-box conditions row", () => {
         ).toBe("Add the pull request to the merge queue");
     });
 
-    test("can't match: red x, unfolded", async () => {
+    test("can't match: red x, unfolded on the tree with GitHub's marks", async () => {
         mergeBox();
         mockCheckRun(BLOCKED_PAGE, { statusChecks: STATES });
         await fetchQueueState();
@@ -567,10 +924,19 @@ describe("merge-box conditions row", () => {
         expect(
             section.querySelector("[data-mergify-conditions-summary]")
                 .textContent,
-        ).toBe("1 check failed · 1 check running · 1 approval missing");
+        ).toBe(
+            "1 check failed · 1 approval missing · CI · ci or Labeled hotfix",
+        );
         const body = section.querySelector("[data-mergify-conditions-body]");
         expect(body.hidden).toBe(false);
-        expect(body.textContent).toBe("View details");
+        expect(treeRows(body)).toEqual([
+            "rule failed",
+            "leaf todo Reviews · 1 approval",
+            "leaf failed CI · unit",
+            "group or running Any of 0/2",
+            "leaf running CI · ci",
+            "leaf todo Labeled hotfix",
+        ]);
     });
 
     test("without a tree on the check, points at the details", async () => {
@@ -793,7 +1159,7 @@ describe("rich row while the queue request waits", () => {
         jest.dontMock("../mqPayload");
     });
 
-    test("says the conditions are unmet; the count is in the merge-box row", async () => {
+    test("says the conditions are unmet; the tree is in the merge-box row", async () => {
         await jest.isolateModulesAsync(async () => {
             withPayload(WAITING_PAYLOAD);
             const queue = require("../queue");
@@ -811,12 +1177,10 @@ describe("rich row while the queue request waits", () => {
             expect(
                 row.querySelector("[data-mergify-conditions-tree]"),
             ).toBeNull();
-            expect(
-                conditionsSection().querySelector(
-                    "[data-mergify-conditions-summary]",
-                ).textContent,
-            ).toBe(
-                "1 check expected · approvals missing (2 required) · 2 labels missing",
+            expect(treeRows(conditionsSection())).toEqual(
+                PROTECTIONS_TREE.map((r) =>
+                    r === "leaf running CI · docs" ? "leaf todo CI · docs" : r,
+                ),
             );
         });
     });
