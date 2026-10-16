@@ -3,13 +3,16 @@
 // circle, a bold title, one line under it, and for a row with something to
 // show, GitHub's chevron to unfold it.
 //
-// Before the queue it says whether the pull request can enter, from the
-// merge queue check's conditions.
+// One row for the whole lifecycle. Before the queue it says whether the pull
+// request can enter, from the merge queue check's conditions; once queued, what
+// the queue is doing with it, from the status report's payload: checking,
+// paused, frozen, bisecting, merged, dequeued.
 //
 // GitHub's own classes for that row are CSS modules hashed per deploy, so the
 // layout is mirrored with inline styles over Primer's stable utility classes
 // and colour variables.
 
+import { parseRequiredConditions } from "./queueConditions.js";
 import {
     buildQueueConditionsTree,
     conditionsVerdict,
@@ -20,8 +23,17 @@ export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 // Octicons, 16px (@primer/octicons 19): `check` and `x` as GitHub draws them
-// in its rows' circles, `clock` for the wait, `chevron-right` for the fold.
+// in its rows' circles, `clock` for the wait, `git-merge-queue`, `lock`,
+// `iterations` and `git-merge` for the queue's states, `chevron-right` for
+// the fold.
 const ICON_PATHS = {
+    "git-merge-queue":
+        "M3.75 4.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5ZM3 7.75a.75.75 0 0 1 1.5 0v2.878a2.251 2.251 0 1 1-1.5 0Zm.75 5.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm5-7.75a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm5.75 2.5a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-1.5 0a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z",
+    lock: "M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z",
+    iterations:
+        "M2.5 7.25a4.75 4.75 0 0 1 9.5 0 .75.75 0 0 0 1.5 0 6.25 6.25 0 1 0-6.25 6.25H12v2.146c0 .223.27.335.427.177l2.896-2.896a.25.25 0 0 0 0-.354l-2.896-2.896a.25.25 0 0 0-.427.177V12H7.25A4.75 4.75 0 0 1 2.5 7.25Z",
+    "git-merge":
+        "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
     check: "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z",
     x: "M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z",
     clock: "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z",
@@ -48,24 +60,158 @@ const STATES = {
         fill: "var(--bgColor-danger-emphasis, #cf222e)",
         icon: "x",
     },
+    // In the queue: GitHub's in-progress yellow, its merged purple, its red.
+    checking: {
+        title: "In the merge queue",
+        circle: "bgColor-attention-emphasis",
+        fill: "var(--bgColor-attention-emphasis, #9a6700)",
+        icon: "git-merge-queue",
+        // No fixed note: the merge conditions say what it waits on (checks,
+        // a freeze's schedule), and "checks running" was false half the time.
+    },
+    // Between the click and the queue's answer.
+    joining: {
+        title: "Joining the merge queue…",
+        circle: "bgColor-attention-emphasis",
+        fill: "var(--bgColor-attention-emphasis, #9a6700)",
+        icon: "git-merge-queue",
+        note: "Waiting for the queue to take it",
+    },
+    paused: {
+        title: "Merge queue paused",
+        circle: "bgColor-attention-emphasis",
+        fill: "var(--bgColor-attention-emphasis, #9a6700)",
+        icon: "git-merge-queue",
+        note: "Checks suspended",
+    },
+    frozen: {
+        title: "Merge queue frozen",
+        circle: "bgColor-attention-emphasis",
+        fill: "var(--bgColor-attention-emphasis, #9a6700)",
+        icon: "lock",
+        note: "A freeze holds the queue",
+    },
+    bisecting: {
+        title: "Bisecting a failed batch",
+        circle: "bgColor-attention-emphasis",
+        fill: "var(--bgColor-attention-emphasis, #9a6700)",
+        icon: "iterations",
+        note: "Finding the pull request that broke it",
+    },
+    merged: {
+        title: "Merged by the merge queue",
+        circle: "bgColor-done-emphasis",
+        fill: "var(--bgColor-done-emphasis, #8250df)",
+        icon: "git-merge",
+    },
+    dequeued: {
+        title: "Removed from the merge queue",
+        circle: "bgColor-danger-emphasis",
+        fill: "var(--bgColor-danger-emphasis, #cf222e)",
+        icon: "x",
+        note: "Its activity log says why",
+    },
 };
 
-// What the row shows for a model: { conditions }.
+// The queue states the row draws from the status report's payload; "waiting"
+// is the conditions' to draw.
+export const QUEUE_PAYLOAD_STATES = new Set([
+    "checking",
+    "paused",
+    "frozen",
+    "bisecting",
+    "merged",
+    "dequeued",
+]);
+
+// What the row shows for a model: { conditions } before the queue, { queue }
+// once in it. queue: { state, queuedAt, eta, specPr, required, mergedMessage,
+// repoPath }.
 function _view(model) {
-    const verdict = conditionsVerdict(model.conditions);
-    if (!verdict) return null;
+    if (model.conditions) {
+        const verdict = conditionsVerdict(model.conditions);
+        if (!verdict) return null;
+        return {
+            state: verdict.state,
+            label: "Queue conditions",
+            summary: [verdict.summary],
+            body:
+                verdict.state === "met"
+                    ? null
+                    : () =>
+                          buildQueueConditionsTree(model.conditions) ??
+                          _detailsOnly(model.conditions.runUrl),
+        };
+    }
+    if (model.joining) {
+        return {
+            state: "joining",
+            label: "Merge queue",
+            summary: [STATES.joining.note],
+            body: null,
+        };
+    }
+    const queue = model.queue;
+    const look = STATES[queue.state];
+    if (!look) return null;
+    if (queue.state === "merged") {
+        return {
+            state: "merged",
+            label: "Merge queue",
+            summary: [queue.mergedMessage],
+            body: null,
+        };
+    }
+    // What the merge conditions still miss, while the batch runs. Paused,
+    // frozen or bisecting, they describe a batch that is held or already
+    // failed: the state says it better than a count would.
+    const entry =
+        queue.state === "checking"
+            ? parseRequiredConditions(queue.required)
+            : null;
+    const conditions = entry ? { met: false, entry, runUrl: null } : null;
+    const unmet = conditions && entry.some((n) => !n.match);
+    const summary = look.note ? [look.note] : [];
+    if (unmet) summary.push(conditionsVerdict(conditions).summary);
+    else if (conditions) summary.push("Merge conditions met");
+    summary.push(_TIMES);
+    const hasBody = Boolean(unmet || queue.specPr);
     return {
-        state: verdict.state,
-        label: "Queue conditions",
-        summary: [verdict.summary],
-        body:
-            verdict.state === "met"
-                ? null
-                : () =>
-                      buildQueueConditionsTree(model.conditions) ??
-                      _detailsOnly(model.conditions.runUrl),
+        state: queue.state,
+        label: "Merge queue",
+        summary,
+        body: hasBody
+            ? () => _queueBody(queue, unmet ? conditions : null)
+            : null,
     };
 }
+
+// Where the queued-at and estimated-merge times go: the caller fills it, and
+// its ticker keeps it current.
+const _TIMES = Symbol("times");
+
+function _queueBody(queue, conditions) {
+    const body = document.createElement("div");
+    body.style.cssText = "display:flex;flex-direction:column;min-width:0;";
+    if (queue.specPr) {
+        const line = document.createElement("div");
+        line.setAttribute("data-mergify-spec-pr", "");
+        line.style.cssText =
+            "font-size:14px;line-height:20px;padding:4px 0;color:var(--fgColor-muted, #59636e);";
+        const link = document.createElement("a");
+        link.href = `${queue.repoPath}/pull/${queue.specPr}`;
+        link.style.color = "var(--fgColor-accent, #0969da)";
+        link.textContent = `draft pull request #${queue.specPr}`;
+        line.append("Checks run in ", link);
+        body.appendChild(line);
+    }
+    if (conditions) {
+        const tree = buildQueueConditionsTree(conditions);
+        if (tree) body.appendChild(tree);
+    }
+    return body;
+}
+
 function _octicon(name) {
     const svg = document.createElementNS(SVG_NS, "svg");
     svg.setAttribute("viewBox", "0 0 16 16");
@@ -88,10 +234,11 @@ export function sectionStartsExpanded(model) {
         : false;
 }
 
-// expanded: the fold state to draw; onToggle(expanded) is called on a click.
+// expanded: the fold state to draw; onToggle(expanded) is called on a click;
+// times(): the nodes saying when the pull request was queued and should merge.
 export function buildQueueSection(
     model,
-    { expanded = false, onToggle = () => {} } = {},
+    { expanded = false, onToggle = () => {}, times = () => [] } = {},
 ) {
     const view = model ? _view(model) : null;
     if (!view) return null;
@@ -140,7 +287,23 @@ export function buildQueueSection(
     subtitle.setAttribute("data-mergify-conditions-summary", "");
     subtitle.style.cssText =
         "font-size:14px;line-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-    subtitle.textContent = view.summary.filter(Boolean).join(" · ");
+    const parts = [];
+    for (const part of view.summary) {
+        if (part === _TIMES) {
+            const nodes = times();
+            if (nodes.length === 0) continue;
+            const span = document.createElement("span");
+            span.setAttribute("data-mergify-queue-times", "");
+            span.append(...nodes);
+            parts.push(span);
+        } else if (part) {
+            parts.push(document.createTextNode(part));
+        }
+    }
+    parts.forEach((node, i) => {
+        if (i > 0) subtitle.append(" · ");
+        subtitle.appendChild(node);
+    });
     subtitle.title = subtitle.textContent;
     text.append(title, subtitle);
 

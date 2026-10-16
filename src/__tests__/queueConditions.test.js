@@ -1061,19 +1061,42 @@ describe("merge-box conditions row", () => {
         ]);
     });
 
-    test("leaves once the pull request is queued, or the run can't be read", async () => {
-        mergeBox();
+    test("keeps its last state while its sources say nothing, and goes once it cannot apply", async () => {
+        const box = mergeBox();
+        mockCheckRun(PROTECTIONS_RUN_HTML);
+        await fetchQueueState();
+        updateAllMergifyRows();
+        const shown = conditionsSection();
+        expect(shown).not.toBeNull();
+
+        // The queue rewrites the check before its status comment is posted.
+        mockCheckRun("<h2>In merge queue — waiting for batch (1/2)</h2>");
+        await fetchQueueState();
+        updateAllMergifyRows();
+        expect(conditionsSection()).toBe(shown);
+
+        // The run cannot be read for a poll.
+        mockCheckRun("", { runOk: false });
+        await fetchQueueState();
+        updateAllMergifyRows();
+        expect(conditionsSection()).toBe(shown);
+
+        // Another pull request, after an in-page navigation.
+        window.history.replaceState({}, "", "/acme/widget/pull/43");
+        resetQueueState();
+        updateAllMergifyRows();
+        expect(conditionsSection()).toBeNull();
+
+        // A closed pull request.
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
         mockCheckRun(PROTECTIONS_RUN_HTML);
         await fetchQueueState();
         updateAllMergifyRows();
         expect(conditionsSection()).not.toBeNull();
-
-        mockCheckRun(`Queued for merge ${PROTECTIONS_RUN_HTML}`);
-        await fetchQueueState();
-        updateAllMergifyRows();
-        expect(conditionsSection()).toBeNull();
-
-        resetQueueState();
+        box.insertAdjacentHTML(
+            "beforebegin",
+            '<span data-status="pullClosed">Closed</span>',
+        );
         mockCheckRun("", { runOk: false });
         await fetchQueueState();
         updateAllMergifyRows();
@@ -1169,13 +1192,17 @@ describe("rich row while the queue request waits", () => {
             const row = queue.buildRichRow(WAITING_PAYLOAD);
             queue.updateAllMergifyRows();
 
-            // The count is the merge-box row's: this line only says why.
-            expect(row.querySelector("[data-mergify-eta]").textContent).toBe(
-                "queue conditions not met",
-            );
+            // One state line in the merge box: Mergify's row, not this one.
+            expect(row.querySelector("[data-mergify-eta]")).toBeNull();
             expect(
                 row.querySelector("[data-mergify-conditions-tree]"),
             ).toBeNull();
+            // The sidebar, which has no such row, keeps its own line.
+            expect(
+                queue
+                    .buildRichRow(WAITING_PAYLOAD, "sidebar")
+                    .querySelector("[data-mergify-eta]").textContent,
+            ).toBe("queue conditions not met");
             expect(treeRows(conditionsSection())).toEqual(
                 PROTECTIONS_TREE.map((r) =>
                     r === "leaf running CI · docs" ? "leaf todo CI · docs" : r,
@@ -1226,6 +1253,419 @@ describe("rich row while the queue request waits", () => {
             observer.disconnect();
 
             expect(mutations).toHaveLength(0);
+        });
+    });
+});
+
+describe("queue states in the merge-box row", () => {
+    const QUEUED = {
+        version: 1,
+        state: "checking",
+        queue_rule_name: "default",
+        queued_at: new Date(Date.now() - 12 * 60000).toISOString(),
+        estimated_time_of_merge: null,
+        speculative_check_pr: 77,
+        required_conditions: [
+            {
+                description: "check-success = ci",
+                match: false,
+                subconditions: [],
+            },
+            {
+                description: "#approved-reviews-by >= 1",
+                match: true,
+                subconditions: [],
+            },
+        ],
+    };
+
+    const withPayload = (payload) =>
+        jest.doMock("../mqPayload", () => ({
+            ...jest.requireActual("../mqPayload"),
+            getCurrent: () => ({ source: "payload", payload }),
+        }));
+
+    async function rowFor(payload, { status = "pullOpened" } = {}) {
+        let section = null;
+        await jest.isolateModulesAsync(async () => {
+            withPayload(payload);
+            const queue = require("../queue");
+            const box = mergeBox();
+            box.insertAdjacentHTML(
+                "beforebegin",
+                `<span data-status="${status}">x</span>`,
+            );
+            mockCheckRun("");
+            queue.updateAllMergifyRows();
+            section = conditionsSection();
+        });
+        return section;
+    }
+
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        document.body.innerHTML = "";
+        resetQueueState();
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        jest.dontMock("../mqPayload");
+    });
+
+    const look = (section) => ({
+        state: section.getAttribute("data-mergify-conditions-section"),
+        title: section.querySelector("h3").textContent,
+        summary: section.querySelector("[data-mergify-conditions-summary]")
+            .textContent,
+        icon: section
+            .querySelector(".fgColor-onEmphasis svg")
+            .getAttribute("class"),
+    });
+
+    test("checking: GitHub's in-progress yellow, what the merge still waits on, when it was queued", async () => {
+        const section = await rowFor(QUEUED);
+
+        expect(look(section)).toEqual({
+            state: "checking",
+            title: "In the merge queue",
+            summary: "1 check expected · queued 12m ago",
+            icon: "octicon octicon-git-merge-queue",
+        });
+        expect(
+            section
+                .querySelector(".fgColor-onEmphasis")
+                .classList.contains("bgColor-attention-emphasis"),
+        ).toBe(true);
+        const body = section.querySelector("[data-mergify-conditions-body]");
+        expect(body.hidden).toBe(true);
+        expect(
+            body.querySelector("[data-mergify-spec-pr] a").getAttribute("href"),
+        ).toBe("/acme/widget/pull/77");
+        expect(treeRows(body)).toEqual(["leaf todo CI · ci"]);
+    });
+
+    test("checking held by a freeze: the schedule condition alone, in time", async () => {
+        const section = await rowFor({
+            ...QUEUED,
+            required_conditions: [
+                {
+                    description: "all of",
+                    match: false,
+                    subconditions: [
+                        {
+                            description:
+                                "current-datetime < 2026-10-13T16:03:13[Europe/Paris]",
+                            match: false,
+                            subconditions: [],
+                        },
+                    ],
+                },
+                {
+                    description: "status-success = ci-gate",
+                    match: true,
+                    subconditions: [],
+                },
+            ],
+        });
+
+        expect(look(section).summary).toBe(
+            "waiting for its schedule · queued 12m ago",
+        );
+        expect(
+            treeRows(section.querySelector("[data-mergify-conditions-body]")),
+        ).toEqual([
+            "leaf todo Schedule · before 2026-10-13 16:03 (Europe/Paris)",
+        ]);
+    });
+
+    test("checking with every merge condition met has only the draft PR to show", async () => {
+        const section = await rowFor({
+            ...QUEUED,
+            required_conditions: [
+                {
+                    description: "check-success = ci",
+                    match: true,
+                    subconditions: [],
+                },
+            ],
+        });
+
+        expect(look(section).summary).toBe(
+            "Merge conditions met · queued 12m ago",
+        );
+        expect(
+            treeRows(section.querySelector("[data-mergify-conditions-body]")),
+        ).toEqual([]);
+    });
+
+    test("paused, frozen and bisecting say what holds the pull request", async () => {
+        expect(
+            look(await rowFor({ ...QUEUED, state: "paused" })),
+        ).toMatchObject({
+            state: "paused",
+            title: "Merge queue paused",
+            summary: "Checks suspended · queued 12m ago",
+            icon: "octicon octicon-git-merge-queue",
+        });
+        expect(
+            look(await rowFor({ ...QUEUED, state: "frozen" })),
+        ).toMatchObject({
+            title: "Merge queue frozen",
+            icon: "octicon octicon-lock",
+        });
+        expect(
+            look(await rowFor({ ...QUEUED, state: "bisecting" })),
+        ).toMatchObject({
+            title: "Bisecting a failed batch",
+            // The failed batch's conditions would read as still to come.
+            summary: "Finding the pull request that broke it · queued 12m ago",
+            icon: "octicon octicon-iterations",
+        });
+    });
+
+    test("merged: GitHub's merged purple, nothing to unfold, on a merged page", async () => {
+        const section = await rowFor(
+            {
+                ...QUEUED,
+                state: "merged",
+                speculative_check_pr: null,
+                required_conditions: [],
+            },
+            { status: "pullMerged" },
+        );
+
+        expect(look(section)).toMatchObject({
+            state: "merged",
+            title: "Merged by the merge queue",
+            icon: "octicon octicon-git-merge",
+        });
+        expect(
+            section
+                .querySelector(".fgColor-onEmphasis")
+                .classList.contains("bgColor-done-emphasis"),
+        ).toBe(true);
+        expect(
+            section.querySelector("[data-mergify-conditions-toggle]"),
+        ).toBeNull();
+    });
+
+    test("dequeued: red, pointing at the activity log; gone once the PR is closed", async () => {
+        const dequeued = {
+            ...QUEUED,
+            state: "dequeued",
+            speculative_check_pr: null,
+            required_conditions: [],
+        };
+        expect(look(await rowFor(dequeued))).toMatchObject({
+            title: "Removed from the merge queue",
+            summary: "Its activity log says why · queued 12m ago",
+        });
+        expect(await rowFor(dequeued, { status: "pullClosed" })).toBeNull();
+    });
+
+    test("the ticker keeps the times current in place", async () => {
+        jest.useFakeTimers();
+        try {
+            await jest.isolateModulesAsync(async () => {
+                withPayload(QUEUED);
+                const queue = require("../queue");
+                mergeBox();
+                queue.updateAllMergifyRows();
+                const times = document.querySelector(
+                    "[data-mergify-queue-times]",
+                );
+                expect(times.textContent).toBe("queued 12m ago");
+
+                queue.startEtaTicker({
+                    ...QUEUED,
+                    estimated_time_of_merge: new Date(
+                        Date.now() + 30 * 60000,
+                    ).toISOString(),
+                });
+                jest.advanceTimersByTime(60_000);
+
+                expect(times.isConnected).toBe(true);
+                expect(times.textContent).toMatch(/^queued 13m ago · merging /);
+                queue.stopEtaTicker();
+            });
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test("just queued: 'queued just now', then minutes that tick without an estimate", async () => {
+        jest.useFakeTimers();
+        try {
+            await jest.isolateModulesAsync(async () => {
+                const justQueued = {
+                    ...QUEUED,
+                    queued_at: new Date(Date.now() - 20_000).toISOString(),
+                };
+                withPayload(justQueued);
+                const queue = require("../queue");
+                mergeBox();
+                queue.updateAllMergifyRows();
+                const times = document.querySelector(
+                    "[data-mergify-queue-times]",
+                );
+                expect(times.textContent).toBe("queued just now");
+
+                queue.startEtaTicker(justQueued);
+                jest.advanceTimersByTime(60_000);
+
+                expect(times.textContent).toBe("queued 1m ago");
+                queue.stopEtaTicker();
+            });
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
+describe("joining the merge queue", () => {
+    const READY_PAGE = checkPage(entry([rule("✓label = a")]), {
+        title: READY_TITLE,
+    });
+    let current = null;
+
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        document.body.innerHTML = "";
+        current = null;
+        resetQueueState();
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        jest.dontMock("../mqPayload");
+    });
+
+    // The page's comment form, which the queue button posts its command with.
+    function commentForm() {
+        document.body.insertAdjacentHTML(
+            "beforeend",
+            '<textarea id="new_comment_field"></textarea><div id="partial-new-comment-form-actions"><button type="button">Comment</button></div>',
+        );
+    }
+
+    async function withQueue(run) {
+        await jest.isolateModulesAsync(async () => {
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () =>
+                    current
+                        ? { source: "payload", payload: current }
+                        : { source: "fallback" },
+            }));
+            await run(require("../queue"));
+        });
+    }
+
+    const look = () => {
+        const s = conditionsSection();
+        return s
+            ? `${s.getAttribute("data-mergify-conditions-section")} | ${s.querySelector("h3").textContent}`
+            : "none";
+    };
+
+    test("from the click to the queue's payload, never blank and never unmet", async () => {
+        await withQueue(async (queue) => {
+            mergeBox();
+            commentForm();
+            mockCheckRun(READY_PAGE);
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+            expect(look()).toBe("met | Queue conditions met");
+
+            queue.postCommandAndUpdate("queue");
+            expect(look()).toBe("joining | Joining the merge queue…");
+
+            // The queue rewrites its check while it takes the pull request,
+            // then posts a status comment that still says "waiting".
+            mockCheckRun(checkPage(entry([rule("label = a")])));
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+            expect(look()).toBe("joining | Joining the merge queue…");
+            current = {
+                version: 1,
+                state: "waiting",
+                queued_at: null,
+                required_conditions: [],
+            };
+            mockCheckRun(`Queued for merge ${READY_PAGE}`);
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+            expect(look()).toBe("joining | Joining the merge queue…");
+
+            current = {
+                version: 1,
+                state: "checking",
+                queued_at: new Date().toISOString(),
+                estimated_time_of_merge: null,
+                speculative_check_pr: 7,
+                required_conditions: [],
+            };
+            queue.updateAllMergifyRows();
+            expect(look()).toBe("checking | In the merge queue");
+        });
+    });
+
+    test("queued from elsewhere: the met row stays until the queue answers", async () => {
+        await withQueue(async (queue) => {
+            mergeBox();
+            mockCheckRun(READY_PAGE);
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+            const shown = conditionsSection();
+            expect(look()).toBe("met | Queue conditions met");
+
+            // The command came from a comment, not this page's button: the
+            // status comment says "waiting" while the conditions match.
+            current = {
+                version: 1,
+                state: "waiting",
+                queued_at: null,
+                required_conditions: [],
+            };
+            queue.updateAllMergifyRows();
+
+            expect(conditionsSection()).toBe(shown);
+        });
+    });
+
+    test("a status comment left by an earlier queue entry is not the answer", async () => {
+        await withQueue(async (queue) => {
+            current = {
+                version: 1,
+                state: "dequeued",
+                queued_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+                required_conditions: [],
+            };
+            mergeBox();
+            commentForm();
+            mockCheckRun(READY_PAGE);
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+            expect(look()).toBe("dequeued | Removed from the merge queue");
+
+            queue.postCommandAndUpdate("queue");
+
+            expect(look()).toBe("joining | Joining the merge queue…");
+        });
+    });
+
+    test("queued on unmet conditions, the row keeps saying what it waits for", async () => {
+        await withQueue(async (queue) => {
+            mergeBox();
+            commentForm();
+            mockCheckRun(checkPage(entry([rule("label = a")])));
+            await queue.fetchQueueState();
+            queue.updateAllMergifyRows();
+
+            queue.postCommandAndUpdate("queue");
+
+            expect(look()).toBe("waiting | Waiting for queue conditions");
         });
     });
 });
