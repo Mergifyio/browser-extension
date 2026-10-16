@@ -476,7 +476,11 @@ describe("attach/detach — fallback + upgrade", () => {
         const cb = jest.fn();
         attach(cb);
         await flushFallbackPoll();
-        expect(cb).toHaveBeenCalledWith({ source: "fallback", queued: true });
+        expect(cb).toHaveBeenCalledWith({
+            source: "fallback",
+            queued: true,
+            conditions: null,
+        });
     });
 
     test("upgrades to payload state when a status comment with inline textarea is added later", async () => {
@@ -642,6 +646,59 @@ describe("refreshNow — immediate focus/visibility refresh", () => {
         expect(cb).not.toHaveBeenCalled();
     });
 
+    test("fallback mode: a change in queue conditions alone is emitted", async () => {
+        let runHtml =
+            '<h2>Waiting for queue conditions to match</h2><h3>Waiting for</h3><ul><li><input type="checkbox"> <code>label = ready</code></li></ul>';
+        global.fetch = jest.fn((url) => {
+            const u = String(url);
+            if (u.includes("/checks")) {
+                return Promise.resolve({
+                    ok: true,
+                    text: () =>
+                        Promise.resolve(
+                            `<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>`,
+                        ),
+                });
+            }
+            if (u.includes("/runs/")) {
+                return Promise.resolve({
+                    ok: true,
+                    text: () => Promise.resolve(runHtml),
+                });
+            }
+            return Promise.resolve({
+                ok: false,
+                text: () => Promise.resolve(""),
+            });
+        });
+
+        const cb = jest.fn();
+        attach(cb);
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+        expect(cb).toHaveBeenLastCalledWith({
+            source: "fallback",
+            queued: false,
+            // The page carries no payload: the pull request waits, on what
+            // the check page says.
+            conditions: {
+                met: false,
+                entry: null,
+                runUrl: "/acme/widget/runs/999",
+            },
+        });
+        cb.mockClear();
+
+        // The label lands: the PR is still not queued, only its conditions moved.
+        runHtml = "Merge queue is ready";
+        await refreshNow();
+
+        expect(cb).toHaveBeenCalledWith({
+            source: "fallback",
+            queued: false,
+            conditions: null,
+        });
+    });
+
     test("fallback mode: re-fetches the check-run queue state immediately", async () => {
         let queued = false;
         global.fetch = jest.fn((url) => {
@@ -681,6 +738,10 @@ describe("refreshNow — immediate focus/visibility refresh", () => {
         queued = true;
         await refreshNow();
 
-        expect(cb).toHaveBeenCalledWith({ source: "fallback", queued: true });
+        expect(cb).toHaveBeenCalledWith({
+            source: "fallback",
+            queued: true,
+            conditions: null,
+        });
     });
 });

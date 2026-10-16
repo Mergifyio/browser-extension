@@ -9,6 +9,12 @@ import {
     readPrStatusFromDocument,
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
+import { parseQueueConditionsPage } from "./queueConditions.js";
+import {
+    buildQueueSection,
+    CONDITIONS_SECTION_ATTR,
+    placeQueueConditionsSection,
+} from "./queueConditionsSection.js";
 import { resetStackState } from "./stacks.js";
 
 const QUEUE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm3.75-1.5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5ZM3 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>`;
@@ -74,6 +80,17 @@ export const QUEUED_DESCRIPTIONS = [
 ];
 
 export let lastKnownQueueState = false;
+// What the pull request is waiting on to enter the queue, read from the
+// "Mergify Merge Queue" check run (see queueConditions.js). null when the
+// check lists nothing unmet: a pull request that matches its conditions, one
+// the queue already holds, or a page we could not read.
+export let lastKnownQueueConditions = null;
+// Whether the merge-box conditions row is unfolded on THIS pull request. Kept
+// in memory only, so a rebuild of the row keeps it and the next pull request
+// starts at the row's default: persisting it would bring the tree back on
+// every pull request, differently for each teammate. null until a click, the row's
+// own default (folded) until then.
+let conditionsSectionExpanded = null;
 export let queueStateInitialized = false;
 export let queuePollTimer = null;
 export const QUEUE_POLL_INTERVAL = 15000;
@@ -86,6 +103,8 @@ export const MERGE_BOX_ROW_ATTR = "data-mergify-merge-box-row";
 
 export function resetQueueState() {
     lastKnownQueueState = false;
+    lastKnownQueueConditions = null;
+    conditionsSectionExpanded = null;
     queueStateInitialized = false;
     if (queuePollTimer) {
         clearTimeout(queuePollTimer);
@@ -107,8 +126,13 @@ export function scheduleQueueStatePoll() {
         queuePollTimer = null;
         if (!isGitHubPullRequestPage()) return;
         const previousState = lastKnownQueueState;
+        const previousConditions = lastKnownQueueConditions;
         await fetchQueueState();
-        if (previousState !== lastKnownQueueState) updateAllMergifyRows();
+        if (
+            previousState !== lastKnownQueueState ||
+            previousConditions !== lastKnownQueueConditions
+        )
+            updateAllMergifyRows();
         if (isGitHubPullRequestPage()) scheduleQueueStatePoll();
     }, QUEUE_POLL_INTERVAL);
 }
@@ -283,6 +307,7 @@ export async function fetchQueueState() {
         if (!match) {
             debug("fetchQueueState: no Mergify Merge Queue check run found");
             lastKnownQueueState = false;
+            lastKnownQueueConditions = null;
             return lastKnownQueueState;
         }
 
@@ -299,7 +324,20 @@ export async function fetchQueueState() {
         }
 
         const runHtml = await runResponse.text();
+        if (window.location.pathname !== urlAtFetch) return lastKnownQueueState;
         lastKnownQueueState = isMergifyQueueCheckQueued(runHtml);
+        const conditions = parseQueueConditionsPage(
+            runHtml,
+            `/${data.org}/${data.repo}/runs/${match[1]}`,
+        );
+        // Keep the previous tree when the new one is the same, so the poll's
+        // identity check above only re-renders on a real change.
+        if (
+            JSON.stringify(conditions) !==
+            JSON.stringify(lastKnownQueueConditions)
+        ) {
+            lastKnownQueueConditions = conditions;
+        }
         debug("fetchQueueState: result =", lastKnownQueueState);
     } catch (error) {
         debug("Failed to fetch queue state:", error);
@@ -617,6 +655,15 @@ function _currentPayload() {
     }
 }
 
+// States in which the PR is not in the queue yet, so what keeps it out is
+// worth showing next to the button that would put it in.
+const PRE_QUEUE_STATES = new Set(["unqueued", "queuing"]);
+
+function legacyConditions(state) {
+    if (!PRE_QUEUE_STATES.has(state)) return null;
+    return lastKnownQueueConditions;
+}
+
 function buildLegacyDefaultRow() {
     const state = deriveQueueButtonState();
 
@@ -740,6 +787,66 @@ export function buildMergifyRow(variant = "default") {
 export function updateAllMergifyRows() {
     const rows = document.querySelectorAll(`[${MERGE_BOX_ROW_ATTR}]`);
     for (const row of rows) updateMergifyRow(row);
+    syncQueueConditionsSections();
+}
+
+// What the merge-box row shows: the queue conditions of a pull request no
+// queue command was given for yet; a status comment says one was.
+function _sectionModel() {
+    if (isMergeQueueBatchPr() || _currentPayload()) return null;
+    if (!isPullRequestOpen() || isPullRequestDraft()) return null;
+    const conditions = legacyConditions(deriveQueueButtonState());
+    return conditions ? { conditions } : null;
+}
+
+// The merge boxes the conditions row goes in: GitHub's bottom one, the same
+// containers the Mergify row is attached to.
+function _mergeBoxContainers() {
+    return Array.from(
+        document.querySelectorAll('[data-testid="mergebox-partial"]'),
+    )
+        .map(
+            (partial) =>
+                partial.querySelector(
+                    '[data-testid="mergebox-border-container"]',
+                ) || partial.querySelector(".border.rounded-2"),
+        )
+        .filter(Boolean);
+}
+
+// Called on every injection tick: adds, rebuilds, moves back or removes the
+// row, and leaves it alone when nothing changed so the page's mutation
+// observer does not spin.
+export function syncQueueConditionsSections() {
+    const model = _sectionModel();
+    for (const container of _mergeBoxContainers()) {
+        const existing = container.querySelector(
+            `:scope > [${CONDITIONS_SECTION_ATTR}]`,
+        );
+        const section = model ? _sectionFor(model, existing) : null;
+        if (!section) {
+            existing?.remove();
+            continue;
+        }
+        placeQueueConditionsSection(container, section);
+    }
+}
+
+function _sectionFor(model, existing) {
+    const expanded = conditionsSectionExpanded ?? false;
+    const key = JSON.stringify([model, expanded]);
+    if (existing && existing.dataset.mergifyKey === key) return existing;
+    const section = buildQueueSection(model, {
+        expanded,
+        onToggle: (next) => {
+            conditionsSectionExpanded = next;
+            section.dataset.mergifyKey = JSON.stringify([model, next]);
+        },
+    });
+    if (!section) return null;
+    section.dataset.mergifyKey = key;
+    existing?.remove();
+    return section;
 }
 
 export function updateMergifyRow(row) {

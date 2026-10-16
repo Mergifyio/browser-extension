@@ -1,6 +1,10 @@
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
-import { fetchQueueState, QUEUE_POLL_INTERVAL } from "./queue.js";
+import {
+    fetchQueueState,
+    lastKnownQueueConditions,
+    QUEUE_POLL_INTERVAL,
+} from "./queue.js";
 
 export const PAYLOAD_VERSION = 1;
 
@@ -193,7 +197,13 @@ async function _runFallbackPoll() {
     const queued = await fetchQueueState();
     if (generation !== _fallbackGeneration) return;
     if (!_onChange) return;
-    _emit({ source: "fallback", queued: !!queued });
+    // The conditions ride along so a change in them alone (a review landing
+    // on an unqueued PR) re-renders the rows; _emit dedupes on equality.
+    _emit({
+        source: "fallback",
+        queued: !!queued,
+        conditions: lastKnownQueueConditions,
+    });
 }
 
 function _scheduleFallbackPoll() {
