@@ -1513,11 +1513,70 @@ describe("queue states in the merge-box row", () => {
             speculative_check_pr: null,
             required_conditions: [],
         };
-        expect(look(await rowFor(dequeued))).toMatchObject({
+        const section = await rowFor(dequeued);
+        // Without the reason or the time it left, neither is made up: the
+        // queued time answers another question.
+        expect(look(section)).toMatchObject({
             title: "Removed from the merge queue",
-            summary: "Its activity log says why · queued 12m ago",
+            summary: "Its activity log says why",
         });
+        expect(
+            section
+                .querySelector("[data-mergify-activity-log]")
+                .getAttribute("href"),
+        ).toBe(
+            "https://dashboard.mergify.com/orgs/acme/repos/widget/activity-log?pull_request=42&preset=Past1month",
+        );
         expect(await rowFor(dequeued, { status: "pullClosed" })).toBeNull();
+    });
+
+    test("removed and merged say when they left, and the ticker keeps it", async () => {
+        jest.useFakeTimers();
+        try {
+            await jest.isolateModulesAsync(async () => {
+                const removed = {
+                    ...QUEUED,
+                    state: "dequeued",
+                    speculative_check_pr: null,
+                    required_conditions: [],
+                    left_at: new Date(Date.now() - 3 * 60000).toISOString(),
+                    dequeue_reason: {
+                        code: "PR_MANUALLY_DEQUEUED",
+                        label: "pull request manually dequeued",
+                        by: "octocat",
+                    },
+                };
+                withPayload(removed);
+                const queue = require("../queue");
+                mergeBox();
+                queue.updateAllMergifyRows();
+                const summary = () =>
+                    document.querySelector("[data-mergify-conditions-summary]")
+                        .textContent;
+                expect(summary()).toBe(
+                    "pull request manually dequeued by @octocat · activity log · removed 3m ago",
+                );
+
+                queue.startEtaTicker(removed);
+                jest.advanceTimersByTime(60_000);
+
+                expect(summary()).toMatch(/· removed 4m ago$/);
+                queue.stopEtaTicker();
+            });
+        } finally {
+            jest.useRealTimers();
+        }
+        const merged = await rowFor(
+            {
+                ...QUEUED,
+                state: "merged",
+                speculative_check_pr: null,
+                required_conditions: [],
+                left_at: new Date(Date.now() - 5 * 60000).toISOString(),
+            },
+            { status: "pullMerged" },
+        );
+        expect(look(merged).summary).toMatch(/ · merged 5m ago$/);
     });
 
     test("the ticker keeps the times current in place", async () => {
@@ -1548,6 +1607,46 @@ describe("queue states in the merge-box row", () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+
+    // One payload per in-queue state, with the optional fields proposed in
+    // Mergifyio/monorepo#46755 (fixtures/queue_states.json).
+    const QUEUE_STATE_FIXTURES = require("./fixtures/queue_states.json");
+    const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    test.each(QUEUE_STATE_FIXTURES.map((f) => [f.name, f]))(
+        "optional fields: %s",
+        async (_name, fixture) => {
+            const section = await rowFor(fixture.payload);
+            const { clockTime } = require("../queueDetail");
+            const expected = fixture.summary.replace(
+                "{T}",
+                clockTime("2026-10-16T12:50:00+00:00"),
+            );
+
+            expect(look(section).title).toBe(fixture.title);
+            expect(look(section).summary).toMatch(
+                new RegExp(
+                    `^${escapeRegExp(expected)}( · (queued|removed) .+)?$`,
+                ),
+            );
+        },
+    );
+
+    test("optional fields of the wrong shape draw the state alone", async () => {
+        const section = await rowFor({
+            ...QUEUED,
+            step: "teleporting",
+            position: "3",
+            batch: { size: "1", target: 2 },
+            checks: [],
+            freeze: { name: "" },
+        });
+
+        expect(look(section)).toMatchObject({
+            title: "In the merge queue",
+            summary: "1 check expected · queued 12m ago",
+        });
     });
 
     test("just queued: 'queued just now', then minutes that tick without an estimate", async () => {

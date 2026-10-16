@@ -17,6 +17,7 @@ import {
     buildQueueConditionsTree,
     conditionsVerdict,
 } from "./queueConditionsTree.js";
+import { dequeueReasonText, describeQueueStep } from "./queueDetail.js";
 
 export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 
@@ -109,7 +110,6 @@ const STATES = {
         circle: "bgColor-danger-emphasis",
         fill: "var(--bgColor-danger-emphasis, #cf222e)",
         icon: "x",
-        note: "Its activity log says why",
     },
 };
 
@@ -158,26 +158,51 @@ function _view(model) {
         return {
             state: "merged",
             label: "Merge queue",
-            summary: [queue.mergedMessage],
+            summary: [queue.mergedMessage, _TIMES],
             body: null,
         };
     }
+    if (queue.state === "dequeued") {
+        // Why, when the payload says, and the activity log either way.
+        const reason = dequeueReasonText(queue.detail ?? null);
+        const log = (prefix, text, suffix) => ({
+            prefix,
+            text,
+            suffix,
+            href: queue.activityLogUrl ?? null,
+        });
+        return {
+            state: "dequeued",
+            label: "Merge queue",
+            summary: reason
+                ? [reason, log("", "activity log", ""), _TIMES]
+                : [log("Its ", "activity log", " says why"), _TIMES],
+            body: null,
+        };
+    }
+    // What the queue is doing, when the payload says more than its state.
+    const step = describeQueueStep(queue.state, queue.detail ?? null);
     // What the merge conditions still miss, while the batch runs. Paused,
     // frozen or bisecting, they describe a batch that is held or already
-    // failed: the state says it better than a count would.
-    const entry =
-        queue.state === "checking"
-            ? parseRequiredConditions(queue.required)
-            : null;
+    // failed: the state says it better than a count would. So does a step
+    // other than the checks running.
+    const countsConditions =
+        queue.state === "checking" &&
+        (!step || step.title === "Checks running");
+    const entry = countsConditions
+        ? parseRequiredConditions(queue.required)
+        : null;
     const conditions = entry ? { met: false, entry, runUrl: null } : null;
     const unmet = conditions && entry.some((n) => !n.match);
-    const summary = look.note ? [look.note] : [];
+    const summary = step ? [...step.notes] : look.note ? [look.note] : [];
     if (unmet) summary.push(conditionsVerdict(conditions).summary);
     else if (conditions) summary.push("Merge conditions met");
     summary.push(_TIMES);
     const hasBody = Boolean(unmet || queue.specPr);
     return {
         state: queue.state,
+        title: step?.title,
+        icon: step?.icon,
         label: "Merge queue",
         summary,
         body: hasBody
@@ -210,6 +235,27 @@ function _queueBody(queue, conditions) {
         if (tree) body.appendChild(tree);
     }
     return body;
+}
+
+// "Its activity log says why", the words in the middle a link when there is
+// somewhere to go.
+function _linkPart({ prefix, text, suffix, href }) {
+    const span = document.createElement("span");
+    if (prefix) span.append(prefix);
+    if (href) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.setAttribute("data-mergify-activity-log", "");
+        link.style.color = "var(--fgColor-accent, #0969da)";
+        link.textContent = text;
+        span.appendChild(link);
+    } else {
+        span.append(text);
+    }
+    if (suffix) span.append(suffix);
+    return span;
 }
 
 function _octicon(name) {
@@ -272,7 +318,7 @@ export function buildQueueSection(
     // The class is GitHub's; the inline colour covers the pages that do not
     // load that Primer utility (the neutral one is missing on PR pages).
     circle.style.cssText = `display:flex;width:32px;height:32px;align-items:center;justify-content:center;background-color:${look.fill};color:var(--fgColor-onEmphasis, #fff);`;
-    circle.appendChild(_octicon(look.icon));
+    circle.appendChild(_octicon(view.icon ?? look.icon));
     iconClip.appendChild(circle);
     iconColumn.appendChild(iconClip);
 
@@ -281,7 +327,7 @@ export function buildQueueSection(
     const title = document.createElement("h3");
     title.style.cssText =
         "margin:0;font-family:var(--fontStack-sansSerifDisplay, inherit);font-size:16px;font-weight:600;line-height:24px;display:flex;align-items:center;gap:8px;";
-    title.textContent = look.title;
+    title.textContent = view.title ?? look.title;
     const subtitle = document.createElement("p");
     subtitle.className = "fgColor-muted mb-0";
     subtitle.setAttribute("data-mergify-conditions-summary", "");
@@ -296,6 +342,8 @@ export function buildQueueSection(
             span.setAttribute("data-mergify-queue-times", "");
             span.append(...nodes);
             parts.push(span);
+        } else if (typeof part === "object" && part) {
+            parts.push(_linkPart(part));
         } else if (part) {
             parts.push(document.createTextNode(part));
         }

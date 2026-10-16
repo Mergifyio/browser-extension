@@ -21,6 +21,7 @@ import {
     QUEUE_PAYLOAD_STATES,
     sectionStartsExpanded,
 } from "./queueConditionsSection.js";
+import { readQueueDetail } from "./queueDetail.js";
 import { resetStackState } from "./stacks.js";
 
 const QUEUE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm3.75-1.5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5Zm0 5a.75.75 0 0 0 0 1.5h8.5a.75.75 0 0 0 0-1.5h-8.5ZM3 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-1 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>`;
@@ -973,6 +974,8 @@ function _sectionModel() {
                 mergedMessage:
                     payload.state === "merged" ? getMergedMessage() : null,
                 repoPath: `/${data.org}/${data.repo}`,
+                activityLogUrl: getPullRequestActivityLogLink(),
+                detail: readQueueDetail(payload),
             },
         };
     }
@@ -992,7 +995,19 @@ function _pullNumber(value) {
 
 // "queued 12m ago · merging in ~20m", for the row and its ticker: plain
 // text, as GitHub's own subtitles are.
+// Once out of the queue, when it left, not when it was queued: "removed 12m
+// ago", "merged 5m ago"; nothing when the payload does not say.
+const LEFT_VERBS = { merged: "merged", dequeued: "removed" };
+
 function _queueTimes(payload) {
+    if (LEFT_VERBS[payload.state]) {
+        const leftAt = Date.parse(payload.left_at ?? "");
+        if (Number.isNaN(leftAt)) return [];
+        const minutes = (Date.now() - leftAt) / 60000;
+        const ago =
+            minutes < 1 ? "just now" : `${formatDurationMinutes(minutes)} ago`;
+        return [document.createTextNode(`${LEFT_VERBS[payload.state]} ${ago}`)];
+    }
     const text = buildEtaMetaContent({ ...payload, state: "times" })
         .map((node) => node.textContent)
         .join("");
@@ -1072,8 +1087,10 @@ function _sectionFor(model, existing, pull) {
         times: () =>
             model.queue
                 ? _queueTimes({
+                      state: model.queue.state,
                       queued_at: model.queue.queuedAt,
                       estimated_time_of_merge: model.queue.eta,
+                      left_at: model.queue.detail?.leftAt ?? null,
                   })
                 : [],
     });
