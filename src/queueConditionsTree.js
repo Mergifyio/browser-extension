@@ -125,6 +125,17 @@ function _unmetLeaves(node) {
 export const FILES_ATTRIBUTE =
     /^-?#?(?:added-|modified-|removed-)?files\s*(?:=|!=|~=|>=|<=|>|<)/;
 
+// The check a "succeed" condition names, e.g. "unit" in `check-success = unit`.
+const CHECK_NAME =
+    /^(?:check|status)-(?:success-or-neutral|success|neutral|skipped|failure)\s*=\s*(.+)$/;
+
+// GitHub's state of the check a condition names: "running", "failed", or
+// undefined when it says nothing more than the condition's match.
+function _checkState(label, states) {
+    const name = CHECK_NAME.exec(label)?.[1];
+    return name ? states[name] : undefined;
+}
+
 // Unmet conditions that fail until someone changes the pull request.
 function _fixedFailure(label) {
     return (
@@ -134,22 +145,31 @@ function _fixedFailure(label) {
     );
 }
 
-function _leafMark(node) {
+function _leafMark(node, states) {
     if (node.match) return "met";
-    if (_fixedFailure(node.label)) return "failed";
+    const state = _checkState(node.label, states);
+    if (state === "failed" || _fixedFailure(node.label)) return "failed";
+    if (state === "running") return "running";
     return "todo";
 }
 
-function _nodeMark(node) {
+function _nodeMark(node, states) {
     if (node.match) return "met";
-    if (node.op === "leaf") return _leafMark(node);
+    if (node.op === "leaf") return _leafMark(node, states);
     if (node.op === "not") return "todo";
-    const marks = node.children.filter((c) => !c.match).map(_nodeMark);
-    if (node.op === "or")
-        return marks.length > 0 && marks.every((m) => m === "failed")
-            ? "failed"
-            : "todo";
-    return marks.includes("failed") ? "failed" : "todo";
+    const marks = node.children
+        .filter((c) => !c.match)
+        .map((c) => _nodeMark(c, states));
+    if (node.op === "or") {
+        if (marks.length > 0 && marks.every((m) => m === "failed"))
+            return "failed";
+        if (marks.includes("running")) return "running";
+        return "todo";
+    }
+    if (marks.includes("failed")) return "failed";
+    if (marks.length > 0 && marks.every((m) => m === "running"))
+        return "running";
+    return "todo";
 }
 
 // The page's tree laid out: the requirements every rule shares, then the rules
@@ -158,6 +178,7 @@ function _nodeMark(node) {
 function _layout(conditions) {
     const entry = conditions?.entry;
     if (!entry) return null;
+    const states = conditions.checkStates ?? {};
     // The "any of" over the queue rules: named so when the payload notes it,
     // else the one whose options are all "all of" groups.
     const rulesNode =
@@ -190,14 +211,14 @@ function _layout(conditions) {
     const reachable = rules.filter((r) => !isOutOfReach(r.node));
     if (reachable.length > 0) rules = reachable;
     // Closest first: a rule that can still match, then the fewest missing.
-    const stuck = (r) => (_nodeMark(r.node) === "failed" ? 1 : 0);
+    const stuck = (r) => (_nodeMark(r.node, states) === "failed" ? 1 : 0);
     rules.sort(
         (a, b) =>
             stuck(a) - stuck(b) ||
             _unmetLeaves(a.node) - _unmetLeaves(b.node) ||
             a.order - b.order,
     );
-    return { requirements, rules };
+    return { states, requirements, rules };
 }
 
 // ---- Verdict -------------------------------------------------------------
@@ -219,7 +240,7 @@ export function conditionsVerdict(conditions) {
         summary: "Some queue conditions are unmet",
     };
     if (!layout) return unknown;
-    const { requirements, rules } = layout;
+    const { states, requirements, rules } = layout;
     const shared = requirements.filter((n) => !isProtectionsCheckGroup(n));
     const closest = rules[0]?.node;
     const items = [
@@ -230,9 +251,9 @@ export function conditionsVerdict(conditions) {
                 : [closest]
             : []),
     ];
-    const parts = _missingCounts(items);
+    const parts = _missingCounts(items, states);
     if (rules.length > 1) parts.push(`closest of ${rules.length} queue rules`);
-    const stuck = (node) => _nodeMark(node) === "failed";
+    const stuck = (node) => _nodeMark(node, states) === "failed";
     const blocked =
         shared.some(stuck) ||
         (rules.length > 0 && rules.every((r) => stuck(r.node)));
@@ -246,11 +267,14 @@ export function conditionsVerdict(conditions) {
 const CHECK_ATTRIBUTE = /^(?:check|status)-[a-z-]+\s*=/;
 
 // What a missing condition is, for the count.
-function _missingKind(node) {
+function _missingKind(node, states) {
     const label = node.label;
+    const state = _checkState(label, states);
+    if (state === "failed") return { key: "failed" };
     if (/^-conflict$/.test(label)) return { key: "conflict" };
     if (/^base\s*(?:=|!=|~=)/.test(label)) return { key: "base" };
     if (FILES_ATTRIBUTE.test(label)) return { key: "files" };
+    if (state === "running") return { key: "running" };
     if (CHECK_ATTRIBUTE.test(label)) return { key: "expected" };
     const approvals = /^#approved-reviews-by\s*>=?\s*(\d+)/.exec(label);
     if (approvals) return { key: "approval", required: Number(approvals[1]) };
@@ -263,9 +287,11 @@ function _missingKind(node) {
 }
 
 const MISSING_PHRASES = [
+    ["failed", (n) => `${n} check${n > 1 ? "s" : ""} failed`],
     ["conflict", () => "conflicts with the base branch"],
     ["base", () => "wrong base branch"],
     ["files", () => "files outside the rule"],
+    ["running", (n) => `${n} check${n > 1 ? "s" : ""} running`],
     ["expected", (n) => `${n} check${n > 1 ? "s" : ""} expected`],
     // One condition, however many approvals it asks for: the page does not
     // say how many are already given.
@@ -284,8 +310,9 @@ const MISSING_PHRASES = [
 ];
 
 // An "all of" group (a merge protection, say) counts by its own missing
-// conditions; an "any of" as one condition.
-function _missingCounts(items) {
+// conditions; an "any of" as one: a failure, a running check or one condition
+// by what keeps it out.
+function _missingCounts(items, states) {
     const counts = new Map();
     const required = new Map();
     const count = (item) => {
@@ -294,7 +321,19 @@ function _missingCounts(items) {
             return;
         }
         if (isProtectionsCheckGroup(item)) return;
-        const kind = item.op === "leaf" ? _missingKind(item) : { key: "other" };
+        let kind;
+        if (item.op === "leaf") kind = _missingKind(item, states);
+        else {
+            const mark = _nodeMark(item, states);
+            kind = {
+                key:
+                    mark === "failed"
+                        ? "failed"
+                        : mark === "running"
+                          ? "running"
+                          : "other",
+            };
+        }
         counts.set(kind.key, (counts.get(kind.key) ?? 0) + 1);
         if (kind.required !== undefined)
             required.set(
