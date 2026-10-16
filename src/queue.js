@@ -9,7 +9,10 @@ import {
     readPrStatusFromDocument,
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
-import { parseQueueConditionsPage } from "./queueConditions.js";
+import {
+    parseQueueConditionsPage,
+    readCheckStates,
+} from "./queueConditions.js";
 import {
     buildQueueSection,
     CONDITIONS_SECTION_ATTR,
@@ -331,6 +334,11 @@ export async function fetchQueueState() {
             runHtml,
             `/${data.org}/${data.repo}/runs/${match[1]}`,
         );
+        if (conditions?.entry && !lastKnownQueueState) {
+            conditions.checkStates = await _fetchCheckStates(data);
+            if (window.location.pathname !== urlAtFetch)
+                return lastKnownQueueState;
+        }
         // Keep the previous tree when the new one is the same, so the poll's
         // identity check above only re-renders on a real change.
         if (
@@ -344,6 +352,29 @@ export async function fetchQueueState() {
         debug("Failed to fetch queue state:", error);
     }
     return lastKnownQueueState;
+}
+
+// Which checks GitHub shows running or failed on the pull request, from the
+// JSON its merge box loads: the conditions the tree marks with GitHub's
+// spinner or red x. Empty when it cannot be read; the tree then marks them as
+// still to do.
+async function _fetchCheckStates(data) {
+    try {
+        const response = await fetch(
+            `/${data.org}/${data.repo}/pull/${data.pull}/page_data/status_checks`,
+            {
+                headers: {
+                    Accept: "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            },
+        );
+        if (!response.ok) return {};
+        return readCheckStates(await response.json());
+    } catch (error) {
+        debug("fetchQueueState: no check states:", error);
+        return {};
+    }
 }
 
 export function findLastMergifyCommand() {

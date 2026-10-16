@@ -97,3 +97,45 @@ function _toNode(condition) {
         children,
     };
 }
+
+// GitHub's own state of each check on the pull request, by the name a
+// condition gives it: what its merge box shows, read from the JSON it loads
+// (/pull/N/page_data/status_checks). Running or failed only; the rest says
+// nothing a condition's match does not.
+const RUNNING_STATES = new Set([
+    "PENDING",
+    "IN_PROGRESS",
+    "QUEUED",
+    "WAITING",
+    "REQUESTED",
+]);
+const FAILED_STATES = new Set([
+    "FAILURE",
+    "ERROR",
+    "CANCELLED",
+    "TIMED_OUT",
+    "ACTION_REQUIRED",
+    "STARTUP_FAILURE",
+]);
+
+// GitHub Actions jobs show as "<workflow> / <job> (<event>)" while a
+// condition names the check run, the job: keep both spellings.
+const ACTIONS_DISPLAY_NAME = /^.+? \/ (.+?)(?: \([a-z_]+\))?$/;
+
+export function readCheckStates(statusChecksJson) {
+    const states = {};
+    for (const check of statusChecksJson?.statusChecks ?? []) {
+        const name = check?.displayName;
+        if (typeof name !== "string") continue;
+        const state = FAILED_STATES.has(check.state)
+            ? "failed"
+            : RUNNING_STATES.has(check.state)
+              ? "running"
+              : null;
+        if (!state) continue;
+        states[name] = state;
+        const job = ACTIONS_DISPLAY_NAME.exec(name)?.[1];
+        if (job && !(job in states)) states[job] = state;
+    }
+    return states;
+}
