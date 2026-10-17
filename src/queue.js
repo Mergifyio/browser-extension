@@ -664,12 +664,29 @@ function legacyConditions(state) {
     return lastKnownQueueConditions;
 }
 
+// The unmet conditions say what clicking does: record the request and wait.
+function withConditionsTooltip(button, conditions) {
+    if (
+        conditions &&
+        !conditions.met &&
+        button.getAttribute("data-mergify-queue-btn") === "unqueued"
+    ) {
+        button.setAttribute(
+            "title",
+            "Add the pull request to the merge queue — it enters once its queue conditions match",
+        );
+    }
+    return button;
+}
+
 function buildLegacyDefaultRow() {
     const state = deriveQueueButtonState();
+    const conditions = legacyConditions(state);
 
     const row = document.createElement("div");
     row.setAttribute(MERGE_BOX_ROW_ATTR, "default");
     row.dataset.mergifyShape = "legacy";
+    row.dataset.mergifyConditionsKey = JSON.stringify(conditions);
     row.className =
         "bgColor-muted borderColor-muted border-top rounded-bottom-2";
     row.style.cssText =
@@ -678,7 +695,9 @@ function buildLegacyDefaultRow() {
     if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
-        buttons.appendChild(buildQueueButton(state));
+        buttons.appendChild(
+            withConditionsTooltip(buildQueueButton(state), conditions),
+        );
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
@@ -703,10 +722,12 @@ function buildLegacyDefaultRow() {
 
 function buildLegacySidebarRow() {
     const state = deriveQueueButtonState();
+    const conditions = legacyConditions(state);
 
     const row = document.createElement("div");
     row.setAttribute(MERGE_BOX_ROW_ATTR, "sidebar");
     row.dataset.mergifyShape = "legacy";
+    row.dataset.mergifyConditionsKey = JSON.stringify(conditions);
     // Two-line layout that matches the surrounding native sections (border
     // rules on top and bottom, no muted background); action buttons on line
     // one, queue/logs on the left of line two and Mergify brand on the right.
@@ -717,7 +738,9 @@ function buildLegacySidebarRow() {
     if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
-        buttons.appendChild(buildQueueButton(state));
+        buttons.appendChild(
+            withConditionsTooltip(buildQueueButton(state), conditions),
+        );
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
@@ -790,12 +813,15 @@ export function updateAllMergifyRows() {
     syncQueueConditionsSections();
 }
 
-// What the merge-box row shows: the queue conditions of a pull request no
-// queue command was given for yet; a status comment says one was.
+// What the merge-box row shows: the queue conditions before the pull request
+// is queued, and while a queue command waits on them.
 function _sectionModel() {
-    if (isMergeQueueBatchPr() || _currentPayload()) return null;
+    if (isMergeQueueBatchPr()) return null;
+    const payload = _currentPayload();
     if (!isPullRequestOpen() || isPullRequestDraft()) return null;
-    const conditions = legacyConditions(deriveQueueButtonState());
+    const conditions = payload
+        ? waitingConditions(payload)
+        : legacyConditions(deriveQueueButtonState());
     return conditions ? { conditions } : null;
 }
 
@@ -895,6 +921,14 @@ export function updateMergifyRow(row) {
 
 function _legacyPatch(row, variant = "default") {
     const derived = deriveQueueButtonState();
+    if (
+        row.dataset.mergifyConditionsKey !==
+        JSON.stringify(legacyConditions(derived))
+    ) {
+        row.replaceWith(buildLegacyRow(variant));
+        debug("Mergify legacy row rebuilt for its queue conditions");
+        return;
+    }
     const oldBtn = row.querySelector("[data-mergify-queue-btn]");
     if (derived === "merged" || derived === "closed" || derived === "batch") {
         if (oldBtn) {
@@ -906,7 +940,10 @@ function _legacyPatch(row, variant = "default") {
     }
     if (!oldBtn) return;
     if (oldBtn.getAttribute("data-mergify-queue-btn") === derived) return;
-    const newBtn = buildQueueButton(derived);
+    const newBtn = withConditionsTooltip(
+        buildQueueButton(derived),
+        legacyConditions(derived),
+    );
     oldBtn.replaceWith(newBtn);
     debug("Legacy queue button state:", derived);
 }
@@ -990,6 +1027,19 @@ export function renderConditionsBlock(conditions) {
     return block;
 }
 
+// A "waiting" status-comment payload never carries its conditions (the
+// engine sends an empty required_conditions for that state), yet that is the
+// moment the author wants them: they ran the command and nothing happens. The
+// "Mergify Merge Queue" check run lists them, and the queue-state poll keeps
+// reading it, so the waiting row borrows that list.
+function waitingConditions(payload) {
+    // A check that says the conditions match is about to hand over to the
+    // queue: nothing to wait on.
+    if (payload.state !== "waiting" || lastKnownQueueConditions?.met)
+        return null;
+    return lastKnownQueueConditions;
+}
+
 const STATE_PILL_COPY = {
     waiting: { label: "Waiting", note: "queued conditions not yet met" },
     checking: { label: "Checking", note: "" },
@@ -1005,9 +1055,10 @@ const STATE_PILL_COPY = {
 
 const STATE_PILL_COLORS = {
     waiting: {
-        bg: "#7d859022",
-        fg: "#c9d1d9",
-        border: "#7d859055",
+        // Theme variables: a fixed light grey vanished on GitHub's light theme.
+        bg: "var(--bgColor-neutral-muted, #818b981f)",
+        fg: "var(--fgColor-muted, #59636e)",
+        border: "var(--borderColor-default, #d1d9e0)",
         pulse: false,
     },
     checking: {
@@ -1190,7 +1241,19 @@ function buildEtaMetaContent(payload) {
         frag.appendChild(strong);
         parts.push(frag);
     }
-    if (STATE_PILL_COPY[payload.state] && STATE_PILL_COPY[payload.state].note) {
+    const waiting = waitingConditions(payload);
+    if (waiting) {
+        parts.push(
+            document.createTextNode(
+                // The merge-box row counts them; a second count here would
+                // disagree with it as soon as the list is long.
+                "queue conditions not met",
+            ),
+        );
+    } else if (
+        STATE_PILL_COPY[payload.state] &&
+        STATE_PILL_COPY[payload.state].note
+    ) {
         parts.push(
             document.createTextNode(STATE_PILL_COPY[payload.state].note),
         );
@@ -1295,6 +1358,9 @@ function _richRowHash(payload, variant, data) {
         e: payload.estimated_time_of_merge,
         spr: payload.speculative_check_pr,
         rc: payload.required_conditions,
+        // The waiting row renders the check run's conditions, not the
+        // payload's, so a change there must not be deduped away.
+        wc: payload.state === "waiting" ? lastKnownQueueConditions : null,
         // Draft status drives the queue button (draft → disabled). It lives in
         // the page DOM, not the payload, so fold it in here; otherwise a
         // draft→ready toggle that leaves the payload untouched would be deduped
@@ -1328,10 +1394,10 @@ export function buildRichRow(payload, variant = "default") {
     const queueBtnState = deriveQueueButtonStateFromPayload(payload.state);
     row.appendChild(buildButtonsRow(queueBtnState));
     row.appendChild(buildStateRow(payload, data.org, data.repo));
-
-    const conditions = renderConditionsBlock(payload.required_conditions);
-    if (conditions) row.appendChild(conditions);
-
+    if (!waitingConditions(payload)) {
+        const conditions = renderConditionsBlock(payload.required_conditions);
+        if (conditions) row.appendChild(conditions);
+    }
     return row;
 }
 
