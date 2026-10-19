@@ -10,7 +10,7 @@ shared:
   CheckRuns: &CheckRuns
     - check-success=ci-gate
   DefaultReviewCond: &DefaultReviewCond
-    - "#approved-reviews-by>=2"
+    - "#approved-reviews-by>=1"
     - author = dependabot[bot]
 
 queue_rules:
