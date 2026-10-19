@@ -484,6 +484,7 @@ describe("merge-box conditions row", () => {
             ).toBeNull();
             const btn = row.querySelector("[data-mergify-queue-btn]");
             expect(btn.hasAttribute("disabled")).toBe(false);
+            expect(btn.style.backgroundColor).toContain("button-default");
             expect(btn.getAttribute("title")).toContain(
                 "enters once its queue conditions match",
             );
@@ -563,8 +564,63 @@ describe("rich row while the queue request waits", () => {
                 queue
                     .buildRichRow(WAITING_PAYLOAD, "sidebar")
                     .querySelector("[data-mergify-eta]").textContent,
-            ).toBe("queued conditions not yet met");
+            ).toBe("enters the queue once its conditions match");
             expect(conditionsSection()).toBeNull();
+        });
+    });
+
+    test("offers to cancel the request, and says so while the dequeue is pending", async () => {
+        await jest.isolateModulesAsync(async () => {
+            withPayload(WAITING_PAYLOAD);
+            const queue = require("../queue");
+            mockCheckRun(PROTECTIONS_RUN_HTML);
+            await queue.fetchQueueState();
+
+            const button = () =>
+                queue
+                    .buildRichRow(WAITING_PAYLOAD)
+                    .querySelector("[data-mergify-queue-btn]");
+            expect(button().textContent).toBe("Cancel queue request");
+
+            // The click's comment lands before the engine rewrites the status
+            // comment: a second click would post a second dequeue.
+            document.body.insertAdjacentHTML(
+                "beforeend",
+                '<div class="TimelineItem"><div class="comment-body">@mergifyio dequeue</div></div>',
+            );
+            expect(button().getAttribute("data-mergify-queue-btn")).toBe(
+                "dequeuing",
+            );
+            expect(button().hasAttribute("disabled")).toBe(true);
+        });
+    });
+
+    test("offers no command on a closed pull request", async () => {
+        await jest.isolateModulesAsync(async () => {
+            withPayload(WAITING_PAYLOAD);
+            const queue = require("../queue");
+            document.body.innerHTML =
+                '<span data-status="pullClosed">Closed</span>';
+
+            const row = queue.buildRichRow(WAITING_PAYLOAD);
+            expect(row.querySelector("[data-mergify-queue-btn]")).toBeNull();
+            expect(row.textContent).not.toContain("Refresh");
+        });
+    });
+
+    test("a pull request out of the queue gets the grey add button while unmet", async () => {
+        await jest.isolateModulesAsync(async () => {
+            const dequeued = { ...WAITING_PAYLOAD, state: "dequeued" };
+            withPayload(dequeued);
+            const queue = require("../queue");
+            mockCheckRun(PROTECTIONS_RUN_HTML);
+            await queue.fetchQueueState();
+
+            const btn = queue
+                .buildRichRow(dequeued)
+                .querySelector("[data-mergify-queue-btn]");
+            expect(btn.textContent).toBe("Add to merge queue");
+            expect(btn.style.backgroundColor).toContain("button-default");
         });
     });
 

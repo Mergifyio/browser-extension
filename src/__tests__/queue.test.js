@@ -208,13 +208,26 @@ describe("buildRichRow", () => {
         expect(row.querySelector("[data-mergify-conditions]")).not.toBeNull();
     });
 
-    test("waiting state hides conditions block and shows grey pill", () => {
+    test("waiting state reads as a recorded request, not a place in the queue", () => {
         const row = buildRichRow(
-            payload({ state: "waiting", required_conditions: [] }),
+            payload({
+                state: "waiting",
+                queued_at: null,
+                estimated_time_of_merge: null,
+                speculative_check_pr: null,
+                required_conditions: [],
+            }),
         );
-        expect(
-            row.querySelector("[data-mergify-state-pill]").textContent,
-        ).toContain("Waiting");
+        const pill = row.querySelector("[data-mergify-state-pill]");
+        expect(pill.textContent.trim()).toBe("Requested");
+        expect(row.querySelector("[data-mergify-eta]").textContent).toBe(
+            "enters the queue once its conditions match",
+        );
+        // The command is recorded: no second "Add to merge queue".
+        const btn = row.querySelector("[data-mergify-queue-btn]");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("requested");
+        expect(btn.textContent).toBe("Cancel queue request");
+        expect(row.textContent).not.toContain("Add to merge queue");
         expect(row.querySelector("[data-mergify-conditions]")).toBeNull();
     });
 
@@ -345,6 +358,37 @@ describe("buildQueueButton", () => {
         expect(btn.getAttribute("data-mergify-queue-btn")).toBe("queued");
         expect(btn.hasAttribute("disabled")).toBe(false);
         expect(btn.textContent).toBe("Remove from merge queue");
+    });
+
+    test("unqueued is green only while the queue conditions are not known unmet", () => {
+        for (const conditions of [null, { met: true }]) {
+            const btn = buildQueueButton("unqueued", conditions);
+            expect(btn.style.backgroundColor).toContain("button-primary");
+            expect(btn.title).toBe("Add the pull request to the merge queue");
+        }
+        // Unmet, it still records the request, drawn grey like GitHub's
+        // blocked merge button.
+        const btn = buildQueueButton("unqueued", { met: false });
+        expect(btn.style.backgroundColor).toContain("button-default");
+        expect(btn.hasAttribute("disabled")).toBe(false);
+        expect(btn.textContent).toBe("Add to merge queue");
+        expect(btn.title).toContain("enters once its queue conditions match");
+    });
+
+    test("requested state cancels the recorded queue command", () => {
+        document.body.innerHTML =
+            '<input id="new_comment_field"><div id="partial-new-comment-form-actions"><button>Comment</button></div>';
+        const btn = buildQueueButton("requested");
+        expect(btn.getAttribute("data-mergify-queue-btn")).toBe("requested");
+        expect(btn.hasAttribute("disabled")).toBe(false);
+        expect(btn.textContent).toBe("Cancel queue request");
+        expect(btn.style.backgroundColor).toContain("button-default");
+
+        btn.onclick();
+        expect(document.querySelector("#new_comment_field").value).toBe(
+            "@mergifyio dequeue",
+        );
+        document.body.innerHTML = "";
     });
 });
 
