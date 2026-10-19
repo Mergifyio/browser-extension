@@ -122,7 +122,7 @@ describe("parsePayload", () => {
 const MARKER_SOURCE = `<!---\nDO NOT EDIT\n-*- Mergify Payload -*-\n{"version":1,"state":"checking","queue_rule_name":null,"queued_at":null,"estimated_time_of_merge":null,"speculative_check_pr":null,"required_conditions":[]}\n-*- Mergify Payload End -*-\n-->`;
 
 // Build a TimelineItem fixture.
-//  - bot:           if true, includes the `a[href="/apps/mergify"]` author link
+//  - bot:           if true, includes the `a.author[href="/apps/mergify"]` author link
 //  - inlineSource:  if non-null, embeds a textarea.CommentBox-input with that value
 //  - commentId:     if non-null, wraps the timeline item in an issuecomment-<id> div
 function buildTimelineItem({ bot, inlineSource, commentId } = {}) {
@@ -130,6 +130,7 @@ function buildTimelineItem({ bot, inlineSource, commentId } = {}) {
     item.className = "TimelineItem";
     if (bot) {
         const author = document.createElement("a");
+        author.className = "author";
         author.setAttribute("href", "/apps/mergify");
         item.appendChild(author);
     }
@@ -214,6 +215,60 @@ describe("findLatestStatusCommentSync", () => {
         expect(result).not.toBeNull();
         expect(result.payload).not.toBeNull();
         expect(result.payload.state).toBe("checking");
+    });
+
+    test("prefers the latest status report over a later Mergify reply", () => {
+        const status = buildTimelineItem({ bot: true, commentId: "100" });
+        status.querySelector(".comment-body").innerHTML =
+            "<h1>Merge Queue Status</h1><p>Waiting for queue conditions</p>";
+        document.body.appendChild(status);
+        // Mergify's answer to a Refresh click, posted after it.
+        document.body.appendChild(
+            buildTimelineItem({ bot: true, commentId: "200" }),
+        );
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
+            commentId: "100",
+        });
+    });
+
+    test("reads the latest status report inline, not an older one's marker", () => {
+        // Session 1 ended "dequeued"; session 2's report was rewritten
+        // without a payload when its queue command was cancelled.
+        const older = buildTimelineItem({
+            bot: true,
+            commentId: "100",
+            inlineSource: markerFor({ ...VALID_PAYLOAD, state: "dequeued" }),
+        });
+        older.querySelector(".comment-body").innerHTML =
+            "<h1>Merge Queue Status</h1>";
+        document.body.appendChild(older);
+        const latest = buildTimelineItem({
+            bot: true,
+            commentId: "200",
+            inlineSource:
+                "# Merge Queue Status\n\n🛑 Queue command has been cancelled",
+        });
+        latest.querySelector(".comment-body").innerHTML =
+            "<h1>Merge Queue Status</h1>";
+        document.body.appendChild(latest);
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
+            commentId: "200",
+            read: true,
+        });
+    });
+
+    test("ignores a user comment that links to the app and copies the heading", () => {
+        const status = buildTimelineItem({ bot: true, commentId: "100" });
+        status.querySelector(".comment-body").innerHTML =
+            "<h1>Merge Queue Status</h1>";
+        document.body.appendChild(status);
+        const forged = buildTimelineItem({ commentId: "300" });
+        forged.querySelector(".comment-body").innerHTML =
+            '<h1>Merge Queue Status</h1><a href="/apps/mergify">Mergify</a>';
+        document.body.appendChild(forged);
+        expect(findLatestStatusCommentSync().commentId).toBe("100");
     });
 
     test("falls back to the latest commentId-bearing candidate when no inline marker is present", () => {
@@ -743,5 +798,153 @@ describe("refreshNow — immediate focus/visibility refresh", () => {
             queued: true,
             conditions: null,
         });
+    });
+});
+
+describe("payload mode — the status comment changes under it", () => {
+    const WAITING_PAYLOAD = {
+        ...VALID_PAYLOAD,
+        state: "waiting",
+        queued_at: null,
+        estimated_time_of_merge: null,
+        speculative_check_pr: null,
+    };
+    // Comment id → markdown its edit_form serves; a missing id fails the fetch.
+    let comments;
+    let originalFetch;
+
+    async function flush() {
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+    }
+
+    beforeEach(() => {
+        document.body.innerHTML = "";
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        detach();
+        jest.useFakeTimers();
+        originalFetch = global.fetch;
+        comments = {};
+        global.fetch = jest.fn((url) => {
+            const u = String(url);
+            const editForm = /issue_comments\/(\d+)\/edit_form/.exec(u);
+            let body = null;
+            if (editForm && comments[editForm[1]] != null) {
+                body = `<form><textarea>${comments[editForm[1]]}</textarea></form>`;
+            } else if (u.endsWith("/checks")) {
+                body = `<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>`;
+            } else if (u.includes("/runs/")) {
+                body = "<h1>Merge queue is ready</h1>";
+            }
+            return Promise.resolve({
+                ok: body != null,
+                text: () => Promise.resolve(body ?? ""),
+            });
+        });
+        document.body.appendChild(
+            buildTimelineItem({ bot: true, commentId: "100" }),
+        );
+        document.querySelector("#issuecomment-100 .comment-body").innerHTML =
+            "<h1>Merge Queue Status</h1>";
+        comments["100"] = markerFor(WAITING_PAYLOAD);
+    });
+
+    afterEach(() => {
+        detach();
+        jest.useRealTimers();
+        global.fetch = originalFetch;
+    });
+
+    async function attachInPayloadMode() {
+        const cb = jest.fn();
+        attach(cb);
+        await flush();
+        expect(getCurrent()).toEqual({
+            source: "payload",
+            payload: WAITING_PAYLOAD,
+        });
+        cb.mockClear();
+        return cb;
+    }
+
+    test("a cancelled queue command hands the row back to the check", async () => {
+        const cb = await attachInPayloadMode();
+
+        // A push, a dequeue or closing the pull request cancels the command:
+        // the engine rewrites the same comment, without a payload.
+        comments["100"] =
+            "# Merge Queue Status\n\n🛑 Queue command has been cancelled";
+        await jest.advanceTimersByTimeAsync(15_000);
+        await flush();
+
+        expect(getCurrent()).toEqual({
+            source: "fallback",
+            queued: false,
+            conditions: expect.objectContaining({ met: true }),
+        });
+        expect(cb).toHaveBeenLastCalledWith(getCurrent());
+    });
+
+    test("a status comment that fails to load keeps its payload", async () => {
+        const cb = await attachInPayloadMode();
+
+        delete comments["100"];
+        await jest.advanceTimersByTimeAsync(15_000);
+        await flush();
+
+        expect(cb).not.toHaveBeenCalled();
+        expect(getCurrent().source).toBe("payload");
+    });
+
+    test("a resolve that started earlier cannot bring the dropped payload back", async () => {
+        await attachInPayloadMode();
+
+        // The poll's fetch is still in flight when a focus refresh starts.
+        let finishStale;
+        global.fetch.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishStale = resolve;
+                }),
+        );
+        const stale = refreshNow();
+        comments["100"] =
+            "# Merge Queue Status\n\n🛑 Queue command has been cancelled";
+        await refreshNow();
+        await flush();
+        expect(getCurrent().source).toBe("fallback");
+
+        // The stale fetch lands last, with the payload as it was.
+        finishStale({
+            ok: true,
+            text: () =>
+                Promise.resolve(
+                    `<form><textarea>${markerFor(WAITING_PAYLOAD)}</textarea></form>`,
+                ),
+        });
+        await stale;
+        await flush();
+        expect(getCurrent().source).toBe("fallback");
+    });
+
+    test("a later Mergify reply does not hide the status comment's updates", async () => {
+        const cb = await attachInPayloadMode();
+
+        // Mergify answers a Refresh click below the status comment.
+        document.body.appendChild(
+            buildTimelineItem({ bot: true, commentId: "200" }),
+        );
+        comments["200"] = "> refresh\n\n#### ✅ Pull request refreshed";
+        comments["100"] = markerFor({ ...VALID_PAYLOAD, state: "checking" });
+        await jest.advanceTimersByTimeAsync(15_000);
+        await flush();
+
+        expect(cb).toHaveBeenCalledTimes(1);
+        expect(getCurrent()).toEqual({
+            source: "payload",
+            payload: { ...VALID_PAYLOAD, state: "checking" },
+        });
+        expect(global.fetch).not.toHaveBeenCalledWith(
+            "/acme/widget/issue_comments/200/edit_form",
+        );
     });
 });

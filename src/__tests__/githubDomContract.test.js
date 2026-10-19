@@ -36,6 +36,7 @@ const {
     resetQueueState,
     wasMergedByMergify,
 } = require("../mergify");
+const { findLatestStatusCommentSync } = require("../mqPayload");
 
 describe.each(listGitHubDomEras())("%s", (era) => {
     const manifest = loadEraManifest(era);
@@ -121,6 +122,27 @@ describe.each(listGitHubDomEras())("%s", (era) => {
 
         it("detects whether the pull request is in the merge queue", () => {
             expect(isPullRequestQueued()).toBe(expected.queued);
+        });
+
+        // GitHub rarely materializes a comment's edit textarea, so the payload
+        // poll usually picks the comment to fetch from the rendered timeline:
+        // the latest status report, by its heading, else the latest Mergify
+        // comment it can fetch.
+        it("picks the status comment the payload poll fetches", () => {
+            const textareas = Array.from(
+                document.querySelectorAll("textarea"),
+                (ta) => [ta, ta.parentNode, ta.nextSibling],
+            );
+            for (const [ta] of textareas) ta.remove();
+            try {
+                expect(findLatestStatusCommentSync()?.commentId ?? null).toBe(
+                    expected.statusCommentId,
+                );
+            } finally {
+                for (const [ta, parent, next] of textareas.reverse()) {
+                    parent.insertBefore(ta, next);
+                }
+            }
         });
 
         it("reads the base branch", () => {
