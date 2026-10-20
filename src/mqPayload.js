@@ -1,5 +1,9 @@
 import { debug } from "./debug.js";
-import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
+import {
+    getPullRequestData,
+    isGitHubPullRequestPage,
+    isMergifyBotComment,
+} from "./dom.js";
 import {
     fetchQueueState,
     lastKnownQueueConditions,
@@ -83,24 +87,39 @@ function _readCommentIdFor(timelineItem) {
     return m ? m[1] : null;
 }
 
+// The engine titles every status report comment this way, the one it
+// rewrites when the queue command is cancelled included; GitHub renders it as
+// the comment's <h1>. Mergify's replies to commands carry no such heading.
+const STATUS_REPORT_HEADING = "Merge Queue Status";
+
+function _isStatusReport(item) {
+    return Array.from(item.querySelectorAll(".comment-body h1")).some(
+        (h) => h.textContent.trim() === STATUS_REPORT_HEADING,
+    );
+}
+
 // Walk the timeline and find every Mergify-authored TimelineItem along with
 // any inline source / fetchable comment id we can pull a payload from.
-// Returns an array in DOM order: [{ item, inlineSource, commentId }].
+// Returns an array in DOM order:
+// [{ item, inlineSource, commentId, statusReport }].
 function _collectMergifyCandidates(root = document) {
     const items = root.querySelectorAll(".TimelineItem");
     const out = [];
     for (const item of items) {
-        if (!item.querySelector('a[href="/apps/mergify"]')) continue;
+        // The author link's class, not any link to the app: a comment body
+        // can link to /apps/mergify and quote a heading, never set a class.
+        if (!isMergifyBotComment(item)) continue;
         const inlineSource = _readInlineTextareaSource(item);
         const commentId = _readCommentIdFor(item);
-        out.push({ item, inlineSource, commentId });
+        const statusReport = _isStatusReport(item);
+        out.push({ item, inlineSource, commentId, statusReport });
     }
     return out;
 }
 
 // Resolve the latest Mergify status comment's payload synchronously, using
-// only inline DOM data (no network). Returns { payload, commentId } if the
-// inline textarea route works, or { payload: null, commentId } if we found
+// only inline DOM data (no network). Returns { payload, commentId, read? } if
+// the inline textarea route works, or { payload: null, commentId } if we found
 // a fetchable candidate but no inline marker — `commentId` is then usable
 // for the async fetch fallback. Returns null if no Mergify comment exists.
 //
@@ -113,6 +132,26 @@ export function findLatestStatusCommentSync(root = document) {
     const candidates = _collectMergifyCandidates(root);
     if (candidates.length === 0) return null;
 
+    // The latest status report is the current queue session's, read even
+    // without a marker: once it is rewritten without its payload, an older
+    // session's report (one that ended "dequeued") must not stand in for it,
+    // nor Mergify's reply to a Refresh click below it. `read` says its
+    // source was read, so a null payload means it carries none.
+    for (let i = candidates.length - 1; i >= 0; i--) {
+        const c = candidates[i];
+        if (!c.statusReport) continue;
+        if (c.inlineSource) {
+            return {
+                payload: parsePayload(c.inlineSource),
+                commentId: c.commentId,
+                read: true,
+            };
+        }
+        if (c.commentId) return { payload: null, commentId: c.commentId };
+        break;
+    }
+
+    // Engines that write no heading: the latest comment with a marker.
     for (let i = candidates.length - 1; i >= 0; i--) {
         const c = candidates[i];
         if (c.inlineSource && MARKER_PRESENT_REGEX.test(c.inlineSource)) {
@@ -153,19 +192,24 @@ async function _fetchCommentMarkdown(commentId) {
     }
 }
 
+// `read` is true when the comment's source was fetched, so a null payload
+// means the comment carries none, not that the fetch failed.
+async function _resolveComment(commentId) {
+    const markdown = await _fetchCommentMarkdown(commentId);
+    if (!markdown) return { payload: null, commentId };
+    return { payload: parsePayload(markdown), commentId, read: true };
+}
+
 // Resolve the latest Mergify status comment's payload, falling back to a
 // network fetch of the comment's edit_form when the inline textarea isn't
-// materialized. Returns { payload, commentId } or null when there's no
+// materialized. Returns { payload, commentId, read? } or null when there's no
 // Mergify status comment at all.
 export async function resolveLatestStatusCommentPayload(root = document) {
     const sync = findLatestStatusCommentSync(root);
     if (!sync) return null;
-    if (sync.payload) return sync;
+    if (sync.payload || sync.read) return sync;
     if (!sync.commentId) return { payload: null, commentId: null };
-    const markdown = await _fetchCommentMarkdown(sync.commentId);
-    if (!markdown) return { payload: null, commentId: sync.commentId };
-    const payload = parsePayload(markdown);
-    return { payload, commentId: sync.commentId };
+    return _resolveComment(sync.commentId);
 }
 
 let _onChange = null;
@@ -176,6 +220,10 @@ let _payloadGeneration = 0;
 let _payloadPollTimer = null;
 let _timelineObserver = null;
 let _inPayloadMode = false;
+// The comment the current payload was read from, while in payload mode. The
+// engine edits one status comment in place for a whole queue session: only
+// that comment losing its payload ends it.
+let _payloadCommentId = null;
 
 // Fallback-side state (preserved from previous implementation).
 let _fallbackTimer = null;
@@ -244,8 +292,14 @@ function _stopFallback() {
 //     mutations, not property assignments. If the engine updates the
 //     payload by silently rewriting the textarea's `.value` (no DOM
 //     reflow), only the periodic re-read picks it up.
+let _resolveSequence = 0;
+
 async function _resolveAndEmit() {
     const generation = _payloadGeneration;
+    // The poll, a focus refresh and the timeline observer overlap: only the
+    // latest resolve applies, or an older fetch finishing last would bring
+    // back a payload the newer one saw gone.
+    const sequence = ++_resolveSequence;
     let result;
     try {
         result = await resolveLatestStatusCommentPayload();
@@ -253,7 +307,8 @@ async function _resolveAndEmit() {
         debug("mqPayload: resolveLatestStatusCommentPayload threw", e);
         return;
     }
-    if (generation !== _payloadGeneration) return;
+    if (generation !== _payloadGeneration || sequence !== _resolveSequence)
+        return;
     if (!_onChange) return;
 
     if (!result) {
@@ -273,7 +328,19 @@ async function _resolveAndEmit() {
             _stopFallback();
             _inPayloadMode = true;
         }
+        _payloadCommentId = result.commentId;
         _emit({ source: "payload", payload: result.payload });
+    } else if (
+        _inPayloadMode &&
+        result.read &&
+        result.commentId === _payloadCommentId
+    ) {
+        // The engine rewrites the status comment without its payload when the
+        // queue command is cancelled (a push, a dequeue, the pull request
+        // closed): the payload's "waiting" no longer holds, the check does.
+        _inPayloadMode = false;
+        _payloadCommentId = null;
+        _startFallback();
     }
 }
 
@@ -333,6 +400,7 @@ export function attach(callback) {
     );
     if (sync?.payload) {
         _inPayloadMode = true;
+        _payloadCommentId = sync.commentId;
         _emit({ source: "payload", payload: sync.payload });
         _installTimelineObserver();
         _schedulePayloadPoll();
@@ -393,6 +461,7 @@ export function detach() {
     }
     _stopFallback();
     _inPayloadMode = false;
+    _payloadCommentId = null;
     _current = null;
     _onChange = null;
 }
