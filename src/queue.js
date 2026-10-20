@@ -487,7 +487,10 @@ function neutralizeButton(btn) {
     btn.onclick = (event) => event.preventDefault();
 }
 
-export function buildQueueButton(state) {
+// `conditions` are the queue entry conditions the check reports: an add
+// button for a pull request that does not match them yet is drawn grey, the
+// way GitHub greys its own merge button, and says the request will wait.
+export function buildQueueButton(state, conditions) {
     let btn;
     switch (state) {
         case "queuing":
@@ -522,16 +525,33 @@ export function buildQueueButton(state) {
             );
             btn.onclick = () => postCommandAndUpdate("dequeue");
             break;
-        default:
+        case "requested":
+            // The queue command is recorded: offering to add the pull request
+            // again would say it is not. It is not in the queue either, so
+            // this is GitHub's "Disable auto-merge", not a red removal.
+            btn = buildMergeBoxButton(
+                "dequeue",
+                "Cancel queue request",
+                "The pull request enters the merge queue once its queue conditions match: cancel the request",
+                false,
+                "secondary",
+            );
+            btn.onclick = () => postCommandAndUpdate("dequeue");
+            break;
+        default: {
+            const unmet = conditions?.met === false;
             btn = buildMergeBoxButton(
                 "queue",
                 "Add to merge queue",
-                "Add the pull request to the merge queue",
+                unmet
+                    ? "Add the pull request to the merge queue: it enters once its queue conditions match"
+                    : "Add the pull request to the merge queue",
                 false,
-                "primary",
+                unmet ? "secondary" : "primary",
             );
             btn.onclick = () => postCommandAndUpdate("queue");
             break;
+        }
     }
     btn.setAttribute("data-mergify-queue-btn", state);
     return btn;
@@ -664,21 +684,6 @@ function legacyConditions(state) {
     return lastKnownQueueConditions;
 }
 
-// The unmet conditions say what clicking does: record the request and wait.
-function withConditionsTooltip(button, conditions) {
-    if (
-        conditions &&
-        !conditions.met &&
-        button.getAttribute("data-mergify-queue-btn") === "unqueued"
-    ) {
-        button.setAttribute(
-            "title",
-            "Add the pull request to the merge queue — it enters once its queue conditions match",
-        );
-    }
-    return button;
-}
-
 function buildLegacyDefaultRow() {
     const state = deriveQueueButtonState();
     const conditions = legacyConditions(state);
@@ -695,9 +700,7 @@ function buildLegacyDefaultRow() {
     if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
-        buttons.appendChild(
-            withConditionsTooltip(buildQueueButton(state), conditions),
-        );
+        buttons.appendChild(buildQueueButton(state, conditions));
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
@@ -738,9 +741,7 @@ function buildLegacySidebarRow() {
     if (state !== "merged" && state !== "closed" && state !== "batch") {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
-        buttons.appendChild(
-            withConditionsTooltip(buildQueueButton(state), conditions),
-        );
+        buttons.appendChild(buildQueueButton(state, conditions));
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
@@ -940,10 +941,7 @@ function _legacyPatch(row, variant = "default") {
     }
     if (!oldBtn) return;
     if (oldBtn.getAttribute("data-mergify-queue-btn") === derived) return;
-    const newBtn = withConditionsTooltip(
-        buildQueueButton(derived),
-        legacyConditions(derived),
-    );
+    const newBtn = buildQueueButton(derived, legacyConditions(derived));
     oldBtn.replaceWith(newBtn);
     debug("Legacy queue button state:", derived);
 }
@@ -1041,7 +1039,12 @@ function waitingConditions(payload) {
 }
 
 const STATE_PILL_COPY = {
-    waiting: { label: "Waiting", note: "queued conditions not yet met" },
+    // Not "Waiting": next to "Merge Queue" it read as waiting in the queue,
+    // which the pull request has not entered.
+    waiting: {
+        label: "Requested",
+        note: "enters the queue once its conditions match",
+    },
     checking: { label: "Checking", note: "" },
     paused: { label: "Paused", note: "queue paused — checks suspended" },
     frozen: { label: "Frozen", note: "merge freeze in effect" },
@@ -1191,10 +1194,12 @@ function buildButtonsRow(queueButtonState) {
     const row = document.createElement("div");
     row.style.cssText =
         "display:flex;align-items:center;gap:8px;padding:var(--base-size-16,16px)!important;flex-wrap:wrap;";
-    if (queueButtonState !== "batch") {
+    if (!["batch", "merged", "closed"].includes(queueButtonState)) {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
-        buttons.appendChild(buildQueueButton(queueButtonState));
+        buttons.appendChild(
+            buildQueueButton(queueButtonState, lastKnownQueueConditions),
+        );
         appendCommandButtons(buttons);
         row.appendChild(buttons);
     }
@@ -1323,6 +1328,9 @@ function deriveQueueButtonStateFromPayload(state) {
     // and this must win over the payload state — a batch payload can say
     // "checking", which would otherwise surface an active dequeue button.
     if (isMergeQueueBatchPr()) return "batch";
+    // The status comment outlives the pull request until the engine rewrites
+    // it: no command to offer on a closed one.
+    if (!isPullRequestOpen()) return wasMergedByMergify() ? "merged" : "closed";
     if (
         state === "checking" ||
         state === "paused" ||
@@ -1330,6 +1338,14 @@ function deriveQueueButtonStateFromPayload(state) {
         state === "bisecting"
     )
         return "queued";
+    // "waiting" is a queue command waiting for the queue conditions. A
+    // dequeue command posted after it cancels it, which the status comment
+    // says only once the engine rewrites it.
+    if (state === "waiting") {
+        return findLastMergifyCommand()?.command === "dequeue"
+            ? "dequeuing"
+            : "requested";
+    }
     if (isPullRequestDraft()) return "draft";
     return "unqueued";
 }
@@ -1358,14 +1374,14 @@ function _richRowHash(payload, variant, data) {
         e: payload.estimated_time_of_merge,
         spr: payload.speculative_check_pr,
         rc: payload.required_conditions,
-        // The waiting row renders the check run's conditions, not the
-        // payload's, so a change there must not be deduped away.
-        wc: payload.state === "waiting" ? lastKnownQueueConditions : null,
-        // Draft status drives the queue button (draft → disabled). It lives in
-        // the page DOM, not the payload, so fold it in here; otherwise a
-        // draft→ready toggle that leaves the payload untouched would be deduped
-        // away and the button would stay greyed out.
-        d: isPullRequestDraft(),
+        // The waiting row and the add button render the check run's
+        // conditions, not the payload's, so a change there must not be
+        // deduped away.
+        wc: lastKnownQueueConditions,
+        // The queue button also reads the page: draft, closed, a dequeue
+        // command just posted. A change there that leaves the payload
+        // untouched must not be deduped away either.
+        b: deriveQueueButtonStateFromPayload(payload.state),
     });
     let h = 0;
     for (let i = 0; i < input.length; i++) {
