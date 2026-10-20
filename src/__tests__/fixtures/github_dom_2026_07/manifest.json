@@ -12,7 +12,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "unqueued"
+            "queueButtonState": "unqueued",
+            "statusCommentId": null
         },
         "github_pr_draft": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/7",
@@ -23,7 +24,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "draft"
+            "queueButtonState": "draft",
+            "statusCommentId": null
         },
         "github_pr_queued": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/8",
@@ -34,7 +36,8 @@
             "queued": true,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "queued"
+            "queueButtonState": "queued",
+            "statusCommentId": "5017179426"
         },
         "github_pr_batch_open": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/9",
@@ -45,7 +48,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "batch"
+            "queueButtonState": "batch",
+            "statusCommentId": null
         },
         "github_pr_no_timeline_actions": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/3",
@@ -56,7 +60,8 @@
             "queued": false,
             "mergeBoxRowVariants": ["default"],
             "baseRef": "main",
-            "queueButtonState": "closed"
+            "queueButtonState": "closed",
+            "statusCommentId": null
         },
         "github_pr_merged": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/1",
@@ -67,7 +72,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "merged"
+            "queueButtonState": "merged",
+            "statusCommentId": "5004863726"
         },
         "github_pr_batch_closed": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/4",
@@ -78,7 +84,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "closed"
+            "queueButtonState": "closed",
+            "statusCommentId": null
         },
         "github_pr_no_mergify": {
             "path": "/mergify-sandbox/browser-extension-fixtures-no-mergify/pull/2",
@@ -89,7 +96,8 @@
             "queued": false,
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
-            "queueButtonState": "unqueued"
+            "queueButtonState": "unqueued",
+            "statusCommentId": null
         }
     }
 }
