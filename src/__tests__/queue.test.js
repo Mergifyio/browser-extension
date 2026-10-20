@@ -1069,3 +1069,136 @@ describe("batch-PR informational links", () => {
         expect(linkLabels(row)).toEqual(["queue", "logs"]);
     });
 });
+
+const {
+    buildMergifyRow: buildRowForNote,
+    fetchQueueState: fetchQueueStateForNote,
+    resetQueueState: resetQueueStateForNote,
+    updateAllMergifyRows,
+} = require("../queue");
+
+describe("note on GitHub's protected-ref block", () => {
+    const NOTE = "[data-mergify-manual-merge-note]";
+    let originalFetch;
+
+    function mergeBox(blockedText) {
+        document.body.innerHTML = `
+            <span class="commit-ref base-ref" title="acme/widget:main"></span>
+            <div data-testid="mergebox-partial"><div data-testid="mergebox-border-container">
+                <section aria-label="Checks"></section>
+                <section aria-label="Merging is blocked"><h3>Merging is blocked</h3><p>${blockedText}</p></section>
+            </div></div>`;
+        const container = document.querySelector(
+            '[data-testid="mergebox-border-container"]',
+        );
+        container.appendChild(buildRowForNote("default"));
+        return container;
+    }
+
+    // The pull request's "Mergify Merge Queue" check, or none.
+    function mockMergeQueueCheck(runHtml) {
+        global.fetch = jest.fn((url) =>
+            Promise.resolve({
+                ok: true,
+                text: () =>
+                    Promise.resolve(
+                        String(url).endsWith("/checks")
+                            ? runHtml === null
+                                ? "<html></html>"
+                                : '<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>'
+                            : runHtml,
+                    ),
+            }),
+        );
+        return fetchQueueStateForNote();
+    }
+
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        originalFetch = global.fetch;
+        resetQueueStateForNote();
+        // An earlier test's mocked status comment payload would count as the
+        // merge queue taking the pull request.
+        jest.dontMock("../mqPayload");
+        jest.resetModules();
+    });
+
+    afterEach(() => {
+        document.body.innerHTML = "";
+        global.fetch = originalFetch;
+        resetQueueStateForNote();
+    });
+
+    test("says the merge goes through Mergify, between GitHub's block and the row", async () => {
+        await mockMergeQueueCheck("<h1>Merge queue is ready</h1>");
+        const container = mergeBox("Cannot update this protected ref.");
+        updateAllMergifyRows();
+
+        const row = container.querySelector("[data-mergify-merge-box-row]");
+        expect(row.previousElementSibling.matches(NOTE)).toBe(true);
+        expect(row.previousElementSibling.textContent.trim()).toBe(
+            "Merging into main by hand is blocked: Mergify merges it through the merge queue.",
+        );
+    });
+
+    test("survives the row's rebuilds, follows the base branch, and leaves with GitHub's text", async () => {
+        await mockMergeQueueCheck(
+            "<h1>Waiting for queue conditions to match</h1>",
+        );
+        const container = mergeBox("Cannot update this protected ref.");
+        updateAllMergifyRows();
+        const note = container.querySelector(NOTE);
+
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE)).toBe(note);
+        // A row rebuilt in place, as a state change does.
+        const row = container.querySelector("[data-mergify-merge-box-row]");
+        row.replaceWith(buildRowForNote("default"));
+        expect(container.querySelector(NOTE)).toBe(note);
+        updateAllMergifyRows();
+        expect(
+            note.nextElementSibling.hasAttribute("data-mergify-merge-box-row"),
+        ).toBe(true);
+
+        document
+            .querySelector(".base-ref")
+            .setAttribute("title", "acme/widget:release");
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE).textContent).toContain(
+            "Merging into release by hand",
+        );
+
+        container.querySelector('[aria-label="Merging is blocked"]').remove();
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE)).toBeNull();
+    });
+
+    test("no note without Mergify's merge queue on the pull request", async () => {
+        // A repository using Mergify for other rules, its branch restricted
+        // to someone else.
+        await mockMergeQueueCheck(null);
+        const container = mergeBox("Cannot update this protected ref.");
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE)).toBeNull();
+    });
+
+    test("no note for a block that is not about who may merge", async () => {
+        await mockMergeQueueCheck("<h1>Merge queue is ready</h1>");
+        const container = mergeBox(
+            "Merging is blocked due to failing merge requirements",
+        );
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE)).toBeNull();
+    });
+
+    test("no note on a closed pull request", async () => {
+        await mockMergeQueueCheck("<h1>Merge queue is ready</h1>");
+        const container = mergeBox("Cannot update this protected ref.");
+        document.body.insertAdjacentHTML(
+            "afterbegin",
+            '<span data-status="pullClosed">Closed</span>',
+        );
+        updateAllMergifyRows();
+        expect(container.querySelector(NOTE)).toBeNull();
+    });
+});

@@ -812,6 +812,71 @@ export function updateAllMergifyRows() {
     const rows = document.querySelectorAll(`[${MERGE_BOX_ROW_ATTR}]`);
     for (const row of rows) updateMergifyRow(row);
     syncQueueConditionsSections();
+    syncManualMergeNotes();
+}
+
+// What GitHub's red "Merging is blocked" panel says to a viewer the branch's
+// rules keep from merging: on a repository where only Mergify may update the
+// base branch, the merge queue's documented "exclusive mode", it sits right
+// above Mergify's row and its "Add to merge queue".
+const PROTECTED_REF_TEXT = "Cannot update this protected ref";
+const MANUAL_MERGE_NOTE_ATTR = "data-mergify-manual-merge-note";
+
+// Says, between GitHub's block and Mergify's row, that the block is the merge
+// going through Mergify. A sibling of the row rather than a child, so that
+// rebuilding the row keeps it.
+function syncManualMergeNotes() {
+    const rows = document.querySelectorAll(`[${MERGE_BOX_ROW_ATTR}]`);
+    if (rows.length === 0) return;
+    // Only where Mergify's merge queue takes this pull request, as its check
+    // or its status comment says: a repository using Mergify for other rules
+    // may restrict its branch to someone else.
+    const applies =
+        isPullRequestOpen() &&
+        !isMergeQueueBatchPr() &&
+        Boolean(
+            _currentPayload() ||
+                lastKnownQueueState ||
+                lastKnownQueueConditions,
+        );
+    let base;
+    for (const row of rows) {
+        const container = row.parentElement;
+        const existing = container.querySelector(
+            `:scope > [${MANUAL_MERGE_NOTE_ATTR}]`,
+        );
+        if (!applies || !container.textContent.includes(PROTECTED_REF_TEXT)) {
+            existing?.remove();
+            continue;
+        }
+        base ??= getBaseRef() ?? "this branch";
+        if (
+            existing?.dataset.base === base &&
+            existing.nextElementSibling === row
+        )
+            continue;
+        existing?.remove();
+        container.insertBefore(buildManualMergeNote(base), row);
+    }
+}
+
+function buildManualMergeNote(base) {
+    const note = document.createElement("p");
+    note.setAttribute(MANUAL_MERGE_NOTE_ATTR, "");
+    note.dataset.base = base;
+    note.style.cssText =
+        "display:flex;align-items:center;gap:8px;margin:0;padding:12px var(--base-size-16,16px);font-size:14px;line-height:21px;color:var(--fgColor-muted, #59636e);";
+    const logo = parseSvg(getLogoSvg());
+    logo.setAttribute("width", "16");
+    logo.setAttribute("height", "16");
+    logo.style.flexShrink = "0";
+    note.appendChild(logo);
+    note.appendChild(
+        document.createTextNode(
+            `Merging into ${base} by hand is blocked: Mergify merges it through the merge queue.`,
+        ),
+    );
+    return note;
 }
 
 // What the merge-box row shows: the queue conditions before the pull request
