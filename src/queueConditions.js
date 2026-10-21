@@ -139,3 +139,83 @@ export function readCheckStates(statusChecksJson) {
     }
     return states;
 }
+
+// The marks of GitHub's own merge-box checks list, at its size (16px), so
+// the eye reads them the same way. Still to do: Octicon `dot`, the hollow
+// twin of the `dot-fill` GitHub puts on a pending status. Running: GitHub's
+// CheckSpinner (a Primer Spinner around an 8px dot), mirrored rather than
+// referenced, because its classes are
+// hashed per deploy and only loaded on some pages; its colour and timing are
+// the same, and it holds still under prefers-reduced-motion.
+const SVG_NS = "http://www.w3.org/2000/svg";
+const MARK_SIZE = "16";
+const TODO_PATH =
+    "M4 8a4 4 0 1 1 8 0 4 4 0 0 1-8 0Zm4-2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z";
+// Octicon `x-circle-fill`, GitHub's mark for a failed check in the same list.
+const FAILED_PATH =
+    "M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042L6.94 8 4.97 9.97a.749.749 0 0 0 .326 1.275.749.749 0 0 0 .734-.215L8 9.06l1.97 1.97a.749.749 0 0 0 1.275-.326.749.749 0 0 0-.215-.734L9.06 8l1.97-1.97a.749.749 0 0 0-.326-1.275.749.749 0 0 0-.734.215L8 6.94Z";
+const SPIN_STYLE_ID = "mergify-condition-spin";
+
+function _ensureSpinStyle() {
+    if (document.getElementById(SPIN_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = SPIN_STYLE_ID;
+    style.textContent = [
+        "@keyframes mergify-condition-spin { to { transform: rotate(360deg); } }",
+        '[data-mark="running"] { animation: mergify-condition-spin 1s linear infinite; transform-box: fill-box; transform-origin: center; }',
+        '@media (prefers-reduced-motion: reduce) { [data-mark="running"] { animation: none; } }',
+    ].join("\n");
+    document.head.appendChild(style);
+}
+
+function _svgChild(tag, attrs) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs))
+        el.setAttribute(name, value);
+    return el;
+}
+
+export function conditionMark(kind) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("width", MARK_SIZE);
+    svg.setAttribute("height", MARK_SIZE);
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("data-mark", kind);
+    if (kind === "running") {
+        _ensureSpinStyle();
+        svg.setAttribute("fill", "none");
+        svg.style.cssText =
+            "flex-shrink:0;color:var(--fgColor-attention, #9a6700);vertical-align:middle;";
+        svg.append(
+            _svgChild("circle", {
+                cx: "8",
+                cy: "8",
+                r: "7",
+                stroke: "currentColor",
+                "stroke-opacity": "0.25",
+                "stroke-width": "2",
+                "vector-effect": "non-scaling-stroke",
+            }),
+            _svgChild("path", {
+                d: "M15 8a7.002 7.002 0 00-7-7",
+                stroke: "currentColor",
+                "stroke-width": "2",
+                "stroke-linecap": "round",
+                "vector-effect": "non-scaling-stroke",
+            }),
+            // GitHub's CheckSpinner centres an 8px dot in the ring.
+            _svgChild("circle", {
+                cx: "8",
+                cy: "8",
+                r: "4",
+                fill: "currentColor",
+            }),
+        );
+        return svg;
+    }
+    const failed = kind === "failed";
+    svg.style.cssText = `flex-shrink:0;fill:${failed ? "var(--fgColor-danger, #d1242f)" : "var(--fgColor-muted, #59636e)"};vertical-align:middle;`;
+    svg.append(_svgChild("path", { d: failed ? FAILED_PATH : TODO_PATH }));
+    return svg;
+}
