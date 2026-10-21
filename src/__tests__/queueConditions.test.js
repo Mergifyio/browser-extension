@@ -10,7 +10,10 @@ const {
     resetQueueState,
     updateAllMergifyRows,
 } = require("../queue");
-const { parseQueueConditionsPage } = require("../queueConditions");
+const {
+    parseQueueConditionsPage,
+    readCheckStates,
+} = require("../queueConditions");
 const { placeQueueConditionsSection } = require("../queueConditionsSection");
 const { conditionsVerdict } = require("../queueConditionsTree");
 
@@ -76,13 +79,24 @@ function entry(rules, requirements = REQUIREMENTS) {
 
 const rule = (...items) => ["all of", ...items];
 
-function parsed(requiredConditions) {
-    return parseQueueConditionsPage(checkPage(requiredConditions), RUN_URL);
+function parsed(requiredConditions, checkStates = {}) {
+    const conditions = parseQueueConditionsPage(
+        checkPage(requiredConditions),
+        RUN_URL,
+    );
+    conditions.checkStates = checkStates;
+    return conditions;
 }
 
-function mockCheckRun(runHtml, { runOk = true } = {}) {
+function mockCheckRun(runHtml, { runOk = true, statusChecks = [] } = {}) {
     global.fetch = jest.fn((url) => {
         const u = String(url);
+        if (u.includes("/page_data/status_checks")) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ statusChecks }),
+            });
+        }
         if (u.includes("/checks")) {
             return Promise.resolve({
                 ok: true,
@@ -188,52 +202,101 @@ describe("parseQueueConditionsPage", () => {
     });
 });
 
-describe("conditionsVerdict", () => {
-    const verdict = (rules, requirements) =>
-        conditionsVerdict(parsed(entry(rules, requirements)));
-
-    test("counts what the closest rule misses", () => {
+describe("readCheckStates", () => {
+    test("keeps what GitHub shows running or failed, by check name", () => {
         expect(
-            verdict([
-                rule(
-                    "#approved-reviews-by >= 1",
-                    "label = ready-to-queue",
-                    "check-success = unit",
-                    "check-success = lint",
-                    "✓base = main",
-                ),
-            ]),
+            readCheckStates({
+                statusChecks: [
+                    { displayName: "unit", state: "FAILURE" },
+                    { displayName: "slow", state: "PENDING" },
+                    { displayName: "build", state: "IN_PROGRESS" },
+                    { displayName: "lint", state: "SUCCESS" },
+                    { displayName: "Mergify Merge Queue", state: "NEUTRAL" },
+                ],
+            }),
+        ).toEqual({ unit: "failed", slow: "running", build: "running" });
+    });
+
+    test("reads an Actions job under the name a condition gives it", () => {
+        expect(
+            readCheckStates({
+                statusChecks: [
+                    {
+                        displayName:
+                            "Continuous Integration / test (pull_request)",
+                        state: "IN_PROGRESS",
+                    },
+                    {
+                        displayName: "CI / lint / ruff (push)",
+                        state: "FAILURE",
+                    },
+                ],
+            }),
         ).toEqual({
-            state: "waiting",
-            summary: "2 checks expected · 1 approval missing · 1 label missing",
+            "Continuous Integration / test (pull_request)": "running",
+            test: "running",
+            "CI / lint / ruff (push)": "failed",
+            "lint / ruff": "failed",
+        });
+        expect(readCheckStates(null)).toEqual({});
+    });
+});
+
+describe("conditionsVerdict", () => {
+    const verdict = (rules, states, requirements) =>
+        conditionsVerdict(parsed(entry(rules, requirements), states));
+
+    test("counts what the closest rule misses, failures first", () => {
+        expect(
+            verdict(
+                [
+                    rule(
+                        "#approved-reviews-by >= 1",
+                        "label = ready-to-queue",
+                        "check-success = slow",
+                        "check-success = unit",
+                        "check-success = lint",
+                        "✓base = main",
+                    ),
+                ],
+                { unit: "failed", slow: "running" },
+            ),
+        ).toEqual({
+            state: "blocked",
+            summary:
+                "1 check failed · 1 check running · 1 check expected · 1 approval missing · 1 label missing",
         });
     });
 
     test("waits while nothing fails for good", () => {
         expect(
-            verdict([
-                rule("#approved-reviews-by >= 2", "check-success = ci", [
-                    "any of",
-                    "label = hotfix",
-                    "label = urgent",
-                ]),
-            ]),
+            verdict(
+                [
+                    rule("#approved-reviews-by >= 2", "check-success = ci", [
+                        "any of",
+                        "label = hotfix",
+                        "label = urgent",
+                    ]),
+                ],
+                { ci: "running" },
+            ),
         ).toEqual({
             state: "waiting",
             summary:
-                "1 check expected · approvals missing (2 required) · 1 condition missing",
+                "1 check running · approvals missing (2 required) · 1 condition missing",
         });
     });
 
     test("a protection's conditions count one by one, the check repeating them not at all", () => {
         expect(
-            conditionsVerdict(
-                parseQueueConditionsPage(PROTECTIONS_RUN_HTML, RUN_URL),
-            ),
+            conditionsVerdict({
+                ...parseQueueConditionsPage(PROTECTIONS_RUN_HTML, RUN_URL),
+                checkStates: { docs: "running" },
+            }),
         ).toEqual({
             state: "waiting",
             summary:
-                "1 check expected · approvals missing (2 required) · 2 labels missing",
+                "1 check running · approvals missing (2 required) · 2 labels missing",
         });
     });
 
@@ -244,52 +307,83 @@ describe("conditionsVerdict", () => {
             summary: "files outside the rule · 1 label missing",
         });
         expect(
-            verdict([rule("✓label = a")], ["✓-closed", "-conflict", "✓-draft"]),
+            verdict([rule("✓label = a")], {}, [
+                "✓-closed",
+                "-conflict",
+                "✓-draft",
+            ]),
         ).toEqual({
             state: "blocked",
             summary: "conflicts with the base branch",
         });
     });
 
-    test("can't match only when every queue rule has a failure", () => {
+    test("a failed check another option can stand in for still waits", () => {
         expect(
-            verdict([
-                rule("base = release", "label = a"),
-                rule("label = urgent"),
-            ]),
+            verdict(
+                [
+                    rule("label = a", [
+                        "any of",
+                        "check-success = ci",
+                        "label = hotfix",
+                    ]),
+                ],
+                { ci: "failed" },
+            ).state,
+        ).toBe("waiting");
+    });
+
+    test("can't match only when every queue rule has a failure", () => {
+        const states = { ci: "failed" };
+        expect(
+            verdict(
+                [
+                    rule("check-success = ci", "label = a"),
+                    rule("label = urgent"),
+                ],
+                states,
+            ),
         ).toEqual({
             state: "waiting",
             summary: "1 label missing · closest of 2 queue rules",
         });
         expect(
-            verdict([
-                rule("base = release", "label = a"),
-                rule("files ~= ^docs/", "label = urgent"),
-            ]).state,
+            verdict(
+                [
+                    rule("check-success = ci", "label = a"),
+                    rule("base = release", "label = urgent"),
+                ],
+                states,
+            ).state,
         ).toBe("blocked");
     });
 
-    test("a group that can't match blocks, and counts as one condition", () => {
+    test("a group that can't match counts as a failure", () => {
         expect(
-            verdict([
-                rule("#approved-reviews-by >= 1", [
-                    "any of",
-                    "base = release",
-                    "base = stable",
-                ]),
-            ]),
+            verdict(
+                [
+                    rule("#approved-reviews-by >= 1", [
+                        "any of",
+                        "check-success = a",
+                        "check-success = b",
+                        "check-success = c",
+                    ]),
+                ],
+                { a: "failed", b: "failed", c: "failed" },
+            ),
         ).toEqual({
             state: "blocked",
-            summary: "1 approval missing · 1 condition missing",
+            summary: "1 check failed · 1 approval missing",
         });
     });
 
     test("a label to remove and a draft", () => {
         expect(
-            verdict(
-                [rule("-label = wip")],
-                ["✓-closed", "✓-conflict", "-draft"],
-            ).summary,
+            verdict([rule("-label = wip")], {}, [
+                "✓-closed",
+                "✓-conflict",
+                "-draft",
+            ]).summary,
         ).toBe("1 label to remove · still a draft");
     });
 
@@ -322,8 +416,18 @@ function rowOrder(container) {
 }
 
 const BLOCKED_PAGE = checkPage(
-    entry([rule("#approved-reviews-by >= 1", "base = release")]),
+    entry([
+        rule("#approved-reviews-by >= 1", "check-success = unit", [
+            "any of",
+            "check-success = ci",
+            "label = hotfix",
+        ]),
+    ]),
 );
+const STATES = [
+    { displayName: "unit", state: "FAILURE" },
+    { displayName: "ci", state: "IN_PROGRESS" },
+];
 
 describe("merge-box conditions row", () => {
     beforeEach(() => {
@@ -368,9 +472,11 @@ describe("merge-box conditions row", () => {
         ]);
     });
 
-    test("waiting: GitHub's row layout, neutral circle, the count, folded", async () => {
+    test("waiting: GitHub's row layout, neutral circle, the count, folded, with GitHub's check states", async () => {
         mergeBox();
-        mockCheckRun(PROTECTIONS_RUN_HTML);
+        mockCheckRun(PROTECTIONS_RUN_HTML, {
+            statusChecks: [{ displayName: "docs", state: "PENDING" }],
+        });
         await fetchQueueState();
 
         updateAllMergifyRows();
@@ -386,7 +492,7 @@ describe("merge-box conditions row", () => {
             section.querySelector("[data-mergify-conditions-summary]")
                 .textContent,
         ).toBe(
-            "1 check expected · approvals missing (2 required) · 2 labels missing",
+            "1 check running · approvals missing (2 required) · 2 labels missing",
         );
         const circle = section.querySelector(".fgColor-onEmphasis");
         expect(circle.classList.contains("bgColor-neutral-emphasis")).toBe(
@@ -403,6 +509,15 @@ describe("merge-box conditions row", () => {
         const body = section.querySelector("[data-mergify-conditions-body]");
         expect(body.hidden).toBe(true);
         expect(body.textContent).toBe("View details");
+        // The states come from the JSON GitHub's own merge box loads.
+        expect(global.fetch).toHaveBeenCalledWith(
+            "/acme/widget/pull/42/page_data/status_checks",
+            expect.objectContaining({
+                headers: expect.objectContaining({
+                    "X-Requested-With": "XMLHttpRequest",
+                }),
+            }),
+        );
     });
 
     test("met: green check and nothing to unfold", async () => {
@@ -435,7 +550,7 @@ describe("merge-box conditions row", () => {
 
     test("can't match: red x, unfolded", async () => {
         mergeBox();
-        mockCheckRun(BLOCKED_PAGE);
+        mockCheckRun(BLOCKED_PAGE, { statusChecks: STATES });
         await fetchQueueState();
 
         updateAllMergifyRows();
@@ -452,7 +567,7 @@ describe("merge-box conditions row", () => {
         expect(
             section.querySelector("[data-mergify-conditions-summary]")
                 .textContent,
-        ).toBe("wrong base branch · 1 approval missing");
+        ).toBe("1 check failed · 1 check running · 1 approval missing");
         const body = section.querySelector("[data-mergify-conditions-body]");
         expect(body.hidden).toBe(false);
         expect(body.textContent).toBe("View details");
@@ -474,6 +589,12 @@ describe("merge-box conditions row", () => {
         expect(
             section.querySelector("[data-mergify-conditions-body]").textContent,
         ).toBe("View details");
+        // No tree, no check states to read.
+        expect(
+            global.fetch.mock.calls.some(([url]) =>
+                String(url).includes("status_checks"),
+            ),
+        ).toBe(false);
     });
 
     test("a click unfolds it, and a rebuild keeps it unfolded", async () => {
@@ -798,5 +919,37 @@ describe("rich row while the queue request waits", () => {
 
             expect(mutations).toHaveLength(0);
         });
+    });
+});
+
+describe("a re-run check", () => {
+    beforeEach(() => {
+        window.history.replaceState({}, "", "/acme/widget/pull/42");
+        document.body.innerHTML = "";
+        resetQueueState();
+    });
+
+    test("turns the row from red to grey on the next poll", async () => {
+        mergeBox();
+        const page = checkPage(entry([rule("check-success = unit")]));
+        mockCheckRun(page, {
+            statusChecks: [{ displayName: "unit", state: "FAILURE" }],
+        });
+        await fetchQueueState();
+        updateAllMergifyRows();
+        expect(
+            conditionsSection().getAttribute("data-mergify-conditions-section"),
+        ).toBe("blocked");
+
+        // Someone re-runs it: GitHub shows it pending, the payload unchanged.
+        mockCheckRun(page, {
+            statusChecks: [{ displayName: "unit", state: "PENDING" }],
+        });
+        await fetchQueueState();
+        updateAllMergifyRows();
+
+        expect(
+            conditionsSection().getAttribute("data-mergify-conditions-section"),
+        ).toBe("waiting");
     });
 });
