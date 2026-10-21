@@ -10,14 +10,17 @@
 // layout is mirrored with inline styles over Primer's stable utility classes
 // and colour variables.
 
+import { conditionsVerdict } from "./queueConditionsTree.js";
+
 export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Octicons, 16px (@primer/octicons 19): `check` as GitHub draws it in its
-// rows' circles, `clock` for the wait, `chevron-right` for the fold.
+// Octicons, 16px (@primer/octicons 19): `check` and `x` as GitHub draws them
+// in its rows' circles, `clock` for the wait, `chevron-right` for the fold.
 const ICON_PATHS = {
     check: "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z",
+    x: "M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z",
     clock: "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z",
     chevron:
         "M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z",
@@ -36,24 +39,26 @@ const STATES = {
         fill: "var(--bgColor-neutral-emphasis, #59636e)",
         icon: "clock",
     },
+    blocked: {
+        title: "Queue conditions can't match",
+        circle: "bgColor-danger-emphasis",
+        fill: "var(--bgColor-danger-emphasis, #cf222e)",
+        icon: "x",
+    },
 };
 
-// What the row shows for a model: { conditions }. Met when the check says the
-// queue is ready; waiting otherwise, unfolding to the check page.
+// What the row shows for a model: { conditions }.
 function _view(model) {
-    if (model.conditions.met) {
-        return {
-            state: "met",
-            label: "Queue conditions",
-            summary: ["Ready to enter the merge queue"],
-            body: null,
-        };
-    }
+    const verdict = conditionsVerdict(model.conditions);
+    if (!verdict) return null;
     return {
-        state: "waiting",
+        state: verdict.state,
         label: "Queue conditions",
-        summary: ["Some queue conditions are unmet"],
-        body: () => _detailsOnly(model.conditions.runUrl),
+        summary: [verdict.summary],
+        body:
+            verdict.state === "met"
+                ? null
+                : () => _detailsOnly(model.conditions.runUrl),
     };
 }
 function _octicon(name) {
@@ -68,6 +73,14 @@ function _octicon(name) {
     path.setAttribute("d", ICON_PATHS[name]);
     svg.appendChild(path);
     return svg;
+}
+
+// Whether the row opens unfolded: only when no rule can match, the case the
+// author has to act on. A click overrides it for this pull request only.
+export function sectionStartsExpanded(model) {
+    return model?.conditions
+        ? conditionsVerdict(model.conditions)?.state === "blocked"
+        : false;
 }
 
 // expanded: the fold state to draw; onToggle(expanded) is called on a click.

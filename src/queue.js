@@ -14,6 +14,7 @@ import {
     buildQueueSection,
     CONDITIONS_SECTION_ATTR,
     placeQueueConditionsSection,
+    sectionStartsExpanded,
 } from "./queueConditionsSection.js";
 import { resetStackState } from "./stacks.js";
 
@@ -89,7 +90,7 @@ export let lastKnownQueueConditions = null;
 // in memory only, so a rebuild of the row keeps it and the next pull request
 // starts at the row's default: persisting it would bring the tree back on
 // every pull request, differently for each teammate. null until a click, the row's
-// own default (folded) until then.
+// own default (unfolded only when no rule can match) until then.
 let conditionsSectionExpanded = null;
 export let queueStateInitialized = false;
 export let queuePollTimer = null;
@@ -925,7 +926,7 @@ export function syncQueueConditionsSections() {
 }
 
 function _sectionFor(model, existing) {
-    const expanded = conditionsSectionExpanded ?? false;
+    const expanded = conditionsSectionExpanded ?? sectionStartsExpanded(model);
     const key = JSON.stringify([model, expanded]);
     if (existing && existing.dataset.mergifyKey === key) return existing;
     const section = buildQueueSection(model, {
