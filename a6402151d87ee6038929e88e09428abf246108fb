@@ -1,1 +1,7 @@
-address review: a malformed conditions tree is ignored, the row still draws its reason
+Revision history for #889:
+
+rev 3 (content) 2026-10-27 09:04 UTC — address review: a malformed conditions tree is ignored, the row still draws its reason
+rev 2 (content) 2026-10-27 09:03 UTC — address review: the activity log link sits above the fold's transparent button, so a click opens the log
+rev 1 (initial) 2026-10-27 09:03 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":889,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"f1580b61b8abe72c702ea41a4e2e7c09646ccc2b","timestamp_iso":"2026-10-27T09:03:25Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"f1580b61b8abe72c702ea41a4e2e7c09646ccc2b","new_sha":"d003e39bf82b07c141b5df3bab26b2e2815f0fac","timestamp_iso":"2026-10-27T09:03:25Z","reason":"address review: the activity log link sits above the fold's transparent button, so a click opens the log","replay_sha":null,"compare_url":"https://github.com/Mergifyio/browser-extension/compare/f1580b61b8abe72c702ea41a4e2e7c09646ccc2b...d003e39bf82b07c141b5df3bab26b2e2815f0fac"},{"number":3,"change_type":"content","old_sha":"d003e39bf82b07c141b5df3bab26b2e2815f0fac","new_sha":"a6402151d87ee6038929e88e09428abf246108fb","timestamp_iso":"2026-10-27T09:04:33Z","reason":"address review: a malformed conditions tree is ignored, the row still draws its reason","replay_sha":null,"compare_url":"https://github.com/Mergifyio/browser-extension/compare/d003e39bf82b07c141b5df3bab26b2e2815f0fac...a6402151d87ee6038929e88e09428abf246108fb"}]} -->
