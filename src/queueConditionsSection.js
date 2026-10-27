@@ -166,15 +166,14 @@ function _view(model) {
         // Why: the engine's sentence when the payload carries it, its label
         // otherwise; the activity log either way.
         const detail = queue.detail ?? null;
-        const message = detail?.dequeueReason?.message ?? null;
-        const reason = message ? { code: message } : dequeueReasonText(detail);
+        const conditions = _removalConditions(detail);
+        const reason = _removalReason(detail, conditions);
         const log = (prefix, text, suffix) => ({
             prefix,
             text,
             suffix,
             href: queue.activityLogUrl ?? null,
         });
-        const conditions = _removalConditions(detail);
         return {
             state: "dequeued",
             label: "Merge queue",
@@ -218,6 +217,20 @@ function _view(model) {
         body: hasBody
             ? () => _queueBody(queue, unmet ? conditions : null)
             : null,
+    };
+}
+
+// The engine's sentence, followed by the checks that failed when there is no
+// tree to mark them in: failed checks and a checks timeout carry no
+// conditions, since either can come from the queue conditions.
+function _removalReason(detail, conditions) {
+    const reason = detail?.dequeueReason;
+    if (!reason?.message) return dequeueReasonText(detail);
+    const checks = conditions ? null : reason.checks;
+    return {
+        code: checks?.length
+            ? `${reason.message}: ${checks.join(", ")}`
+            : reason.message,
     };
 }
 

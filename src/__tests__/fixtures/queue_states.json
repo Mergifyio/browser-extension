@@ -357,23 +357,11 @@
                 "code": "CHECKS_FAILED",
                 "label": "checks failed",
                 "checks": ["ci-gate"],
-                "message": "The merge conditions cannot be satisfied due to failing checks",
-                "conditions": [
-                    {
-                        "description": "check-success=ci-gate",
-                        "match": false,
-                        "subconditions": []
-                    },
-                    {
-                        "description": "#approved-reviews-by>=1",
-                        "match": true,
-                        "subconditions": []
-                    }
-                ]
+                "message": "The merge conditions cannot be satisfied due to failing checks"
             }
         },
         "title": "Removed from the merge queue",
-        "summary": "The merge conditions cannot be satisfied due to failing checks · activity log"
+        "summary": "The merge conditions cannot be satisfied due to failing checks: ci-gate · activity log"
     },
     {
         "name": "removed when its conditions no longer match",
@@ -447,19 +435,7 @@
             "dequeue_reason": {
                 "code": "CHECKS_TIMEOUT",
                 "label": "checks timeout",
-                "message": "The merge conditions cannot be satisfied: the checks did not pass within the checks timeout of 30 minutes",
-                "conditions": [
-                    {
-                        "description": "check-success=ci-gate",
-                        "match": false,
-                        "subconditions": []
-                    },
-                    {
-                        "description": "#approved-reviews-by>=1",
-                        "match": true,
-                        "subconditions": []
-                    }
-                ]
+                "message": "The merge conditions cannot be satisfied: the checks did not pass within the checks timeout of 30 minutes"
             }
         },
         "title": "Removed from the merge queue",
