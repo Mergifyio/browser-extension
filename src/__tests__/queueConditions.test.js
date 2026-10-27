@@ -1637,9 +1637,21 @@ describe("queue states in the merge-box row", () => {
         QUEUE_STATE_FIXTURES.find((f) => f.name === name).payload;
 
     test("removed on its conditions: the tree unfolded, the failed check marked", async () => {
-        const section = await rowFor(
-            removal("removed on failed checks, with the engine's reason"),
-        );
+        const payload = removal("removed when its conditions no longer match");
+        const section = await rowFor({
+            ...payload,
+            dequeue_reason: {
+                ...payload.dequeue_reason,
+                checks: ["ci-gate"],
+                conditions: [
+                    {
+                        description: "check-success=ci-gate",
+                        match: false,
+                        subconditions: [],
+                    },
+                ],
+            },
+        });
 
         const body = section.querySelector("[data-mergify-conditions-body]");
         expect(body.hidden).toBe(false);
@@ -1660,6 +1672,19 @@ describe("queue states in the merge-box row", () => {
                     .zIndex,
             ),
         );
+    });
+
+    test.each([
+        ["removed on failed checks, with the engine's reason", true],
+        ["removed on a checks timeout", false],
+    ])("%s: the checks in the sentence, no tree", async (name, namesChecks) => {
+        const section = await rowFor(removal(name));
+
+        const summary = look(section).summary;
+        expect(summary.includes(": ci-gate · activity log")).toBe(namesChecks);
+        expect(
+            section.querySelector("[data-mergify-conditions-body]"),
+        ).toBeNull();
     });
 
     test("the engine's sentence keeps its code spans as code", async () => {
@@ -1692,8 +1717,9 @@ describe("queue states in the merge-box row", () => {
             },
         });
 
+        // No tree to mark the failed check in: the sentence names it.
         expect(look(section).summary).toMatch(
-            /^The merge conditions cannot be satisfied due to failing checks · activity log/,
+            /^The merge conditions cannot be satisfied due to failing checks: ci-gate · activity log/,
         );
         expect(
             section.querySelector("[data-mergify-conditions-body]"),
