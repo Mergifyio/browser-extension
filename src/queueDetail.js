@@ -40,6 +40,19 @@ function _pulls(v) {
     return pulls.length > 0 ? pulls : null;
 }
 
+// A tree of condition nodes, every node an object with a description, or
+// null: a malformed one must not keep the row from drawing its reason.
+function _conditionTree(v) {
+    const valid = (node) =>
+        Boolean(node) &&
+        typeof node === "object" &&
+        typeof node.description === "string" &&
+        (node.subconditions === undefined ||
+            (Array.isArray(node.subconditions) &&
+                node.subconditions.every(valid)));
+    return Array.isArray(v) && v.length > 0 && v.every(valid) ? v : null;
+}
+
 // The sanitized optional fields of a payload; null when it carries none.
 export function readQueueDetail(payload) {
     if (!payload || typeof payload !== "object") return null;
@@ -79,6 +92,10 @@ export function readQueueDetail(payload) {
                   label: _str(reason.label),
                   by: _str(reason.by),
                   checks: _names(reason.checks),
+                  // The engine's own sentence, and the conditions as they
+                  // stood when it left (nodes of required_conditions).
+                  message: _str(reason.message),
+                  conditions: _conditionTree(reason.conditions),
               }
             : null,
         // When the pull request left the queue, merged or removed.

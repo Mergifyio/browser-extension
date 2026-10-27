@@ -341,5 +341,148 @@
         },
         "title": "Removed from the merge queue",
         "summary": "pull request manually dequeued by @octocat · activity log"
+    },
+    {
+        "name": "removed on failed checks, with the engine's reason",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate"],
+                "message": "The merge conditions cannot be satisfied due to failing checks",
+                "conditions": [
+                    {
+                        "description": "check-success=ci-gate",
+                        "match": false,
+                        "subconditions": []
+                    },
+                    {
+                        "description": "#approved-reviews-by>=1",
+                        "match": true,
+                        "subconditions": []
+                    }
+                ]
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "The merge conditions cannot be satisfied due to failing checks · activity log"
+    },
+    {
+        "name": "removed when its conditions no longer match",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "PR_DEQUEUED",
+                "label": "pull request dequeued",
+                "message": "Merge conditions no longer match",
+                "conditions": [
+                    {
+                        "description": "#approved-reviews-by>=2",
+                        "match": false,
+                        "subconditions": []
+                    },
+                    {
+                        "description": "label=ready-to-merge",
+                        "match": false,
+                        "subconditions": []
+                    },
+                    {
+                        "description": "check-success=ci",
+                        "match": true,
+                        "subconditions": []
+                    }
+                ]
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "Merge conditions no longer match · activity log"
+    },
+    {
+        "name": "removed by hand, with the engine's reason",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "PR_MANUALLY_DEQUEUED",
+                "label": "pull request manually dequeued",
+                "by": "octocat",
+                "message": "Pull request #42 has been dequeued by @octocat with a `dequeue` command"
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "Pull request #42 has been dequeued by @octocat with a dequeue command · activity log"
+    },
+    {
+        "name": "removed on a checks timeout",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "CHECKS_TIMEOUT",
+                "label": "checks timeout",
+                "message": "The merge conditions cannot be satisfied: the checks did not pass within the checks timeout of 30 minutes",
+                "conditions": [
+                    {
+                        "description": "check-success=ci-gate",
+                        "match": false,
+                        "subconditions": []
+                    },
+                    {
+                        "description": "#approved-reviews-by>=1",
+                        "match": true,
+                        "subconditions": []
+                    }
+                ]
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "The merge conditions cannot be satisfied: the checks did not pass within the checks timeout of 30 minutes · activity log"
+    },
+    {
+        "name": "removed on a conflict with the base branch",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "CONFLICT_WITH_BASE_BRANCH",
+                "label": "conflict with base branch",
+                "message": "The pull request conflicts with the base branch"
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "The pull request conflicts with the base branch · activity log"
     }
 ]
