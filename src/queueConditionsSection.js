@@ -163,21 +163,31 @@ function _view(model) {
         };
     }
     if (queue.state === "dequeued") {
-        // Why, when the payload says, and the activity log either way.
-        const reason = dequeueReasonText(queue.detail ?? null);
+        // Why: the engine's sentence when the payload carries it, its label
+        // otherwise; the activity log either way.
+        const detail = queue.detail ?? null;
+        const message = detail?.dequeueReason?.message ?? null;
+        const reason = message ? { code: message } : dequeueReasonText(detail);
         const log = (prefix, text, suffix) => ({
             prefix,
             text,
             suffix,
             href: queue.activityLogUrl ?? null,
         });
+        const conditions = _removalConditions(detail);
         return {
             state: "dequeued",
             label: "Merge queue",
+            // The engine's sentence can be long: it wraps rather than hide
+            // the activity log behind an ellipsis.
+            wraps: true,
             summary: reason
                 ? [reason, log("", "activity log", ""), _TIMES]
                 : [log("Its ", "activity log", " says why"), _TIMES],
-            body: null,
+            body: conditions
+                ? () =>
+                      buildQueueConditionsTree(conditions) ?? _detailsOnly(null)
+                : null,
         };
     }
     // What the queue is doing, when the payload says more than its state.
@@ -209,6 +219,19 @@ function _view(model) {
             ? () => _queueBody(queue, unmet ? conditions : null)
             : null,
     };
+}
+
+// The conditions a removed pull request left on, as the tree draws them: the
+// checks it failed on marked failed. They ran on the queue's draft pull
+// request, so GitHub's checks of this one do not show them.
+function _removalConditions(detail) {
+    const reason = detail?.dequeueReason;
+    const entry = parseRequiredConditions(reason?.conditions ?? null);
+    if (!entry) return null;
+    const checkStates = Object.fromEntries(
+        (reason.checks ?? []).map((name) => [name, "failed"]),
+    );
+    return { met: false, entry, runUrl: null, checkStates };
 }
 
 // Where the queued-at and estimated-merge times go: the caller fills it, and
@@ -248,13 +271,33 @@ function _linkPart({ prefix, text, suffix, href }) {
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.setAttribute("data-mergify-activity-log", "");
-        link.style.color = "var(--fgColor-accent, #0969da)";
+        // Above the transparent button that folds the row, which covers the
+        // whole header: a click on the link opens the log.
+        link.style.cssText =
+            "color:var(--fgColor-accent, #0969da);position:relative;z-index:2;";
         link.textContent = text;
         span.appendChild(link);
     } else {
         span.append(text);
     }
     if (suffix) span.append(suffix);
+    return span;
+}
+
+// The engine's plain sentence keeps its code spans ("a `dequeue` command"):
+// drawn as GitHub draws inline code, never as markup.
+function _withCodeSpans(sentence) {
+    const span = document.createElement("span");
+    sentence.split("`").forEach((piece, i) => {
+        if (!piece) return;
+        if (i % 2 === 0) {
+            span.append(piece);
+            return;
+        }
+        const code = document.createElement("code");
+        code.textContent = piece;
+        span.appendChild(code);
+    });
     return span;
 }
 
@@ -275,6 +318,8 @@ function _octicon(name) {
 // Whether the row opens unfolded: only when no rule can match, the case the
 // author has to act on. A click overrides it for this pull request only.
 export function sectionStartsExpanded(model) {
+    if (model?.queue?.state === "dequeued")
+        return Boolean(model.queue.detail?.dequeueReason?.conditions);
     return model?.conditions
         ? conditionsVerdict(model.conditions)?.state === "blocked"
         : false;
@@ -331,8 +376,9 @@ export function buildQueueSection(
     const subtitle = document.createElement("p");
     subtitle.className = "fgColor-muted mb-0";
     subtitle.setAttribute("data-mergify-conditions-summary", "");
-    subtitle.style.cssText =
-        "font-size:14px;line-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+    subtitle.style.cssText = view.wraps
+        ? "font-size:14px;line-height:21px;overflow-wrap:anywhere;"
+        : "font-size:14px;line-height:21px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
     const parts = [];
     for (const part of view.summary) {
         if (part === _TIMES) {
@@ -342,6 +388,8 @@ export function buildQueueSection(
             span.setAttribute("data-mergify-queue-times", "");
             span.append(...nodes);
             parts.push(span);
+        } else if (typeof part === "object" && part?.code !== undefined) {
+            parts.push(_withCodeSpans(part.code));
         } else if (typeof part === "object" && part) {
             parts.push(_linkPart(part));
         } else if (part) {

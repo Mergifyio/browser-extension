@@ -1633,6 +1633,91 @@ describe("queue states in the merge-box row", () => {
         },
     );
 
+    const removal = (name) =>
+        QUEUE_STATE_FIXTURES.find((f) => f.name === name).payload;
+
+    test("removed on its conditions: the tree unfolded, the failed check marked", async () => {
+        const section = await rowFor(
+            removal("removed on failed checks, with the engine's reason"),
+        );
+
+        const body = section.querySelector("[data-mergify-conditions-body]");
+        expect(body.hidden).toBe(false);
+        expect(
+            section
+                .querySelector("[data-mergify-conditions-toggle]")
+                .getAttribute("aria-expanded"),
+        ).toBe("true");
+        // ci-gate ran on the queue's draft: the mark comes from the payload.
+        expect(treeRows(body)).toContain("leaf failed CI · ci-gate");
+        // The fold's button covers the header: the link sits above it, so a
+        // click opens the log rather than folding the row.
+        const link = section.querySelector("[data-mergify-activity-log]");
+        expect(link.style.position).toBe("relative");
+        expect(Number(link.style.zIndex)).toBeGreaterThan(
+            Number(
+                section.querySelector("[data-mergify-conditions-toggle]").style
+                    .zIndex,
+            ),
+        );
+    });
+
+    test("the engine's sentence keeps its code spans as code", async () => {
+        const section = await rowFor(
+            removal("removed by hand, with the engine's reason"),
+        );
+
+        const summary = section.querySelector(
+            "[data-mergify-conditions-summary]",
+        );
+        expect(summary.querySelector("code").textContent).toBe("dequeue");
+        // Nothing to unfold: a removal by hand carries no conditions.
+        expect(
+            section.querySelector("[data-mergify-conditions-body]"),
+        ).toBeNull();
+    });
+
+    test("malformed conditions draw the reason without a tree", async () => {
+        const payload = removal(
+            "removed on failed checks, with the engine's reason",
+        );
+        const section = await rowFor({
+            ...payload,
+            dequeue_reason: {
+                ...payload.dequeue_reason,
+                conditions: [
+                    null,
+                    { description: "x", match: false, subconditions: [null] },
+                ],
+            },
+        });
+
+        expect(look(section).summary).toMatch(
+            /^The merge conditions cannot be satisfied due to failing checks · activity log/,
+        );
+        expect(
+            section.querySelector("[data-mergify-conditions-body]"),
+        ).toBeNull();
+    });
+
+    test("a removal on a conflict says why and has nothing to unfold", async () => {
+        const section = await rowFor(
+            removal("removed on a conflict with the base branch"),
+        );
+
+        expect(look(section).summary).toMatch(
+            /^The pull request conflicts with the base branch · activity log/,
+        );
+        // Long or not, the sentence wraps: the activity log is never cut off.
+        expect(
+            section.querySelector("[data-mergify-conditions-summary]").style
+                .whiteSpace,
+        ).toBe("");
+        expect(
+            section.querySelector("[data-mergify-conditions-body]"),
+        ).toBeNull();
+    });
+
     test("optional fields of the wrong shape draw the state alone", async () => {
         const section = await rowFor({
             ...QUEUED,
