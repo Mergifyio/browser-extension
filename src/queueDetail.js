@@ -64,7 +64,6 @@ export function readQueueDetail(payload) {
     const reason = _obj(payload.dequeue_reason);
     const detail = {
         step: STEPS.has(payload.step) ? payload.step : null,
-        position: _int(payload.position),
         batch:
             _int(batch.size) && _int(batch.target)
                 ? {
@@ -124,10 +123,6 @@ export function describeQueueStep(state, detail) {
     if (!detail) return null;
     const step = state === "bisecting" ? "bisecting" : detail.step;
     const notes = [];
-    const position =
-        detail.position && detail.position > 1
-            ? `#${detail.position} in the queue`
-            : null;
     switch (step) {
         case "waiting_for_batch": {
             const b = detail.batch;
@@ -140,7 +135,7 @@ export function describeQueueStep(state, detail) {
             return {
                 title: "Preparing checks",
                 icon: "git-merge-queue",
-                notes: position ? [position] : [],
+                notes: [],
             };
         case "waiting_for_checks_slot":
             return {
@@ -152,7 +147,7 @@ export function describeQueueStep(state, detail) {
             return {
                 title: "Waiting for the batches ahead",
                 icon: "clock",
-                notes: position ? [position] : [],
+                notes: [],
             };
         case "waiting_for_schedule":
             return {

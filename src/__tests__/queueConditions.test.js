@@ -1627,9 +1627,25 @@ describe("queue states in the merge-box row", () => {
             expect(look(section).title).toBe(fixture.title);
             expect(look(section).summary).toMatch(
                 new RegExp(
-                    `^${escapeRegExp(expected)}( · (queued|removed) .+)?$`,
+                    expected
+                        ? `^${escapeRegExp(expected)}( · (queued|removed) .+)?$`
+                        : "^(queued|removed) .+$",
                 ),
             );
+        },
+    );
+
+    // The engine is dropping `position` from its payload (MRGFY-11284); one
+    // from an engine that still sends it is ignored rather than drawn.
+    test.each(["preparing checks", "waiting for the batches ahead"])(
+        "a position in the payload is not drawn: %s",
+        async (name) => {
+            const payload = QUEUE_STATE_FIXTURES.find(
+                (f) => f.name === name,
+            ).payload;
+            const section = await rowFor({ ...payload, position: 3 });
+
+            expect(look(section).summary).toMatch(/^queued .+$/);
         },
     );
 
@@ -1748,7 +1764,6 @@ describe("queue states in the merge-box row", () => {
         const section = await rowFor({
             ...QUEUED,
             step: "teleporting",
-            position: "3",
             batch: { size: "1", target: 2 },
             checks: [],
             freeze: { name: "" },
