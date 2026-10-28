@@ -30,11 +30,10 @@
             "estimated_time_of_merge": null,
             "speculative_check_pr": null,
             "required_conditions": [],
-            "step": "preparing",
-            "position": 3
+            "step": "preparing"
         },
         "title": "Preparing checks",
-        "summary": "#3 in the queue"
+        "summary": ""
     },
     {
         "name": "waiting for a checks slot",
@@ -99,11 +98,10 @@
                     "subconditions": []
                 }
             ],
-            "step": "waiting_for_previous_batches",
-            "position": 2
+            "step": "waiting_for_previous_batches"
         },
         "title": "Waiting for the batches ahead",
-        "summary": "#2 in the queue"
+        "summary": ""
     },
     {
         "name": "waiting for the merge schedule",
