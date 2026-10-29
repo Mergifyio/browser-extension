@@ -222,8 +222,18 @@ let _timelineObserver = null;
 let _inPayloadMode = false;
 // The comment the current payload was read from, while in payload mode. The
 // engine edits one status comment in place for a whole queue session: only
-// that comment losing its payload ends it.
+// that comment losing its payload, or leaving the page, ends it.
 let _payloadCommentId = null;
+
+// GitHub swaps the next pull request in without a reload (the next one of a
+// stack, say), after the URL has changed: the payload read on the URL change
+// can be the last pull request's, whose comment the new page does not have.
+function _payloadCommentLeftThePage() {
+    return (
+        _payloadCommentId != null &&
+        !document.getElementById(`issuecomment-${_payloadCommentId}`)
+    );
+}
 
 // Fallback-side state (preserved from previous implementation).
 let _fallbackTimer = null;
@@ -311,6 +321,10 @@ async function _resolveAndEmit() {
         return;
     if (!_onChange) return;
 
+    if (!result?.payload && _inPayloadMode && _payloadCommentLeftThePage()) {
+        _leavePayloadMode();
+        return;
+    }
     if (!result) {
         debug("mqPayload: resolve returned null (no Mergify comment found)");
         return;
@@ -338,10 +352,14 @@ async function _resolveAndEmit() {
         // The engine rewrites the status comment without its payload when the
         // queue command is cancelled (a push, a dequeue, the pull request
         // closed): the payload's "waiting" no longer holds, the check does.
-        _inPayloadMode = false;
-        _payloadCommentId = null;
-        _startFallback();
+        _leavePayloadMode();
     }
+}
+
+function _leavePayloadMode() {
+    _inPayloadMode = false;
+    _payloadCommentId = null;
+    _startFallback();
 }
 
 function _schedulePayloadPoll() {
@@ -367,8 +385,8 @@ function _installTimelineObserver() {
         // Once we're in payload mode, the periodic poll (QUEUE_POLL_INTERVAL)
         // owns freshness — refetching edit_form on every page mutation would
         // hammer GitHub. The engine edits the same status comment in place;
-        // there's no second one to catch.
-        if (_inPayloadMode) return;
+        // there's no second one to catch, unless the page itself was swapped.
+        if (_inPayloadMode && !_payloadCommentLeftThePage()) return;
         // Coalesce bursts of mutations (GitHub re-renders heavily on PR
         // pages) into a single resolve attempt at the tail.
         if (_timelineObserverDebounce != null) {
