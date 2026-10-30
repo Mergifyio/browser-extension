@@ -17,6 +17,27 @@ const READY_CHECK_TITLE = "Merge queue is ready";
 // Both writers of the check title its waiting state this way: "… to match"
 // for the engine, bare for the queue before the pull request enters.
 const WAITING_CHECK_TITLE = "Waiting for queue conditions";
+// What the engine titles the check of a pull request whose base branch no
+// queue rule targets: the queue does not handle it at all.
+const UNTARGETED_BASE_CHECK_TITLE = "No queue rule targets the base branch";
+
+function _checkTitles(doc) {
+    return Array.from(doc.querySelectorAll("h1, h2, h3")).map((h) =>
+        h.textContent.trim(),
+    );
+}
+
+// Whether the page is that check: unlike a check about something else, it
+// says the pull request has no entry conditions to show.
+export function isUntargetedBaseCheckPage(runHtml) {
+    if (
+        typeof runHtml !== "string" ||
+        !runHtml.includes(UNTARGETED_BASE_CHECK_TITLE)
+    )
+        return false;
+    const doc = new DOMParser().parseFromString(runHtml, "text/html");
+    return _checkTitles(doc).includes(UNTARGETED_BASE_CHECK_TITLE);
+}
 
 // Returns { met, entry, runUrl } when the page is about the queue entry
 // conditions, null otherwise. `entry` is the evaluated tree (top-level nodes)
@@ -31,9 +52,7 @@ export function parseQueueConditionsPage(runHtml, runUrl = null) {
     )
         return null;
     const doc = new DOMParser().parseFromString(runHtml, "text/html");
-    const titles = Array.from(doc.querySelectorAll("h1, h2, h3")).map((h) =>
-        h.textContent.trim(),
-    );
+    const titles = _checkTitles(doc);
     const ready = titles.includes(READY_CHECK_TITLE);
     // A dequeued pull request keeps the queue's last check, whose conditions
     // are the ones to MERGE: only a check about getting in is read.
