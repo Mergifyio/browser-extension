@@ -926,6 +926,38 @@ describe("payload mode — the status comment changes under it", () => {
         expect(getCurrent().source).toBe("fallback");
     });
 
+    // GitHub swaps the next pull request in without a reload (the next one of a
+    // stack, say) after the URL changes, so the payload read on the URL change
+    // was the last pull request's.
+    test.each([
+        ["a Mergify comment that is no status report", true],
+        ["no Mergify comment at all", false],
+    ])(
+        "a page swapped in with %s drops the last page's payload",
+        async (_label, mergifyComment) => {
+            const cb = await attachInPayloadMode();
+
+            window.history.pushState({}, "", "/acme/widget/pull/43");
+            document.body.innerHTML = "";
+            if (mergifyComment) {
+                document.body.appendChild(
+                    buildTimelineItem({ bot: true, commentId: "300" }),
+                );
+                comments["300"] = "# Merge Protections\n\n✅ All good";
+            }
+            await flush();
+            await jest.advanceTimersByTimeAsync(1_000);
+            await flush();
+
+            expect(getCurrent()).toEqual({
+                source: "fallback",
+                queued: false,
+                conditions: expect.objectContaining({ met: true }),
+            });
+            expect(cb).toHaveBeenLastCalledWith(getCurrent());
+        },
+    );
+
     test("a later Mergify reply does not hide the status comment's updates", async () => {
         const cb = await attachInPayloadMode();
 
