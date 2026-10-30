@@ -785,6 +785,22 @@ const STATES = [
     { displayName: "unit", state: "FAILURE" },
     { displayName: "ci", state: "IN_PROGRESS" },
 ];
+// The engine's check on a pull request into prod when every queue rule
+// requires base = main: neutral, a title of its own, and no payload, since
+// the queue does not handle the pull request at all.
+const UNTARGETED_PAGE =
+    '<h2 class="f4">No queue rule targets the base branch</h2><div class="markdown-body"><p dir="auto">Every queue rule requires a base branch other than <code>prod</code>, so the merge queue does not handle this pull request.</p></div>';
+// What an older engine wrote on that same pull request.
+const WRONG_BASE_PAGE = checkPage(
+    entry(
+        ["default", "manual", "manual-migrations", "migrations", "urgent"].map(
+            (name) => [
+                `all of [📌 queue conditions of queue rule \`${name}\`]`,
+                "base = main",
+            ],
+        ),
+    ),
+);
 
 describe("merge-box conditions row", () => {
     beforeEach(() => {
@@ -937,6 +953,44 @@ describe("merge-box conditions row", () => {
             "leaf running CI · ci",
             "leaf todo Labeled hotfix",
         ]);
+    });
+
+    test("nothing held up on a pull request no queue rule targets: no row, no note, the plain add button", async () => {
+        const box = mergeBox();
+        box.querySelector('[aria-label="Merging is blocked"]').textContent =
+            "Cannot update this protected ref.";
+        box.appendChild(buildMergifyRow("default"));
+        mockCheckRun(UNTARGETED_PAGE);
+        await fetchQueueState();
+
+        updateAllMergifyRows();
+
+        expect(conditionsSection()).toBeNull();
+        expect(
+            box.querySelector("[data-mergify-manual-merge-note]"),
+        ).toBeNull();
+        const btn = box.querySelector("[data-mergify-queue-btn]");
+        expect(btn.style.backgroundColor).toContain("button-primary");
+        expect(btn.getAttribute("title")).toBe(
+            "Add the pull request to the merge queue",
+        );
+    });
+
+    test("goes once the check says no queue rule targets the base branch", async () => {
+        mergeBox();
+        mockCheckRun(WRONG_BASE_PAGE);
+        await fetchQueueState();
+        updateAllMergifyRows();
+        expect(conditionsSection().querySelector("h3").textContent).toBe(
+            "Queue conditions can't match",
+        );
+
+        // The engine rewrites the check while the page stays open.
+        mockCheckRun(UNTARGETED_PAGE);
+        await fetchQueueState();
+        updateAllMergifyRows();
+
+        expect(conditionsSection()).toBeNull();
     });
 
     test("without a tree on the check, points at the details", async () => {

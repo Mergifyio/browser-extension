@@ -11,6 +11,7 @@ import {
 import { getLogoSvg, parseSvg } from "./logo.js";
 import {
     conditionMark,
+    isUntargetedBaseCheckPage,
     parseQueueConditionsPage,
     readCheckStates,
 } from "./queueConditions.js";
@@ -92,6 +93,10 @@ export let lastKnownQueueState = false;
 // check lists nothing unmet: a pull request that matches its conditions, one
 // the queue already holds, or a page we could not read.
 export let lastKnownQueueConditions = null;
+// Whether that check says no queue rule targets the pull request's base
+// branch: a row drawn from an earlier check goes, where a check about
+// something else keeps it.
+let lastKnownQueueUntargeted = false;
 // Whether the merge-box conditions row is unfolded on THIS pull request. Kept
 // in memory only, so a rebuild of the row keeps it and the next pull request
 // starts at the row's default: persisting it would bring the tree back on
@@ -119,6 +124,7 @@ export const MERGE_BOX_ROW_ATTR = "data-mergify-merge-box-row";
 export function resetQueueState() {
     lastKnownQueueState = false;
     lastKnownQueueConditions = null;
+    lastKnownQueueUntargeted = false;
     conditionsSectionExpanded = null;
     queueJoinRequest = null;
     queueStateInitialized = false;
@@ -143,10 +149,12 @@ export function scheduleQueueStatePoll() {
         if (!isGitHubPullRequestPage()) return;
         const previousState = lastKnownQueueState;
         const previousConditions = lastKnownQueueConditions;
+        const previousUntargeted = lastKnownQueueUntargeted;
         await fetchQueueState();
         if (
             previousState !== lastKnownQueueState ||
-            previousConditions !== lastKnownQueueConditions
+            previousConditions !== lastKnownQueueConditions ||
+            previousUntargeted !== lastKnownQueueUntargeted
         )
             updateAllMergifyRows();
         if (isGitHubPullRequestPage()) scheduleQueueStatePoll();
@@ -324,6 +332,7 @@ export async function fetchQueueState() {
             debug("fetchQueueState: no Mergify Merge Queue check run found");
             lastKnownQueueState = false;
             lastKnownQueueConditions = null;
+            lastKnownQueueUntargeted = false;
             return lastKnownQueueState;
         }
 
@@ -342,6 +351,7 @@ export async function fetchQueueState() {
         const runHtml = await runResponse.text();
         if (window.location.pathname !== urlAtFetch) return lastKnownQueueState;
         lastKnownQueueState = isMergifyQueueCheckQueued(runHtml);
+        lastKnownQueueUntargeted = isUntargetedBaseCheckPage(runHtml);
         const conditions = parseQueueConditionsPage(
             runHtml,
             `/${data.org}/${data.repo}/runs/${match[1]}`,
@@ -1054,6 +1064,7 @@ export function syncQueueConditionsSections() {
 
 function _rowStillApplies(section, pull) {
     return (
+        !lastKnownQueueUntargeted &&
         section.dataset.mergifyPull === pull &&
         isPullRequestOpen() &&
         !isPullRequestDraft() &&
