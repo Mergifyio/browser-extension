@@ -17,7 +17,11 @@ import {
     buildQueueConditionsTree,
     conditionsVerdict,
 } from "./queueConditionsTree.js";
-import { dequeueReasonText, describeQueueStep } from "./queueDetail.js";
+import {
+    dequeueReasonText,
+    describeQueueStep,
+    failingChecksText,
+} from "./queueDetail.js";
 
 export const CONDITIONS_SECTION_ATTR = "data-mergify-conditions-section";
 
@@ -226,12 +230,8 @@ function _view(model) {
 function _removalReason(detail, conditions) {
     const reason = detail?.dequeueReason;
     if (!reason?.message) return dequeueReasonText(detail);
-    const checks = conditions ? null : reason.checks;
-    return {
-        code: checks?.length
-            ? `${reason.message}: ${checks.join(", ")}`
-            : reason.message,
-    };
+    const checks = conditions ? null : failingChecksText(reason);
+    return { code: checks ? `${reason.message}: ${checks}` : reason.message };
 }
 
 // The conditions a removed pull request left on, as the tree draws them: the

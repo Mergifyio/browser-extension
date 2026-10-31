@@ -24,6 +24,7 @@ const STEPS = new Set([
 ]);
 
 const _int = (v) => (Number.isInteger(v) && v > 0 ? v : null);
+const _count = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
 const _str = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const _time = (v) => (_str(v) && !Number.isNaN(Date.parse(v)) ? v : null);
 const _obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
@@ -32,6 +33,16 @@ function _names(v) {
     if (!Array.isArray(v)) return null;
     const names = v.map(_str).filter(Boolean);
     return names.length > 0 ? names : null;
+}
+
+// How many failing checks `checks_count` says there are beyond the names
+// listed: the list can be capped. 0 when the count is missing, malformed or
+// no more than the names, as from an engine that lists every one.
+function _moreChecks(names, count) {
+    const total = _count(count);
+    return names && total !== null && total > names.length
+        ? total - names.length
+        : 0;
 }
 
 function _pulls(v) {
@@ -62,6 +73,7 @@ export function readQueueDetail(payload) {
     const freeze = _obj(payload.freeze);
     const pause = _obj(payload.pause);
     const reason = _obj(payload.dequeue_reason);
+    const failedChecks = _names(reason.checks);
     const detail = {
         step: STEPS.has(payload.step) ? payload.step : null,
         batch:
@@ -90,7 +102,8 @@ export function readQueueDetail(payload) {
             ? {
                   label: _str(reason.label),
                   by: _str(reason.by),
-                  checks: _names(reason.checks),
+                  checks: failedChecks,
+                  moreChecks: _moreChecks(failedChecks, reason.checks_count),
                   // The engine's own sentence, and the conditions as they
                   // stood when it left (nodes of required_conditions).
                   message: _str(reason.message),
@@ -231,6 +244,14 @@ export function describeQueueStep(state, detail) {
     return null;
 }
 
+// The failing checks of a removal, in words: "ci-gate, lint and 3 more".
+// Null when it names none.
+export function failingChecksText(reason) {
+    if (!reason?.checks) return null;
+    const names = reason.checks.join(", ");
+    return reason.moreChecks ? `${names} and ${reason.moreChecks} more` : names;
+}
+
 // Why the pull request was removed, in words: "checks failed on ci-gate",
 // "pull request manually dequeued by @octocat". Null when the payload says
 // nothing.
@@ -238,7 +259,8 @@ export function dequeueReasonText(detail) {
     const reason = detail?.dequeueReason;
     if (!reason) return null;
     let text = reason.label;
-    if (reason.checks) text += ` on ${reason.checks.join(", ")}`;
+    const checks = failingChecksText(reason);
+    if (checks) text += ` on ${checks}`;
     if (reason.by) text += ` by @${reason.by}`;
     return text;
 }
