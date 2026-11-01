@@ -321,6 +321,90 @@
         "summary": "checks failed on ci-gate · activity log"
     },
     {
+        "name": "dequeued on failed checks, every one named",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate", "lint"],
+                "checks_count": 2
+            },
+            "left_at": "2026-10-16T12:50:00+00:00"
+        },
+        "title": "Removed from the merge queue",
+        "summary": "checks failed on ci-gate, lint · activity log"
+    },
+    {
+        "name": "dequeued on failed checks, more than it names",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate", "lint"],
+                "checks_count": 5
+            },
+            "left_at": "2026-10-16T12:50:00+00:00"
+        },
+        "title": "Removed from the merge queue",
+        "summary": "checks failed on ci-gate, lint and 3 more · activity log"
+    },
+    {
+        "name": "dequeued on failed checks, a count below the names",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate", "lint"],
+                "checks_count": 1
+            },
+            "left_at": "2026-10-16T12:50:00+00:00"
+        },
+        "title": "Removed from the merge queue",
+        "summary": "checks failed on ci-gate, lint · activity log"
+    },
+    {
+        "name": "dequeued on failed checks, a count that is not a number",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate", "lint"],
+                "checks_count": "5"
+            },
+            "left_at": "2026-10-16T12:50:00+00:00"
+        },
+        "title": "Removed from the merge queue",
+        "summary": "checks failed on ci-gate, lint · activity log"
+    },
+    {
         "name": "dequeued by hand",
         "payload": {
             "version": 1,
@@ -360,6 +444,28 @@
         },
         "title": "Removed from the merge queue",
         "summary": "The merge conditions cannot be satisfied due to failing checks: ci-gate · activity log"
+    },
+    {
+        "name": "removed on failed checks, more than it names, with the engine's reason",
+        "payload": {
+            "version": 1,
+            "state": "dequeued",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": null,
+            "required_conditions": [],
+            "left_at": "2026-10-16T12:50:00+00:00",
+            "dequeue_reason": {
+                "code": "CHECKS_FAILED",
+                "label": "checks failed",
+                "checks": ["ci-gate", "lint"],
+                "checks_count": 5,
+                "message": "The merge conditions cannot be satisfied due to failing checks"
+            }
+        },
+        "title": "Removed from the merge queue",
+        "summary": "The merge conditions cannot be satisfied due to failing checks: ci-gate, lint and 3 more · activity log"
     },
     {
         "name": "removed when its conditions no longer match",
