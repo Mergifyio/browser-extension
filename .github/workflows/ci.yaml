@@ -6,6 +6,11 @@ on:
       - main
       - devs/**
 
+# Every job only reads the repository, whatever the repository's default
+# token permissions are.
+permissions:
+  contents: read
+
 concurrency:
   # yamllint disable-line rule:line-length
   group: "${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
@@ -16,14 +21,27 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Download actionlint
-        id: get_actionlint
-        # yamllint disable-line rule:line-length
-        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
+      # The release archive at a fixed version, checked against the SHA-256
+      # published in that release's checksums file, instead of an installer
+      # script fetched from actionlint's main branch. Bump both together.
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" actionlint
+          rm "$archive"
 
       - name: Check workflow files
-        run: ${{ steps.get_actionlint.outputs.executable }} -color
+        run: ./actionlint -color
 
   test:
     timeout-minutes: 20
@@ -31,6 +49,8 @@ jobs:
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
