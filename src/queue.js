@@ -301,6 +301,25 @@ export function isPullRequestQueued() {
     return lastKnownQueueState;
 }
 
+// The "Mergify Merge Queue" check run's link on the pull request's /checks
+// page reads `href="…/checks?check_run_id=<id>" tabindex="-1"><span>Mergify
+// Merge Queue</span>`. Every repetition is bounded and the pieces can't
+// overlap: the id stops at the first non-digit (and a check run id fits in
+// 20 digits), and what sits between it and the tag's `>` is at most 1000
+// characters with no `<` or `>`, so the match can't run past the tag it
+// started in. The unbounded `(\d+)[^>]*>` this replaces backtracked
+// quadratically on a long digit run with no `>` after it, freezing the tab
+// for seconds on text a contributor can put on the page.
+const MERGE_QUEUE_CHECK_RUN_RE =
+    /check_run_id=(\d{1,20})(?!\d)[^<>]{0,1000}>\s*<span>Mergify Merge Queue/;
+
+// The id of the "Mergify Merge Queue" check run in the /checks page HTML,
+// or null when the pull request has none.
+export function findMergeQueueCheckRunId(checksHtml) {
+    const match = checksHtml.match(MERGE_QUEUE_CHECK_RUN_RE);
+    return match ? match[1] : null;
+}
+
 export async function fetchQueueState() {
     const urlAtFetch = window.location.pathname;
     const data = getPullRequestData();
@@ -325,10 +344,8 @@ export async function fetchQueueState() {
             checksHtml.length,
             "chars",
         );
-        const match = checksHtml.match(
-            /check_run_id=(\d+)[^>]*>\s*<span>Mergify Merge Queue/,
-        );
-        if (!match) {
+        const checkRunId = findMergeQueueCheckRunId(checksHtml);
+        if (!checkRunId) {
             debug("fetchQueueState: no Mergify Merge Queue check run found");
             lastKnownQueueState = false;
             lastKnownQueueConditions = null;
@@ -336,11 +353,11 @@ export async function fetchQueueState() {
             return lastKnownQueueState;
         }
 
-        debug("fetchQueueState: found check_run_id", match[1]);
+        debug("fetchQueueState: found check_run_id", checkRunId);
 
         // Step 2: Fetch the specific check run page to get the description
         const runResponse = await fetch(
-            `/${data.org}/${data.repo}/runs/${match[1]}`,
+            `/${data.org}/${data.repo}/runs/${checkRunId}`,
         );
         if (window.location.pathname !== urlAtFetch) return lastKnownQueueState;
         if (!runResponse.ok) {
@@ -354,7 +371,7 @@ export async function fetchQueueState() {
         lastKnownQueueUntargeted = isUntargetedBaseCheckPage(runHtml);
         const conditions = parseQueueConditionsPage(
             runHtml,
-            `/${data.org}/${data.repo}/runs/${match[1]}`,
+            `/${data.org}/${data.repo}/runs/${checkRunId}`,
         );
         if (conditions?.entry && !lastKnownQueueState) {
             conditions.checkStates = await _fetchCheckStates(data);
