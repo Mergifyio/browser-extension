@@ -117,9 +117,25 @@ jobs:
           # previous tag.
           fetch-depth: 0
           fetch-tags: true
+          # The job holds `contents: write`; don't leave that token in
+          # .git/config for `npm ci` and `make` to read. `gh release
+          # create` gets its own through GH_TOKEN.
+          persist-credentials: false
 
+      # Same Node as the CI `test` job, so the release builds with the
+      # toolchain the pull requests were tested with.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: '23'
+
+      # `npm ci` installs esbuild at the version and integrity hash that
+      # package-lock.json pins, and runs before the certificate import so
+      # no install script ever runs next to the unlocked keychain. The
+      # Makefile refuses to build without node_modules/.bin/esbuild
+      # rather than letting `npx` fetch an unpinned one.
       - name: Install dependencies
         run: |
+          npm ci
           brew install gnu-sed
 
           sudo xcode-select -s /Applications/Xcode.app
@@ -183,6 +199,16 @@ jobs:
           echo
           echo "Draft release created: ${url}"
           echo "Review the draft and click Publish in the Releases UI to ship."
+
+      # Remove the decoded certificate and the build keychain whatever
+      # happened above, so nothing that runs later on this runner finds
+      # the signing identity.
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -f certificate.p12
+          security delete-keychain build.keychain 2>/dev/null || true
 
   # ---------------- Stage 2: assert on publish ----------------
 

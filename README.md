@@ -10,6 +10,12 @@ For Firefox, go to [Firefox web store](https://addons.mozilla.org/fr/firefox/add
 
 ## Build
 
+Install the locked dependencies first: `make` uses the esbuild from
+`node_modules` and stops if it is missing.
+```
+$ npm ci
+```
+
 To prepare the zip to upload to Google Web Store Developer Dashboard
 ```
 $ make
@@ -18,5 +24,6 @@ $ make
 
 To build the zip for an onpremise installation:
 ```
+$ npm ci
 $ make GITHUB_DOMAIN=ghes.company.com MERGIFY_DOMAIN=mergify.company.com
 ```
