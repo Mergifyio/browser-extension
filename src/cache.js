@@ -80,50 +80,72 @@ export function removeLegacyPrStatusEntries() {
     }
 }
 
+// Where the revision cache below used to live: github.com's localStorage,
+// one entry per pull request, keyed `<prefix>_<org>_<repo>_<num>`. There it
+// was readable by any script of the origin and outlived a logout or an
+// account switch in the browser profile, private repositories' SHAs and
+// revision reasons included. Swept on every load so a tab still running an
+// older version leaves nothing behind once it reloads; losing an entry only
+// costs one refetch of the revision comment.
+//
+// Matched on the whole key shape rather than the prefix: `_stack_ctx_` is
+// MergifyCache's own prefix plus a suffix, which an org named `stack` with a
+// repository named `ctx_…` would also produce. The trailing `_<num>` after
+// two more segments is what such a MergifyCache key almost never has.
+const LEGACY_STACK_CONTEXT_KEY_RE =
+    /^mergify_browser_extension_stack_ctx_.+_.+_\d+$/;
+
+export function removeLegacyStackContextEntries() {
+    try {
+        const stale = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && LEGACY_STACK_CONTEXT_KEY_RE.test(k)) stale.push(k);
+        }
+        for (const k of stale) localStorage.removeItem(k);
+    } catch (e) {
+        console.error("removeLegacyStackContextEntries failed:", e);
+    }
+}
+
+// The revision data of each pull request whose Stacks panel this page drew,
+// so navigating back to one paints the panel before its comment is refetched.
+// It lives in the content script's memory for the life of the page: nothing
+// reaches github.com's storage, and a reload, a logout or an account switch
+// (each a full page load) starts empty.
 export class StackContextCache {
     constructor(expirationMs = 60 * 60 * 1000) {
-        this.PREFIX = "mergify_browser_extension_stack_ctx";
         this.expirationMs = expirationMs;
+        this.entries = new Map();
     }
 
     key(org, repo, num) {
-        return `${this.PREFIX}_${org}_${repo}_${num}`;
+        return `${org}/${repo}/${num}`;
     }
 
     get(org, repo, num) {
         const k = this.key(org, repo, num);
-        try {
-            const raw = localStorage.getItem(k);
-            if (!raw) return null;
-            const data = JSON.parse(raw);
-            if (Date.now() - data.timestamp > this.expirationMs) {
-                localStorage.removeItem(k);
-                return null;
-            }
-            return { revisionData: data.revisionData ?? null };
-        } catch (e) {
-            console.error("StackContextCache get failed:", e);
+        const entry = this.entries.get(k);
+        if (!entry) return null;
+        if (Date.now() - entry.timestamp > this.expirationMs) {
+            this.entries.delete(k);
             return null;
         }
+        return { revisionData: entry.revisionData };
     }
 
     update(org, repo, num, revisionData) {
-        const k = this.key(org, repo, num);
-        try {
-            localStorage.setItem(
-                k,
-                JSON.stringify({ revisionData, timestamp: Date.now() }),
-            );
-        } catch (e) {
-            console.error("StackContextCache update failed:", e);
-        }
+        this.entries.set(this.key(org, repo, num), {
+            revisionData,
+            timestamp: Date.now(),
+        });
     }
 
     remove(org, repo, num) {
-        try {
-            localStorage.removeItem(this.key(org, repo, num));
-        } catch (e) {
-            console.error("StackContextCache remove failed:", e);
-        }
+        this.entries.delete(this.key(org, repo, num));
+    }
+
+    clear() {
+        this.entries.clear();
     }
 }
