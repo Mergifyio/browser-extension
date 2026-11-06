@@ -2,6 +2,8 @@ const {
     MergifyCache,
     StackContextCache,
     removeLegacyPrStatusEntries,
+    removeLegacyStackContextEntries,
+    _stackContextCache,
     injectRowIntoMergeBox,
     isPullRequestOpen,
     isPullRequestDraft,
@@ -1218,16 +1220,29 @@ describe("StackContextCache", () => {
         expect(cache.get("o", "r", 1)).toBeNull();
     });
 
-    it("returns null on corrupted entry", () => {
+    // Private repositories' SHAs and revision reasons must not outlive the
+    // page in github.com's storage.
+    it("keeps its entries out of localStorage", () => {
         const cache = new StackContextCache();
-        const k = cache.key("o", "r", 1);
-        localStorage.setItem(k, "not-json");
-        const errSpy = jest
-            .spyOn(console, "error")
-            .mockImplementation(() => {});
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
+        expect(cache.get("o", "r", 1)).not.toBeNull();
+        expect(localStorage.length).toBe(0);
+    });
+
+    it("keeps pull requests apart", () => {
+        const cache = new StackContextCache();
+        cache.update("o", "r", 1, { schema_version: 1, pull_number: 1 });
+        cache.update("o", "r", 2, { schema_version: 1, pull_number: 2 });
+        expect(cache.get("o", "r", 1).revisionData.pull_number).toBe(1);
+        expect(cache.get("o", "r", 2).revisionData.pull_number).toBe(2);
+        expect(cache.get("o", "other", 1)).toBeNull();
+    });
+
+    it("clear empties it", () => {
+        const cache = new StackContextCache();
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
+        cache.clear();
         expect(cache.get("o", "r", 1)).toBeNull();
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
     });
 
     it("remove deletes the entry", () => {
@@ -1247,21 +1262,71 @@ describe("StackContextCache", () => {
         expect(cache.get("o", "r", 1)).toBeNull();
     });
 
-    it("reads an entry written before the stack list was removed", () => {
-        // Entries carrying the old { stackData, revisionData } shape outlive
-        // the upgrade in the user's localStorage; only the revision half is
-        // read now, and a stack-only entry degrades to null rather than
-        // throwing on the cache-first render.
-        const cache = new StackContextCache();
-        const k = cache.key("o", "r", 1);
+    it("ignores an entry an earlier version left in localStorage", () => {
         localStorage.setItem(
-            k,
+            "mergify_browser_extension_stack_ctx_o_r_1",
             JSON.stringify({
-                stackData: { schema_version: 1, pulls: [] },
+                revisionData: { schema_version: 1, entries: [] },
                 timestamp: 1000,
             }),
         );
-        expect(cache.get("o", "r", 1)).toEqual({ revisionData: null });
+        expect(new StackContextCache().get("o", "r", 1)).toBeNull();
+    });
+});
+
+describe("removeLegacyStackContextEntries", () => {
+    afterEach(() => {
+        localStorage.clear();
+    });
+
+    // Where the revision cache lived before it moved to memory: entries
+    // written by an earlier version, in either the revision-only or the
+    // older { stackData, revisionData } shape, must not stay behind.
+    it("removes the revision cache entries an earlier version wrote", () => {
+        localStorage.setItem(
+            "mergify_browser_extension_stack_ctx_o_r_1",
+            '{"revisionData":{"schema_version":1,"entries":[]},"timestamp":1}',
+        );
+        localStorage.setItem(
+            "mergify_browser_extension_stack_ctx_my-org_my_repo_12345",
+            '{"stackData":{"schema_version":1,"pulls":[]},"timestamp":1}',
+        );
+        localStorage.setItem("mergify_browser_extension_o_r", "{}");
+        localStorage.setItem(
+            "mergify_browser_extension_pr_status_o_r_1_sha",
+            "{}",
+        );
+        localStorage.setItem("unrelated", "x");
+
+        removeLegacyStackContextEntries();
+
+        expect(
+            localStorage.getItem("mergify_browser_extension_stack_ctx_o_r_1"),
+        ).toBeNull();
+        expect(
+            localStorage.getItem(
+                "mergify_browser_extension_stack_ctx_my-org_my_repo_12345",
+            ),
+        ).toBeNull();
+        expect(
+            localStorage.getItem("mergify_browser_extension_o_r"),
+        ).not.toBeNull();
+        expect(
+            localStorage.getItem(
+                "mergify_browser_extension_pr_status_o_r_1_sha",
+            ),
+        ).not.toBeNull();
+        expect(localStorage.getItem("unrelated")).not.toBeNull();
+    });
+
+    // MergifyCache keys are `mergify_browser_extension_<org>_<repo>`, so the
+    // org `stack` with a repository `ctx_tools` produces one that a prefix
+    // match would claim.
+    it("keeps the repo-enabled entry of an org/repo that shares the prefix", () => {
+        const collision = "mergify_browser_extension_stack_ctx_tools";
+        localStorage.setItem(collision, '{"isMergifyEnabled":true}');
+        removeLegacyStackContextEntries();
+        expect(localStorage.getItem(collision)).not.toBeNull();
     });
 });
 
@@ -1680,6 +1745,7 @@ describe("renderMergifyContext", () => {
         History.prototype.pushState.call(window.history, {}, "", "/");
         localStorage.clear();
         clearCommentsCache();
+        _stackContextCache.clear();
     });
 
     afterEach(() => {
@@ -1687,6 +1753,7 @@ describe("renderMergifyContext", () => {
         jest.restoreAllMocks();
         localStorage.clear();
         clearCommentsCache();
+        _stackContextCache.clear();
     });
 
     // The revision-history comment mergify-cli posts: a rendered table plus
@@ -1922,6 +1989,38 @@ describe("renderMergifyContext", () => {
         });
         await renderMergifyContext({ org: "o", repo: "r", number: 11335 });
         expect(document.querySelector("#mergify-context")).not.toBeNull();
+    });
+
+    // Coming back to a pull request already drawn in this page paints the
+    // panel from memory while the revision comment is fetched again, and
+    // none of that revision data ever lands in github.com's localStorage.
+    it("paints the panel from memory before the refetch settles, storing nothing", async () => {
+        mockFetch({ commentBodies: [revisionBody(122)] });
+        await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+        expect(localStorage.length).toBe(0);
+
+        document.querySelector("#mergify-context").remove();
+        clearCommentsCache();
+        let resolveEditForm;
+        const realFetch = global.fetch;
+        global.fetch = jest.fn(
+            (url) =>
+                new Promise((res) => {
+                    resolveEditForm = () => res(realFetch(url));
+                }),
+        );
+        const renderPromise = renderMergifyContext({
+            org: "o",
+            repo: "r",
+            number: 122,
+        });
+        // Drawn before the edit_form fetch has answered.
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+        resolveEditForm();
+        await renderPromise;
+        expect(document.querySelector("#mergify-context")).not.toBeNull();
+        expect(localStorage.length).toBe(0);
     });
 
     it("removes a stale panel when bodies become empty", async () => {
