@@ -13,8 +13,8 @@
 // it parses (a cleared body does not free it), so memory grows with the number
 // of parses, not with the number of pages held at once. Re-injecting a ~500KB
 // page for each assertion below costs ~22MB that is never returned, which
-// overruns the CI worker's heap as eras accumulate. Only the merge-box test
-// mutates the DOM, and it reverts itself in afterEach.
+// overruns the CI worker's heap as eras accumulate. Only the merge-box and
+// command-posting tests mutate the DOM, and both revert what they change.
 const {
     injectEraFixtureInDOM,
     listEraFixtureFiles,
@@ -24,6 +24,7 @@ const {
 const {
     MERGE_BOX_ROW_ATTR,
     deriveQueueButtonState,
+    findCommentComposer,
     getBaseRef,
     injectRowIntoMergeBox,
     isMergeQueueBatchPr,
@@ -32,6 +33,7 @@ const {
     isPullRequestDraft,
     isPullRequestOpen,
     isPullRequestQueued,
+    postCommand,
     readPrStatusFromDocument,
     resetQueueState,
     wasMergedByMergify,
@@ -154,6 +156,52 @@ describe.each(listGitHubDomEras())("%s", (era) => {
         // Mergify command would invalidate the running batch.
         it("derives the queue button state the page calls for", () => {
             expect(deriveQueueButtonState()).toBe(expected.queueButtonState);
+        });
+
+        // Every command button posts through the page's new-comment composer;
+        // without one, a click silently posts nothing.
+        it("posts a command through the page's comment composer", () => {
+            const composer = findCommentComposer();
+            if (!expected.postsCommand) {
+                expect(composer).toBeNull();
+                expect(postCommand("refresh")).toBe(false);
+                return;
+            }
+            expect(composer).not.toBeNull();
+            const { field, submit } = composer;
+            const recorded = {
+                value: field.value,
+                fieldDisabled: field.getAttribute("disabled"),
+                submitDisabled: submit.getAttribute("disabled"),
+            };
+            const inputs = [];
+            const clicks = [];
+            const onInput = (event) => inputs.push(event.target);
+            // Capture phase, default prevented: jsdom must not submit the
+            // classic form.
+            const onClick = (event) => {
+                clicks.push(event.target);
+                event.preventDefault();
+            };
+            document.addEventListener("input", onInput, true);
+            document.addEventListener("click", onClick, true);
+            try {
+                expect(postCommand("refresh")).toBe(true);
+                expect(field.value).toBe("@mergifyio refresh");
+                expect(inputs).toEqual([field]);
+                expect(clicks).toEqual([submit]);
+            } finally {
+                document.removeEventListener("input", onInput, true);
+                document.removeEventListener("click", onClick, true);
+                field.value = recorded.value;
+                for (const [el, disabled] of [
+                    [field, recorded.fieldDisabled],
+                    [submit, recorded.submitDisabled],
+                ]) {
+                    if (disabled !== null)
+                        el.setAttribute("disabled", disabled);
+                }
+            }
         });
 
         it("injects the merge-box row into the era's anchors, idempotently", () => {

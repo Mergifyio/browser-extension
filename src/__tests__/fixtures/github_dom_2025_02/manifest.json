@@ -13,7 +13,8 @@
             "baseRef": "main",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "draft",
-            "statusCommentId": "2912525941"
+            "statusCommentId": "2912525941",
+            "postsCommand": true
         },
         "github_pr_merged": {
             "path": "/nodejs/node/pull/57792",
@@ -25,7 +26,8 @@
             "baseRef": null,
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "closed",
-            "statusCommentId": null
+            "statusCommentId": null,
+            "postsCommand": true
         },
         "github_pr_no_mergify": {
             "path": "/cypress-io/cypress/pull/32277",
@@ -37,7 +39,8 @@
             "baseRef": "develop",
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
-            "statusCommentId": null
+            "statusCommentId": null,
+            "postsCommand": true
         },
         "github_pr_no_timeline_actions": {
             "path": "/Mergifyio/docs/pull/7215",
@@ -49,7 +52,8 @@
             "baseRef": "main",
             "mergeBoxRowVariants": [],
             "queueButtonState": "draft",
-            "statusCommentId": "2912525941"
+            "statusCommentId": "2912525941",
+            "postsCommand": false
         }
     }
 }
