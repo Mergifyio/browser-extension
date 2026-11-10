@@ -1068,8 +1068,22 @@ function _queueTimes(payload) {
     return text ? [document.createTextNode(text)] : [];
 }
 
-// The merge boxes the conditions row goes in: GitHub's bottom one, the same
-// containers the Mergify row is attached to.
+// The card at the top of GitHub's pull request Overview page (an opt-in
+// preview since 2026-11), the one with GitHub's own Merge button. That page
+// has no merge box until its Merge status panel is opened, and it does not
+// remember the panel, so the card is where Mergify's rows go. It is there in
+// every pull request state; its classes are hashed per deploy, so its
+// section's label is the hook.
+export function findOverviewSummaryCards() {
+    return Array.from(
+        document.querySelectorAll('section[aria-label="Recommended action"]'),
+        (section) => section.parentElement,
+    ).filter(Boolean);
+}
+
+// The merge boxes the conditions row goes in: GitHub's bottom one and the
+// Overview page's summary card, the same containers the Mergify row is
+// attached to.
 function _mergeBoxContainers() {
     return Array.from(
         document.querySelectorAll('[data-testid="mergebox-partial"]'),
@@ -1080,7 +1094,8 @@ function _mergeBoxContainers() {
                     '[data-testid="mergebox-border-container"]',
                 ) || partial.querySelector(".border.rounded-2"),
         )
-        .filter(Boolean);
+        .filter(Boolean)
+        .concat(findOverviewSummaryCards());
 }
 
 // Called on every injection tick: adds, rebuilds, moves back or removes the
@@ -1102,8 +1117,24 @@ export function syncQueueConditionsSections() {
                 existing.remove();
             continue;
         }
+        _ensureAdjacentRowsStyle();
         placeQueueConditionsSection(container, section);
     }
+}
+
+// Where the conditions row lands right above Mergify's row (the Overview
+// page's summary card, a classic box without a checks row), each would draw
+// the rule between them. A stylesheet rule rather than a style set per tick,
+// so that rebuilding either row needs nothing more.
+const ADJACENT_ROWS_STYLE_ID = "mergify-adjacent-rows-style";
+function _ensureAdjacentRowsStyle() {
+    if (document.getElementById(ADJACENT_ROWS_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = ADJACENT_ROWS_STYLE_ID;
+    // !important: the row's top rule is Primer's border-top utility, which
+    // is itself !important.
+    style.textContent = `[${CONDITIONS_SECTION_ATTR}] + [${MERGE_BOX_ROW_ATTR}] { border-top: 0 !important; }`;
+    document.head.appendChild(style);
 }
 
 function _rowStillApplies(section, pull) {

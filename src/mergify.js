@@ -20,6 +20,7 @@ import * as mqPayload from "./mqPayload.js";
 import {
     buildMergifyRow,
     fetchQueueStateIfNeeded,
+    findOverviewSummaryCards,
     getMergifyConfigurationStatus,
     isMergifyEnabledOnTheRepo,
     MERGE_BOX_ROW_ATTR,
@@ -88,6 +89,17 @@ const MERGE_BOX_ANCHORS = [
         variant: "sidebar",
     },
     {
+        name: "Overview page summary card",
+        // At the card's foot, as at the foot of the classic merge box.
+        find: findOverviewSummaryCards,
+        attach: (container, row) => container.appendChild(row),
+        // React renders the card's own section again once the page has
+        // loaded and, on a closed or merged pull request where it is the
+        // card's only child, puts it after the row.
+        keepLast: true,
+        variant: "default",
+    },
+    {
         name: "merge-box-partial",
         find: () => {
             const partials = document.querySelectorAll(
@@ -137,7 +149,12 @@ export function injectRowIntoMergeBox() {
             // Idempotency per container: skip if we already attached a row
             // here. Multiple anchors can therefore coexist without growing
             // duplicate rows on repeated MutationObserver ticks.
-            if (container.querySelector(`[${MERGE_BOX_ROW_ATTR}]`)) continue;
+            const existing = container.querySelector(`[${MERGE_BOX_ROW_ATTR}]`);
+            if (existing) {
+                if (anchor.keepLast && container.lastElementChild !== existing)
+                    container.appendChild(existing);
+                continue;
+            }
             anchor.attach(container, buildMergifyRow(anchor.variant));
             debug(`Mergify section injected into ${anchor.name}`);
             injected = true;
