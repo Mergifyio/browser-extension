@@ -161,6 +161,61 @@ describe("injectRowIntoMergeBox", () => {
         ).not.toBeNull();
     });
 
+    it("injects at the foot of the Overview page's summary card", () => {
+        // GitHub's Overview page: no merge box until its Merge status panel
+        // is opened, a summary card holding GitHub's Merge button instead.
+        document.body.innerHTML = `
+            <div class="Card__hashed">
+                <section aria-label="Recommended action"><ul><li>Ready to merge</li></ul></section>
+                <div><section aria-label="Merge status"></section></div>
+            </div>`;
+
+        expect(injectRowIntoMergeBox()).toBe(true);
+
+        const card = document.querySelector(".Card__hashed");
+        const row = card.lastElementChild;
+        expect(row.getAttribute("data-mergify-merge-box-row")).toBe("default");
+        expect(
+            document.querySelectorAll("[data-mergify-merge-box-row]").length,
+        ).toBe(1);
+    });
+
+    it("moves the row back to the card's foot when GitHub redraws its section after it", () => {
+        // A closed pull request's card: its section is its only child, and
+        // React puts it back after the row when it renders it again.
+        document.body.innerHTML = `
+            <div class="Card__hashed">
+                <section aria-label="Recommended action"><ul><li>Closed</li></ul></section>
+            </div>`;
+        injectRowIntoMergeBox();
+        const card = document.querySelector(".Card__hashed");
+        const row = card.lastElementChild;
+        card.appendChild(card.querySelector("section"));
+
+        expect(injectRowIntoMergeBox()).toBe(false);
+
+        expect(card.lastElementChild).toBe(row);
+        expect(
+            document.querySelectorAll("[data-mergify-merge-box-row]").length,
+        ).toBe(1);
+    });
+
+    it("leaves the card's row alone once it is at the foot", () => {
+        document.body.innerHTML = `
+            <div class="Card__hashed">
+                <section aria-label="Recommended action"></section>
+            </div>`;
+        injectRowIntoMergeBox();
+
+        const mutations = [];
+        const observer = new MutationObserver((m) => mutations.push(...m));
+        observer.observe(document.body, { childList: true, subtree: true });
+        injectRowIntoMergeBox();
+        observer.disconnect();
+
+        expect(mutations.concat(observer.takeRecords())).toHaveLength(0);
+    });
+
     it("returns false when no merge box is present", () => {
         document.body.innerHTML = "<div></div>";
 
