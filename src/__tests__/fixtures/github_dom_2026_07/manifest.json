@@ -1,7 +1,7 @@
 {
     "era": "github_dom_2026_07",
     "recordedAt": "2026-07-19",
-    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running, and PR metadata carried in the react-app.embeddedData JSON rather than as markup. Gone vs 2025_02: .merge-pr, .gh-header-meta and .commit-ref.base-ref (authorship and base branch now read from the embedded payload), and the Mergify app avatar on pages whose checks are collapsed — so mergifyDetectableFromPage stays false on quiet PRs of Mergify-enabled repos, where the configuration lookup resolves it instead. span.State survives here only on cross-referenced PRs in the timeline, never for the viewed PR. Captured from synthetic PRs on mergify-sandbox repos, sanitized. github_pr_opened_overview is an A/B variant recorded 2026-11-10: the Overview page, an opt-in preview GitHub serves per user alongside the classic view, captured with its merge-status side panel open (?panel=mergeStatus, the sidebar row's anchor). It is a separate react-app (app-name=repo) with no #new_comment_field: comments go through a React markdown editor whose textarea id is generated per render.",
+    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running, and PR metadata carried in the react-app.embeddedData JSON rather than as markup. Gone vs 2025_02: .merge-pr, .gh-header-meta and .commit-ref.base-ref (authorship and base branch now read from the embedded payload), and the Mergify app avatar on pages whose checks are collapsed — so mergifyDetectableFromPage stays false on quiet PRs of Mergify-enabled repos, where the configuration lookup resolves it instead. span.State survives here only on cross-referenced PRs in the timeline, never for the viewed PR. Captured from synthetic PRs on mergify-sandbox repos, sanitized. github_pr_opened_overview is an A/B variant recorded 2026-11-10: the Overview page, an opt-in preview GitHub serves per user alongside the classic view, captured with its merge-status side panel open (?panel=mergeStatus, the sidebar row's anchor). It is a separate react-app (app-name=repo) with no #new_comment_field: comments go through a React markdown editor whose textarea id is generated per render. github_pr_opened_overview_default is the same pull request as the Overview page opens it, recorded 2026-11-10: the side panel is closed and not remembered, so the row goes in a Mergify card of its own right under the summary card at the top (the parent of section[aria-label=\"Recommended action\"], holding GitHub's own Merge button), which is present in every pull request state. With the panel closed the Mergify app avatar (only in the panel's checks list) is gone too, so mergifyDetectableFromPage is false there, as on the classic quiet pages.",
     "pages": {
         "github_pr_opened": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/6",
@@ -102,7 +102,20 @@
             "mergedByMergify": false,
             "queued": false,
             "baseRef": "main",
-            "mergeBoxRowVariants": ["sidebar"],
+            "mergeBoxRowVariants": ["sidebar", "default"],
+            "queueButtonState": "unqueued",
+            "statusCommentId": null,
+            "postsCommand": true
+        },
+        "github_pr_opened_overview_default": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/11",
+            "state": "open",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "queued": false,
+            "baseRef": "main",
+            "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
             "postsCommand": true

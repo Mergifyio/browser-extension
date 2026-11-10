@@ -1097,6 +1097,25 @@ describe("merge-box conditions row", () => {
         ).toEqual(["merged", "SECTION", "DIV"]);
     });
 
+    test("in Mergify's Overview card, goes above Mergify's row, one rule between them", async () => {
+        document.body.innerHTML =
+            '<div data-mergify-overview-card=""><div data-mergify-merge-box-row="default" class="border-top">Mergify</div></div>';
+        // Primer's utility, as the page serves it.
+        document.head.innerHTML =
+            "<style>.border-top { border-top: 1px solid #d1d9e0 !important; }</style>";
+        const card = document.querySelector("[data-mergify-overview-card]");
+        mockCheckRun(PROTECTIONS_RUN_HTML);
+        await fetchQueueState();
+
+        updateAllMergifyRows();
+
+        expect(rowOrder(card)).toEqual(["Queue conditions", "DIV"]);
+        expect(getComputedStyle(card.lastElementChild).borderTopWidth).toBe(
+            "0px",
+        );
+        document.head.innerHTML = "";
+    });
+
     test("goes back in place when GitHub redraws its rows", async () => {
         const box = mergeBox();
         mockCheckRun(PROTECTIONS_RUN_HTML);

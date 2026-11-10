@@ -23,6 +23,7 @@ import {
     getMergifyConfigurationStatus,
     isMergifyEnabledOnTheRepo,
     MERGE_BOX_ROW_ATTR,
+    placeMergifyOverviewCards,
     resetQueueState,
     scheduleQueueStatePoll,
     startEtaTicker,
@@ -86,6 +87,12 @@ const MERGE_BOX_ANCHORS = [
         },
         attach: (container, row) => container.appendChild(row),
         variant: "sidebar",
+    },
+    {
+        name: "Mergify card on the Overview page",
+        find: placeMergifyOverviewCards,
+        attach: (container, row) => container.appendChild(row),
+        variant: "default",
     },
     {
         name: "merge-box-partial",

@@ -23,6 +23,7 @@ const {
 } = require("./utils");
 const {
     MERGE_BOX_ROW_ATTR,
+    OVERVIEW_CARD_ATTR,
     deriveQueueButtonState,
     findCommentComposer,
     getBaseRef,
@@ -81,7 +82,7 @@ describe.each(listGitHubDomEras())("%s", (era) => {
             // Return the shared page to its recorded state: the merge-box test
             // is the only one that writes to it.
             for (const row of document.querySelectorAll(
-                `[${MERGE_BOX_ROW_ATTR}]`,
+                `[${MERGE_BOX_ROW_ATTR}], [${OVERVIEW_CARD_ATTR}]`,
             )) {
                 row.remove();
             }

@@ -161,6 +161,95 @@ describe("injectRowIntoMergeBox", () => {
         ).not.toBeNull();
     });
 
+    it("puts Mergify's own card right under the Overview page's summary card", () => {
+        // GitHub's Overview page: no merge box until its Merge status panel
+        // is opened, a summary card holding GitHub's Merge button instead.
+        document.body.innerHTML = `
+            <div class="Column__hashed">
+                <div class="Card__hashed">
+                    <section aria-label="Recommended action"><ul><li>Ready to merge</li></ul></section>
+                    <div><section aria-label="Merge status"></section></div>
+                </div>
+                <div class="Description__hashed"></div>
+            </div>`;
+
+        expect(injectRowIntoMergeBox()).toBe(true);
+
+        const [summary, card, description] =
+            document.querySelector(".Column__hashed").children;
+        expect(summary.className).toBe("Card__hashed");
+        expect(
+            summary.querySelector("[data-mergify-merge-box-row]"),
+        ).toBeNull();
+        expect(card.hasAttribute("data-mergify-overview-card")).toBe(true);
+        expect(
+            card
+                .querySelector("[data-mergify-merge-box-row]")
+                .getAttribute("data-mergify-merge-box-row"),
+        ).toBe("default");
+        expect(description.className).toBe("Description__hashed");
+    });
+
+    it("puts its Overview card back under GitHub's when the page moves it", () => {
+        document.body.innerHTML = `
+            <div class="Column__hashed">
+                <div class="Card__hashed"><section aria-label="Recommended action"></section></div>
+                <div class="Description__hashed"></div>
+            </div>`;
+        injectRowIntoMergeBox();
+        const column = document.querySelector(".Column__hashed");
+        const card = column.querySelector("[data-mergify-overview-card]");
+        column.appendChild(card);
+
+        expect(injectRowIntoMergeBox()).toBe(false);
+
+        expect(column.children[1]).toBe(card);
+        expect(
+            document.querySelectorAll(
+                "[data-mergify-overview-card], [data-mergify-merge-box-row]",
+            ).length,
+        ).toBe(2);
+    });
+
+    it("draws no rule above Mergify's row when it opens its Overview card", () => {
+        // A closed pull request: no conditions row, the row is the card's
+        // first child and the card's frame already draws the top.
+        document.body.innerHTML = `
+            <div class="Column__hashed">
+                <div class="Card__hashed"><section aria-label="Recommended action"></section></div>
+            </div>`;
+        // A fresh page with Primer's utility, as GitHub serves it. (jsdom
+        // ignores specificity and ranks style sheets by insertion, so the
+        // extension's must come after it, as it does on a real page.)
+        document.head.innerHTML =
+            "<style>.border-top { border-top: 1px solid #d1d9e0 !important; }</style>";
+
+        injectRowIntoMergeBox();
+
+        const row = document.querySelector(
+            "[data-mergify-overview-card] > [data-mergify-merge-box-row]",
+        );
+        expect(row.classList.contains("border-top")).toBe(true);
+        expect(getComputedStyle(row).borderTopWidth).toBe("0px");
+        document.head.innerHTML = "";
+    });
+
+    it("leaves its Overview card alone once in place", () => {
+        document.body.innerHTML = `
+            <div class="Column__hashed">
+                <div class="Card__hashed"><section aria-label="Recommended action"></section></div>
+            </div>`;
+        injectRowIntoMergeBox();
+
+        const mutations = [];
+        const observer = new MutationObserver((m) => mutations.push(...m));
+        observer.observe(document.body, { childList: true, subtree: true });
+        injectRowIntoMergeBox();
+        observer.disconnect();
+
+        expect(mutations.concat(observer.takeRecords())).toHaveLength(0);
+    });
+
     it("returns false when no merge box is present", () => {
         document.body.innerHTML = "<div></div>";
 

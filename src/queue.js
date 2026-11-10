@@ -1068,8 +1068,45 @@ function _queueTimes(payload) {
     return text ? [document.createTextNode(text)] : [];
 }
 
-// The merge boxes the conditions row goes in: GitHub's bottom one, the same
-// containers the Mergify row is attached to.
+// The card at the top of GitHub's pull request Overview page (an opt-in
+// preview since 2026-11), the one with GitHub's own Merge button. That page
+// has no merge box until its Merge status panel is opened, and it does not
+// remember the panel. The card is there in every pull request state; its
+// classes are hashed per deploy, so its section's label is the hook.
+function findOverviewSummaryCards() {
+    return Array.from(
+        document.querySelectorAll('section[aria-label="Recommended action"]'),
+        (section) => section.parentElement,
+    ).filter(Boolean);
+}
+
+export const OVERVIEW_CARD_ATTR = "data-mergify-overview-card";
+
+// Mergify's own card on the Overview page, right under GitHub's summary card,
+// holding what the classic merge box holds: the queue conditions row and the
+// button bar. Created on first call, then put back under GitHub's card
+// whenever the page has moved it; returns one card per summary card.
+export function placeMergifyOverviewCards() {
+    return findOverviewSummaryCards().map((summary) => {
+        let card = summary.parentElement.querySelector(
+            `:scope > [${OVERVIEW_CARD_ATTR}]`,
+        );
+        if (!card) {
+            _ensureRowRulesStyle();
+            card = document.createElement("div");
+            card.setAttribute(OVERVIEW_CARD_ATTR, "");
+            // GitHub's card frame, so the two read as a pair.
+            card.style.cssText =
+                "border:1px solid var(--borderColor-default, #d1d9e0);border-radius:6px;overflow:hidden;";
+        }
+        if (summary.nextElementSibling !== card) summary.after(card);
+        return card;
+    });
+}
+
+// The merge boxes the conditions row goes in: GitHub's bottom one and
+// Mergify's card on the Overview page, the same containers the Mergify row is
+// attached to.
 function _mergeBoxContainers() {
     return Array.from(
         document.querySelectorAll('[data-testid="mergebox-partial"]'),
@@ -1080,7 +1117,10 @@ function _mergeBoxContainers() {
                     '[data-testid="mergebox-border-container"]',
                 ) || partial.querySelector(".border.rounded-2"),
         )
-        .filter(Boolean);
+        .filter(Boolean)
+        .concat(
+            Array.from(document.querySelectorAll(`[${OVERVIEW_CARD_ATTR}]`)),
+        );
 }
 
 // Called on every injection tick: adds, rebuilds, moves back or removes the
@@ -1102,8 +1142,25 @@ export function syncQueueConditionsSections() {
                 existing.remove();
             continue;
         }
+        _ensureRowRulesStyle();
         placeQueueConditionsSection(container, section);
     }
+}
+
+// Two rules drawn twice otherwise: where the conditions row lands right above
+// Mergify's row (Mergify's Overview card, a classic box without a checks
+// row), and where Mergify's row opens its Overview card, whose frame already
+// draws the top. A stylesheet rather than a style set per tick, so that
+// rebuilding either row needs nothing more.
+const ROW_RULES_STYLE_ID = "mergify-row-rules-style";
+function _ensureRowRulesStyle() {
+    if (document.getElementById(ROW_RULES_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = ROW_RULES_STYLE_ID;
+    // !important: the row's top rule is Primer's border-top utility, which
+    // is itself !important.
+    style.textContent = `[${CONDITIONS_SECTION_ATTR}] + [${MERGE_BOX_ROW_ATTR}], [${OVERVIEW_CARD_ATTR}] > [${MERGE_BOX_ROW_ATTR}]:first-child { border-top: 0 !important; }`;
+    document.head.appendChild(style);
 }
 
 function _rowStillApplies(section, pull) {
