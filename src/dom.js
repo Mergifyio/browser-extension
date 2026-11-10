@@ -17,8 +17,11 @@ export function formatLocalTime(date) {
 }
 
 export function isMergifyBotComment(container) {
+    // The classic view marks the author link with a class, the Overview page
+    // (an opt-in preview since 2026-11) with a test id: either way the
+    // comment's header, never a link to the app inside the comment's body.
     const authorLink = container.querySelector(
-        'a.author[href="/apps/mergify"]',
+        'a.author[href="/apps/mergify"], a[data-testid="avatar-link"][href="/apps/mergify"]',
     );
     if (authorLink) return true;
 
@@ -28,6 +31,21 @@ export function isMergifyBotComment(container) {
     }
 
     return false;
+}
+
+// The comments of the Overview page's timeline, oldest first. That page lists
+// them in the order its viewer picked, newest first by default, so they are
+// sorted by comment id, which GitHub allocates in creation order. An entry
+// without one (a commit, a label event) is left out.
+export function overviewTimelineComments(root = document) {
+    const comments = [];
+    for (const item of root.querySelectorAll('[data-testid="timeline-item"]')) {
+        const holder = item.querySelector('[id^="issuecomment-"]');
+        const id = /^issuecomment-(\d+)$/.exec(holder?.id ?? "")?.[1];
+        if (id) comments.push({ item, id: Number(id) });
+    }
+    comments.sort((a, b) => a.id - b.id);
+    return comments.map((c) => c.item);
 }
 
 // Login of the Mergify GitHub App as it appears in GitHub's embedded payload.

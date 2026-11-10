@@ -5,6 +5,7 @@ import {
     isGitHubPullRequestPage,
     isMergifyBotComment,
     MERGIFY_APP_LOGIN,
+    overviewTimelineComments,
     readEmbeddedPullRequestPayload,
     readPrStatusFromDocument,
 } from "./dom.js";
@@ -215,7 +216,12 @@ export function wasMergedByMergify() {
         if (!item.textContent.includes("merged commit")) continue;
         if (item.querySelector('a[href="/apps/mergify"]')) return true;
     }
-    return false;
+    // The Overview page (an opt-in preview since 2026-11) has no merge event
+    // in its timeline: its summary card names who merged, as a link to their
+    // profile.
+    return !!document.querySelector(
+        'section[aria-label="Recommended action"] a[href="/mergify[bot]"]',
+    );
 }
 
 export function getMergedMessage() {
@@ -400,11 +406,14 @@ async function _fetchCheckStates(data) {
 }
 
 export function findLastMergifyCommand() {
-    const comments = document.querySelectorAll(
+    const classic = document.querySelectorAll(
         ".TimelineItem, .js-comment-container",
     );
+    // The Overview page (an opt-in preview since 2026-11) has neither: its
+    // comments come oldest first, and their body is a bare .markdown-body.
+    const comments = classic.length ? classic : overviewTimelineComments();
     for (let i = comments.length - 1; i >= 0; i--) {
-        const body = comments[i].querySelector(".comment-body");
+        const body = comments[i].querySelector(".comment-body, .markdown-body");
         if (!body) continue;
         // Only match short command comments (e.g. "@Mergifyio queue"),
         // not Mergify's own long status reports that mention the command.
@@ -416,8 +425,11 @@ export function findLastMergifyCommand() {
                 lower.includes(`@mergifyio ${cmd}`) ||
                 lower.includes(`@mergify ${cmd}`)
             ) {
+                // Mergify acknowledges a command with a 👍. The Overview page
+                // labels each reaction button with its emoji and count
+                // ("👍 1 reaction").
                 const acknowledged = !!comments[i].querySelector(
-                    'button.social-reaction-summary-item[value^="THUMBS_UP"]',
+                    'button.social-reaction-summary-item[value^="THUMBS_UP"], button[aria-label^="👍"]',
                 );
                 return { command: cmd, acknowledged };
             }

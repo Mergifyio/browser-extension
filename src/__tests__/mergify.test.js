@@ -624,6 +624,39 @@ describe("findLastMergifyCommand", () => {
         expect(result.acknowledged).toBe(true);
     });
 
+    it("on the Overview page, returns the latest command although the page lists it first", () => {
+        // GitHub's Overview page (2026-11): newest comment first, the
+        // comment's id on its <article>, the body a bare .markdown-body, and
+        // each reaction a button labelled with its emoji and count.
+        document.body.innerHTML = `
+            <div data-testid="timeline-item"><div><article id="issuecomment-200">
+                <div class="markdown-body"><p>@mergifyio dequeue</p></div>
+            </article></div></div>
+            <div data-testid="timeline-item"><div><article id="issuecomment-100">
+                <div class="markdown-body"><p>@mergifyio queue</p></div>
+                <button aria-label="👍 1 reaction">👍 1</button>
+            </article></div></div>`;
+
+        expect(findLastMergifyCommand()).toEqual({
+            command: "dequeue",
+            acknowledged: false,
+        });
+    });
+
+    it("on the Overview page, reads Mergify's 👍 on the command", () => {
+        document.body.innerHTML = `
+            <div data-testid="timeline-item"><div><article id="issuecomment-100">
+                <div class="markdown-body"><p>@mergifyio queue</p></div>
+                <button aria-label="Add reaction">☺</button>
+                <button aria-label="👍 1 reaction">👍 1</button>
+            </article></div></div>`;
+
+        expect(findLastMergifyCommand()).toEqual({
+            command: "queue",
+            acknowledged: true,
+        });
+    });
+
     it("should detect unacknowledged state", () => {
         document.body.innerHTML = `
             <div class="TimelineItem">
@@ -797,6 +830,22 @@ describe("wasMergedByMergify", () => {
 
     it("should return false when no timeline items exist", () => {
         document.body.innerHTML = "<div>Empty page</div>";
+        expect(wasMergedByMergify()).toBe(false);
+    });
+
+    it("on the Overview page, reads who merged from GitHub's summary card", () => {
+        // The Overview page (2026-11) has no merge event in its timeline.
+        document.body.innerHTML = `
+            <div><section aria-label="Recommended action"><ul><li>
+                <div>Merged</div>
+                <div><a href="/mergify[bot]">mergify[bot]</a> merged in
+                <a href="/acme/widget/commit/b1c4825">b1c4825</a></div>
+            </li></ul></section></div>`;
+        expect(wasMergedByMergify()).toBe(true);
+
+        document
+            .querySelector('a[href="/mergify[bot]"]')
+            .setAttribute("href", "/jd");
         expect(wasMergedByMergify()).toBe(false);
     });
 });
@@ -1001,6 +1050,19 @@ describe("isMergifyBotComment", () => {
         const containers = document.querySelectorAll(".TimelineItem");
         // Second container is from "someuser".
         expect(isMergifyBotComment(containers[1])).toBe(false);
+    });
+
+    it("reads the author from the Overview page's comment header, not a link in the body", () => {
+        document.body.innerHTML = `
+            <article id="mergify"><a data-testid="avatar-link" href="/apps/mergify">mergify</a></article>
+            <article id="user"><a data-testid="avatar-link" href="/someuser">someuser</a>
+                <div class="markdown-body"><a href="/apps/mergify">Mergify</a></div></article>`;
+        expect(isMergifyBotComment(document.getElementById("mergify"))).toBe(
+            true,
+        );
+        expect(isMergifyBotComment(document.getElementById("user"))).toBe(
+            false,
+        );
     });
 });
 

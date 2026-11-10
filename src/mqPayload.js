@@ -3,6 +3,7 @@ import {
     getPullRequestData,
     isGitHubPullRequestPage,
     isMergifyBotComment,
+    overviewTimelineComments,
 } from "./dom.js";
 import {
     fetchQueueState,
@@ -93,9 +94,11 @@ function _readCommentIdFor(timelineItem) {
 const STATUS_REPORT_HEADING = "Merge Queue Status";
 
 function _isStatusReport(item) {
-    return Array.from(item.querySelectorAll(".comment-body h1")).some(
-        (h) => h.textContent.trim() === STATUS_REPORT_HEADING,
-    );
+    // The classic view's comment body is a .comment-body, the Overview page's
+    // a bare .markdown-body.
+    return Array.from(
+        item.querySelectorAll(".comment-body h1, .markdown-body h1"),
+    ).some((h) => h.textContent.trim() === STATUS_REPORT_HEADING);
 }
 
 // Walk the timeline and find every Mergify-authored TimelineItem along with
@@ -103,7 +106,10 @@ function _isStatusReport(item) {
 // Returns an array in DOM order:
 // [{ item, inlineSource, commentId, statusReport }].
 function _collectMergifyCandidates(root = document) {
-    const items = root.querySelectorAll(".TimelineItem");
+    // The Overview page (an opt-in preview since 2026-11) has no .TimelineItem:
+    // its comments come oldest first, as the walks below expect.
+    const classic = root.querySelectorAll(".TimelineItem");
+    const items = classic.length ? classic : overviewTimelineComments(root);
     const out = [];
     for (const item of items) {
         // The author link's class, not any link to the app: a comment body

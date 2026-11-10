@@ -271,6 +271,54 @@ describe("findLatestStatusCommentSync", () => {
         expect(findLatestStatusCommentSync().commentId).toBe("100");
     });
 
+    test("on the Overview page, reads the latest status report although the page lists it first", () => {
+        // GitHub's Overview page (2026-11): newest comment first, the
+        // comment's id on its <article>, the author's header link marked by a
+        // test id, the body a bare .markdown-body.
+        const comment = ({ id, author, body }) => `
+            <div data-testid="timeline-item"><div>
+                <article id="issuecomment-${id}">
+                    <a data-testid="avatar-link" href="${author}">${author}</a>
+                    <div class="markdown-body">${body}</div>
+                </article>
+            </div></div>`;
+        document.body.innerHTML = [
+            // Mergify's answer to a Refresh click.
+            comment({
+                id: 400,
+                author: "/apps/mergify",
+                body: "<p>Pull request refreshed</p>",
+            }),
+            // A user copying the heading, linking to the app in the body.
+            comment({
+                id: 350,
+                author: "/someuser",
+                body: '<h1>Merge Queue Status</h1><a href="/apps/mergify">Mergify</a>',
+            }),
+            comment({
+                id: 300,
+                author: "/apps/mergify",
+                body: "<h1>Merge Queue Status</h1>",
+            }),
+            comment({
+                id: 250,
+                author: "/someuser",
+                body: "<p>@mergifyio queue</p>",
+            }),
+            // An earlier queue session's report.
+            comment({
+                id: 100,
+                author: "/apps/mergify",
+                body: "<h1>Merge Queue Status</h1>",
+            }),
+        ].join("");
+
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
+            commentId: "300",
+        });
+    });
+
     test("falls back to the latest commentId-bearing candidate when no inline marker is present", () => {
         // None of the candidates have a hydrated textarea with the marker,
         // but two are issuecomment-hosted. The resolver should return the
