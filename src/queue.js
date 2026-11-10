@@ -454,19 +454,63 @@ export function deriveQueueButtonState() {
     return "unqueued";
 }
 
-export function postCommand(command) {
-    const input = document.querySelector("#new_comment_field");
-    input.removeAttribute("disabled");
-    input.value = `@mergifyio ${command}`;
-    const button = Array.from(
+// The pull request's new-comment composer: { field, submit }, or null when the
+// page has none. The classic view serves a server-rendered form; the Overview
+// page (an opt-in preview since 2026-11) serves a React markdown editor whose
+// textarea id is generated per render, so it is found from its submit button.
+export function findCommentComposer() {
+    const classicField = document.querySelector("#new_comment_field");
+    const classicSubmit = Array.from(
         document.querySelectorAll("#partial-new-comment-form-actions button"),
     ).find((el) => el.textContent.trim() === "Comment");
-    button.removeAttribute("disabled");
-    button.click();
+    if (classicField && classicSubmit) {
+        return { field: classicField, submit: classicSubmit };
+    }
+    // Last match: reply and edit editors render inside the comment list,
+    // above the page's own composer at its foot.
+    const submits = document.querySelectorAll(
+        'button[data-dd-action-name="pull_requests.comments.submit"]',
+    );
+    for (const submit of Array.from(submits).reverse()) {
+        const field = submit.closest("fieldset")?.querySelector("textarea");
+        if (field) return { field, submit };
+    }
+    return null;
+}
+
+// Returns whether the command was submitted.
+export function postCommand(command) {
+    const composer = findCommentComposer();
+    if (!composer) {
+        debug(
+            `No comment composer on the page: @mergifyio ${command} not posted`,
+        );
+        return false;
+    }
+    const { field } = composer;
+    field.removeAttribute("disabled");
+    // The Overview editor is a controlled React textarea: React keeps the
+    // Comment button inactive until it registers an edit, which takes an
+    // `input` event. The prototype's setter, because a page-world `.value =`
+    // goes through React's own value tracker, which then sees no change.
+    const setValue = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(field),
+        "value",
+    ).set;
+    setValue.call(field, `@mergifyio ${command}`);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    // Looked up only now: on the Overview page, the first @mention typed into
+    // an empty composer makes React replace the Comment button, and a click
+    // on the detached one posts nothing.
+    const submit = findCommentComposer()?.submit;
+    if (!submit) return false;
+    submit.removeAttribute("disabled");
+    submit.click();
+    return true;
 }
 
 export function postCommandAndUpdate(command) {
-    postCommand(command);
+    if (!postCommand(command)) return;
     if (command === "queue" && lastKnownQueueConditions?.met) {
         queueJoinRequest = { pull: getPullRequestData().pull, at: Date.now() };
     } else if (command === "dequeue") {

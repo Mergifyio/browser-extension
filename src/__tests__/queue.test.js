@@ -433,6 +433,83 @@ describe("buildQueueButton", () => {
     });
 });
 
+const { postCommand } = require("../queue");
+
+describe("postCommand", () => {
+    const overviewComposer = (id) => `
+        <fieldset id="${id}">
+            <textarea placeholder="Leave a comment"></textarea>
+            <div data-testid="markdown-editor-footer">
+                <button type="button" data-dd-action-name="pull_requests.lifecycle.close">Close pull request</button>
+                <button type="button" aria-disabled="true" data-dd-action-name="pull_requests.comments.submit">Comment</button>
+            </div>
+        </fieldset>`;
+
+    afterEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    test("submits through the Overview page's React editor once React registered the edit", () => {
+        document.body.innerHTML = overviewComposer("page");
+        const field = document.querySelector("textarea");
+        const [close, inactiveSubmit] = document.querySelectorAll("button");
+        // Stand-in for React: it records the value it rendered through an own
+        // `value` property on the node, and on an `input` whose value differs
+        // from that record it re-renders the footer with a new, active
+        // Comment button, as GitHub does on the first @mention.
+        const native = Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype,
+            "value",
+        );
+        let rendered = "";
+        Object.defineProperty(field, "value", {
+            configurable: true,
+            get: () => native.get.call(field),
+            set: (value) => {
+                rendered = value;
+                native.set.call(field, value);
+            },
+        });
+        const activeSubmit = inactiveSubmit.cloneNode(true);
+        activeSubmit.removeAttribute("aria-disabled");
+        field.addEventListener("input", () => {
+            if (native.get.call(field) === rendered) return;
+            rendered = native.get.call(field);
+            inactiveSubmit.replaceWith(activeSubmit);
+        });
+        const inactiveClick = jest.fn();
+        const activeClick = jest.fn();
+        const closeClick = jest.fn();
+        inactiveSubmit.addEventListener("click", inactiveClick);
+        activeSubmit.addEventListener("click", activeClick);
+        close.addEventListener("click", closeClick);
+
+        expect(postCommand("queue")).toBe(true);
+
+        expect(field.value).toBe("@mergifyio queue");
+        expect(activeClick).toHaveBeenCalledTimes(1);
+        expect(inactiveClick).not.toHaveBeenCalled();
+        expect(closeClick).not.toHaveBeenCalled();
+    });
+
+    test("posts from the page's composer, not from an editor open above it", () => {
+        document.body.innerHTML =
+            overviewComposer("reply") + overviewComposer("page");
+
+        expect(postCommand("refresh")).toBe(true);
+
+        expect(document.querySelector("#reply textarea").value).toBe("");
+        expect(document.querySelector("#page textarea").value).toBe(
+            "@mergifyio refresh",
+        );
+    });
+
+    test("reports nothing posted when the page has no composer", () => {
+        document.body.innerHTML = "<div></div>";
+        expect(postCommand("queue")).toBe(false);
+    });
+});
+
 describe("buildMergifyRow dispatcher", () => {
     beforeEach(() => {
         window.history.replaceState({}, "", "/acme/widget/pull/42");
