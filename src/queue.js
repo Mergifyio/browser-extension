@@ -1110,22 +1110,69 @@ function _mergeBoxContainers() {
         .concat(findOverviewSummaryCards());
 }
 
+// GitHub's own row in the Overview page's summary card for a merged pull
+// request already says who merged it and when, under the title "Merged". Its
+// item id changes once the branch is deleted, its classes are hashed: the
+// title's words are the hook.
+const MERGED_BY_QUEUE_ATTR = "data-mergify-merged-by-queue";
+const OVERVIEW_ITEM_TITLE_SELECTOR =
+    'section[aria-label="Recommended action"] [data-testid="for-you-item-title"]';
+
+export function findOverviewMergedTitles() {
+    return Array.from(
+        document.querySelectorAll(OVERVIEW_ITEM_TITLE_SELECTOR),
+    ).filter(
+        (title) =>
+            Array.from(title.childNodes)
+                .filter((node) => !node.hasAttribute?.(MERGED_BY_QUEUE_ATTR))
+                .map((node) => node.textContent)
+                .join("")
+                .trim() === "Merged",
+    );
+}
+
+// Says "by the merge queue" after GitHub's "Merged" rather than in a row of
+// Mergify's own that would repeat the rest of it. Returns the titles that say
+// it, and takes the words back from any title they no longer apply to.
+function _syncOverviewMergedTitles(model) {
+    const titles =
+        model?.queue?.state === "merged" ? findOverviewMergedTitles() : [];
+    for (const words of document.querySelectorAll(
+        `[${MERGED_BY_QUEUE_ATTR}]`,
+    )) {
+        if (!titles.includes(words.parentElement)) words.remove();
+    }
+    for (const title of titles) {
+        if (title.querySelector(`:scope > [${MERGED_BY_QUEUE_ATTR}]`)) continue;
+        const words = document.createElement("span");
+        words.setAttribute(MERGED_BY_QUEUE_ATTR, "");
+        words.textContent = " by the merge queue";
+        title.appendChild(words);
+    }
+    return titles;
+}
+
 // Called on every injection tick: adds, rebuilds, moves back or removes the
 // row, and leaves it alone when nothing changed so the page's mutation
 // observer does not spin.
 export function syncQueueConditionsSections() {
     const model = _sectionModel();
     const pull = String(getPullRequestData().pull);
+    const mergedTitles = _syncOverviewMergedTitles(model);
     for (const container of _mergeBoxContainers()) {
         const existing = container.querySelector(
             `:scope > [${CONDITIONS_SECTION_ATTR}]`,
         );
-        const section = model ? _sectionFor(model, existing, pull) : null;
+        const saidByGitHub = mergedTitles.some((title) =>
+            container.contains(title),
+        );
+        const section =
+            model && !saidByGitHub ? _sectionFor(model, existing, pull) : null;
         if (!section) {
             // No answer is not an answer: between two states the check and
             // the status comment are rewritten one after the other, and the
             // row would blink out. It goes only once it cannot apply any more.
-            if (existing && !_rowStillApplies(existing, pull))
+            if (existing && (saidByGitHub || !_rowStillApplies(existing, pull)))
                 existing.remove();
             continue;
         }
