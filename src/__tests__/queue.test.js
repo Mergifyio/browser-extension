@@ -1113,16 +1113,12 @@ describe("batch-PR row treatment", () => {
         });
     });
 
-    test("a normal draft PR keeps its queue and command buttons", () => {
+    test("a normal draft PR keeps its queue and Refresh buttons", () => {
         setPrDom({ draft: true, author: "octocat", baseRef: "main" });
         const row = buildMergifyRow();
         expect(row.querySelector("[data-mergify-queue-btn]")).not.toBeNull();
         const buttons = commandButtonsOf(row);
-        expect(buttons.map((b) => b.textContent)).toEqual([
-            "Refresh",
-            "Rebase",
-            "Update",
-        ]);
+        expect(buttons.map((b) => b.textContent)).toEqual(["Refresh"]);
         for (const b of buttons) {
             expect(b.hasAttribute("aria-disabled")).toBe(false);
         }
