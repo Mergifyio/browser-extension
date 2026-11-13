@@ -1320,3 +1320,90 @@ describe("note on GitHub's protected-ref block", () => {
         expect(container.querySelector(NOTE)).toBeNull();
     });
 });
+
+const { findMergeQueueCheckRunId } = require("../queue");
+
+describe("findMergeQueueCheckRunId", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const era = (dir, page) =>
+        fs.readFileSync(
+            path.resolve(__dirname, "fixtures", dir, `${page}.html`),
+            "utf8",
+        );
+    const LINK =
+        '<h4><a href="/o/r/pull/8/checks?check_run_id=88231724892" tabindex="-1"><span>Mergify Merge Queue</span></a></h4>';
+
+    test("reads the id off the recorded Mergify Merge Queue check link", () => {
+        expect(
+            findMergeQueueCheckRunId(
+                era("github_dom_2026_07", "github_pr_queued"),
+            ),
+        ).toBe("88231724892");
+    });
+
+    test("ignores the other checks' links on a recorded page without the queue check", () => {
+        // Mergify Merge Protections and Summary links, no Merge Queue one.
+        const html = era("github_dom_2025_02", "github_pr_opened");
+        expect(html).toContain("check_run_id=");
+        expect(findMergeQueueCheckRunId(html)).toBeNull();
+    });
+
+    test("reads the bare link the other tests mock", () => {
+        expect(
+            findMergeQueueCheckRunId(
+                '<a href="?check_run_id=999"><span>Mergify Merge Queue</span></a>',
+            ),
+        ).toBe("999");
+    });
+
+    test("skips another check's link to reach the queue one", () => {
+        const html =
+            '<h4><a href="/o/r/pull/8/checks?check_run_id=1" tabindex="-1"><span>Summary</span></a></h4>' +
+            LINK;
+        expect(findMergeQueueCheckRunId(html)).toBe("88231724892");
+    });
+
+    test("a check_run_id written in text before the link doesn't take its place", () => {
+        expect(findMergeQueueCheckRunId(`check_run_id=4242 ${LINK}`)).toBe(
+            "88231724892",
+        );
+        // Even with no tag of its own in between to stop at.
+        expect(
+            findMergeQueueCheckRunId(
+                'check_run_id=4242 <a href="?check_run_id=88231724892"><span>Mergify Merge Queue</span></a>',
+            ),
+        ).toBe("88231724892");
+    });
+
+    test("refuses an id longer than a check run id can be", () => {
+        expect(
+            findMergeQueueCheckRunId(
+                `<a href="?check_run_id=${"1".repeat(21)}"><span>Mergify Merge Queue</span></a>`,
+            ),
+        ).toBeNull();
+    });
+
+    // The pattern this replaced, /check_run_id=(\d+)[^>]*>…/, took about
+    // 1.3 s on the 65,000-digit input and ~0.1 s on the repeated ids, on the
+    // page's main thread, every poll. Linear now: well under a millisecond
+    // and a few milliseconds. The bound leaves room for a slow CI runner.
+    test.each([
+        [
+            "a 65,000-digit run with no closing >",
+            `check_run_id=${"1".repeat(65000)}`,
+        ],
+        [
+            "4,600 repeated ids with no closing >",
+            "check_run_id=1 ".repeat(4600),
+        ],
+        [
+            "a 65,000-digit run right before the real link",
+            `check_run_id=${"1".repeat(65000)}${LINK}`,
+        ],
+    ])("stays fast on %s", (_label, html) => {
+        const start = performance.now();
+        findMergeQueueCheckRunId(html);
+        expect(performance.now() - start).toBeLessThan(100);
+    });
+});
