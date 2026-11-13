@@ -722,11 +722,11 @@ function appendCommandButtons(container) {
 function appendBatchAwareLinks(appendLink) {
     const batch = isBatchPrContext();
     if (!batch || isPullRequestOpen()) {
-        appendLink(getMergeQueueLink(), "queue", QUEUE_ICON_SVG);
+        appendLink(getMergeQueueLink(), "Queue", QUEUE_ICON_SVG);
     }
     appendLink(
         batch ? getBatchActivityLogLink() : getPullRequestActivityLogLink(),
-        "logs",
+        "Logs",
         LOGS_ICON_SVG,
     );
 }

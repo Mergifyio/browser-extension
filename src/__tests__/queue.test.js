@@ -1082,7 +1082,7 @@ describe("batch-PR row treatment", () => {
                 const links = [...row.querySelectorAll("a")].map((a) =>
                     a.textContent.trim(),
                 );
-                expect(links).toContain("queue");
+                expect(links).toContain("Queue");
             }
         });
     });
@@ -1108,7 +1108,7 @@ describe("batch-PR row treatment", () => {
                 const links = [...row.querySelectorAll("a")].map((a) =>
                     a.textContent.trim(),
                 );
-                expect(links).toContain("queue");
+                expect(links).toContain("Queue");
             }
         });
     });
@@ -1138,12 +1138,12 @@ describe("batch-PR informational links", () => {
         document.body.innerHTML = "";
     });
 
-    // The informational-link labels ("queue"/"logs"), excluding the Mergify
+    // The informational-link labels ("Queue"/"Logs"), excluding the Mergify
     // brand anchor (whose textContent carries the inlined logo SVG).
     function linkLabels(row) {
         return [...row.querySelectorAll("a")]
             .map((a) => a.textContent.trim())
-            .filter((t) => t === "queue" || t === "logs");
+            .filter((t) => t === "Queue" || t === "Logs");
     }
     function hrefOf(row, label) {
         return [...row.querySelectorAll("a")]
@@ -1157,26 +1157,26 @@ describe("batch-PR informational links", () => {
     test("open batch PR: queue link deep-links via batch_pr, logs link via batch_pull", () => {
         setPrDom({ draft: true, author: "mergify", baseRef: "develop" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual(["queue", "logs"]);
-        expect(hrefOf(row, "queue")).toBe(
+        expect(linkLabels(row)).toEqual(["Queue", "Logs"]);
+        expect(hrefOf(row, "Queue")).toBe(
             "https://dashboard.mergify.com/orgs/acme/repos/widget/queues/status?branch=develop&batch_pr=42",
         );
-        expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
+        expect(hrefOf(row, "Logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
 
     test("closed batch PR: no queue link, logs link via batch_pull", () => {
         setPrDom({ closed: true, author: "mergify" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual(["logs"]);
-        expect(hrefOf(row, "logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
+        expect(linkLabels(row)).toEqual(["Logs"]);
+        expect(hrefOf(row, "Logs")).toBe(BATCH_ACTIVITY_LOG_HREF);
     });
 
     test("open non-batch PR keeps both the queue and per-PR activity-log links", () => {
         setPrDom({ author: "octocat", baseRef: "develop" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual(["queue", "logs"]);
-        expect(hrefOf(row, "queue")).toContain("pull-request-number=42");
-        expect(hrefOf(row, "logs")).toBe(
+        expect(linkLabels(row)).toEqual(["Queue", "Logs"]);
+        expect(hrefOf(row, "Queue")).toContain("pull-request-number=42");
+        expect(hrefOf(row, "Logs")).toBe(
             "https://dashboard.mergify.com/orgs/acme/repos/widget/activity-log?pull_request=42&preset=Past1month",
         );
     });
@@ -1184,7 +1184,7 @@ describe("batch-PR informational links", () => {
     test("closed human PR is unaffected — keeps both links", () => {
         setPrDom({ closed: true, author: "octocat" });
         const row = buildMergifyRow();
-        expect(linkLabels(row)).toEqual(["queue", "logs"]);
+        expect(linkLabels(row)).toEqual(["Queue", "Logs"]);
     });
 });
 
