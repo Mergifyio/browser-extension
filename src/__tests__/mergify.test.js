@@ -340,8 +340,8 @@ describe("injectRowIntoMergeBox", () => {
         expect(secondLine.style.justifyContent).toBe("space-between");
         const secondLineLinks =
             secondLine.firstElementChild.querySelectorAll("a");
-        expect(secondLineLinks[0].textContent).toBe("queue");
-        expect(secondLineLinks[1].textContent).toBe("logs");
+        expect(secondLineLinks[0].textContent).toBe("Queue");
+        expect(secondLineLinks[1].textContent).toBe("Logs");
         const brandLink = secondLine.querySelector(
             'a[href="https://dashboard.mergify.com"]',
         );
