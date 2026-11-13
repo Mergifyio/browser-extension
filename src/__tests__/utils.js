@@ -3,7 +3,7 @@ const path = require("node:path");
 
 const FIXTURES_ROOT = path.resolve(__dirname, "fixtures");
 
-// Root-level fixtures: hand-made fragments (github_pr_mergify_timestamp) and
+// Root-level fixtures: hand-made fragments (github_pr_mergify_comment) and
 // non-PR pages (searchConfig*). Full PR pages live in date-stamped era
 // directories — see listGitHubDomEras.
 function loadFixture(name) {
