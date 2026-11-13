@@ -44,27 +44,6 @@ export function formatEta(etaIso, now = Date.now()) {
     return `~${Math.round(deltaMs / 60000)}m`;
 }
 
-export const BUTTONS = [
-    {
-        command: "refresh",
-        label: "Refresh",
-        tooltip: "Trigger Mergify to reevaluate the pull request",
-        disableOnClosedPR: false,
-    },
-    {
-        command: "rebase",
-        label: "Rebase",
-        tooltip: "Rebase the pull request against its base branch",
-        disableOnClosedPR: true,
-    },
-    {
-        command: "update",
-        label: "Update",
-        tooltip: "Update the pull request with its base branch",
-        disableOnClosedPR: true,
-    },
-];
-
 export const MERGED_MESSAGES = [
     "Merged while you weren't looking ✨",
     "Another one bites the queue 🎶",
@@ -695,22 +674,20 @@ export function buildQueueButton(state, conditions) {
     return btn;
 }
 
-// Append the Refresh/Rebase/Update command buttons to a container. On a batch
-// PR they are omitted — Mergify owns the branch, so any command here would
-// invalidate the batch.
-function appendCommandButtons(container) {
+// Append the Refresh button to a container. On a batch PR it is
+// omitted — Mergify owns the branch, so any command here would invalidate the
+// batch.
+function appendRefreshButton(container) {
     if (isMergeQueueBatchPr()) return;
-    for (const btn of BUTTONS) {
-        container.appendChild(
-            buildMergeBoxButton(
-                btn.command,
-                btn.label,
-                btn.tooltip,
-                false,
-                "secondary",
-            ),
-        );
-    }
+    container.appendChild(
+        buildMergeBoxButton(
+            "refresh",
+            "Refresh",
+            "Trigger Mergify to reevaluate the pull request",
+            false,
+            "secondary",
+        ),
+    );
 }
 
 // Append the queue and logs links via the caller's appendLink(href, text, svg),
@@ -839,7 +816,7 @@ function buildLegacyDefaultRow() {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;";
         buttons.appendChild(buildQueueButton(state, conditions));
-        appendCommandButtons(buttons);
+        appendRefreshButton(buttons);
         row.appendChild(buttons);
     }
 
@@ -880,7 +857,7 @@ function buildLegacySidebarRow() {
         const buttons = document.createElement("div");
         buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
         buttons.appendChild(buildQueueButton(state, conditions));
-        appendCommandButtons(buttons);
+        appendRefreshButton(buttons);
         row.appendChild(buttons);
     }
 
@@ -1579,7 +1556,7 @@ function buildButtonsRow(queueButtonState) {
         buttons.appendChild(
             buildQueueButton(queueButtonState, lastKnownQueueConditions),
         );
-        appendCommandButtons(buttons);
+        appendRefreshButton(buttons);
         row.appendChild(buttons);
     }
     row.appendChild(buildBrandAndLinks());
