@@ -13,6 +13,12 @@ MERGIFY_DOMAIN ?= $(MERGIFY_DOMAIN_DEFAULT)
 TARGETS = mergify-firefox-$(VERSION).zip mergify-chrome-$(VERSION).zip mergify-safari-$(VERSION).pkg
 DEV_TARGETS = dev dev-build dev-watch dev-clean
 
+# esbuild comes from node_modules at the version package-lock.json pins.
+# Never `npx esbuild`: without node_modules, npx would fetch whatever
+# version the registry serves and run its install script, which in the
+# release job happens next to the unlocked signing keychain.
+ESBUILD = node_modules/.bin/esbuild
+
 .PHONY: all
 all: $(TARGETS)
 	@ls -la $(TARGETS)
@@ -41,12 +47,12 @@ dev: ## Create development build and start watching for changes
 	npm start
 
 .PHONY: dev-build
-dev-build: ## Build development folder only (no watch)
+dev-build: | $(ESBUILD) ## Build development folder only (no watch)
 	@echo "* Creating development build..."
 	rm -rf dev-build
 	mkdir -p dev-build
 	cp src/manifest.json src/icon-128.png src/icon-48.png src/sendInstallState.js dev-build/
-	npx esbuild src/mergify.js --bundle --format=iife --target=es2020 --outfile=dev-build/mergify.js
+	$(ESBUILD) src/mergify.js --bundle --format=iife --target=es2020 --outfile=dev-build/mergify.js
 	gsed -i \
 		-e 's/window\.__MERGIFY_DEBUG__ ?? (window\.__MERGIFY_DEBUG__ = false)/window.__MERGIFY_DEBUG__ ?? (window.__MERGIFY_DEBUG__ = true)/g' \
 		-e 's/#VERSION#/$(DEV_VERSION)/g' \
@@ -67,12 +73,12 @@ dev-clean: ## Clean development build
 	@echo "Development build cleaned"
 
 
-mergify-%-${VERSION}.zip: %
+mergify-%-${VERSION}.zip: % | $(ESBUILD)
 	@echo "* Building $@..."
 	rm -rf build $@
 	mkdir -p build
 	cp src/manifest.json src/icon-128.png src/icon-48.png src/sendInstallState.js build/
-	npx esbuild src/mergify.js --bundle --format=iife --target=es2020 --outfile=build/mergify.js
+	$(ESBUILD) src/mergify.js --bundle --format=iife --target=es2020 --outfile=build/mergify.js
 	gsed -i \
 		-e 's/#VERSION#/$(VERSION)/g' \
 		-e 's/$(GITHUB_DOMAIN_DEFAULT)/$(GITHUB_DOMAIN)/g' \
@@ -82,6 +88,10 @@ mergify-%-${VERSION}.zip: %
 	cd build ; zip ../$@ *
 	rm -rf build
 	@echo
+
+$(ESBUILD):
+	@echo "error: $(ESBUILD) not found; run 'npm ci' first" >&2
+	@exit 1
 
 APPLE_APP_NAME=mergify-safari
 
