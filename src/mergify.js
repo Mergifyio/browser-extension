@@ -13,6 +13,7 @@ import {
     MergifyCache as _MergifyCache,
     StackContextCache as _StackContextCache,
     removeLegacyPrStatusEntries,
+    removeLegacyStackContextEntries,
 } from "./cache.js";
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
@@ -46,9 +47,11 @@ export {
     _MergifyCache as MergifyCache,
     _StackContextCache as StackContextCache,
     removeLegacyPrStatusEntries,
+    removeLegacyStackContextEntries,
 };
 
 removeLegacyPrStatusEntries();
+removeLegacyStackContextEntries();
 
 // Orchestrator-owned state
 let lastPullRequestUrl = null;
