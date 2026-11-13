@@ -25,6 +25,7 @@ const {
     MERGE_BOX_ROW_ATTR,
     deriveQueueButtonState,
     findCommentComposer,
+    findOverviewMergedTitles,
     getBaseRef,
     injectRowIntoMergeBox,
     isMergeQueueBatchPr,
@@ -115,6 +116,12 @@ describe.each(listGitHubDomEras())("%s", (era) => {
             );
             expect(isMergeQueueBatchPr()).toBe(
                 expected.state === "draft" && expected.authoredByMergify,
+            );
+        });
+
+        it("finds GitHub's Merged title in the Overview page's summary card", () => {
+            expect(findOverviewMergedTitles().length > 0).toBe(
+                expected.overviewMergedTitle,
             );
         });
 

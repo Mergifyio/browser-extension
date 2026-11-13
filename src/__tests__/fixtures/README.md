@@ -58,6 +58,7 @@ listed in each era's `description`.
 | `mergifyDetectableFromPage` | page alone proves Mergify is on the repo (app avatar); false on quiet pages of enabled repos where checks are collapsed |
 | `authoredByMergify` | header-scoped Mergify-authorship detection outcome |
 | `mergedByMergify` | merged-commit timeline entry authored by Mergify |
+| `overviewMergedTitle` | the Overview page's summary card carries GitHub's "Merged" title, which the merge queue's merged state is appended to |
 | `queued` | a Mergify Merge Queue check reports the PR as queued |
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |

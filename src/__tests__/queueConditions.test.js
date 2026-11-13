@@ -1584,6 +1584,63 @@ describe("queue states in the merge-box row", () => {
         ).toBeNull();
     });
 
+    const MERGED = {
+        ...QUEUED,
+        state: "merged",
+        speculative_check_pr: null,
+        required_conditions: [],
+    };
+    const overviewTitle = () =>
+        document.querySelector(
+            'section[aria-label="Recommended action"] [data-testid="for-you-item-title"]',
+        );
+
+    test("merged, on the Overview page: GitHub's Merged row says it was the merge queue, once, no row of Mergify's repeats it, and takes it back when it no longer applies", async () => {
+        let payload = MERGED;
+        await jest.isolateModulesAsync(async () => {
+            jest.doMock("../mqPayload", () => ({
+                ...jest.requireActual("../mqPayload"),
+                getCurrent: () => payload && { source: "payload", payload },
+            }));
+            const queue = require("../queue");
+            // GitHub's row as it reads once the head branch is deleted.
+            document.body.innerHTML = `<span data-status="pullMerged">Merged</span><div class="Card__hashed"><section aria-label="Recommended action"><ul role="list"><li data-testid="for-you-item-row" data-item-id="merged"><div><div data-testid="for-you-item-title">Merged</div><div data-testid="for-you-item-subtext"><a href="/mergify[bot]">mergify[bot]</a> merged in <code>d8f1819</code></div></div></li></ul></section><div data-mergify-merge-box-row="default">Mergify</div></div>`;
+            mockCheckRun("");
+
+            queue.updateAllMergifyRows();
+            expect(overviewTitle().textContent).toBe(
+                "Merged by the merge queue",
+            );
+            expect(conditionsSection()).toBeNull();
+            const card = document.querySelector(".Card__hashed");
+            expect(rowOrder(card)).toEqual(["Recommended action", "DIV"]);
+            expect(
+                card.lastElementChild.getAttribute(
+                    "data-mergify-merge-box-row",
+                ),
+            ).toBe("default");
+
+            const mutations = [];
+            const observer = new MutationObserver((m) => mutations.push(...m));
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+            });
+            queue.updateAllMergifyRows();
+            await Promise.resolve();
+            observer.disconnect();
+            expect(mutations).toHaveLength(0);
+
+            // Another pull request after an in-page navigation, where React
+            // kept GitHub's title as it was.
+            payload = null;
+            queue.updateAllMergifyRows();
+            expect(overviewTitle().textContent).toBe("Merged");
+        });
+        document.body.innerHTML = "";
+    });
+
     test("dequeued: red, pointing at the activity log; gone once the PR is closed", async () => {
         const dequeued = {
             ...QUEUED,
