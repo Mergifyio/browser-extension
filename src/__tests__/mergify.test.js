@@ -2042,11 +2042,30 @@ describe("renderMergifyContext", () => {
             .replace(/>/g, "&gt;");
     }
 
-    function timelineItem(id, visibleText) {
+    // GitHub's markup for a timeline comment: the author's profile link in
+    // the comment's header, the rendered text in .comment-body, both inside
+    // the element carrying the comment's id.
+    function comment(id, authorPath, visibleText) {
         return (
-            '<div class="TimelineItem">' +
-            `<div id="issuecomment-${id}"></div>` +
+            `<div id="${id}">` +
+            '<div class="timeline-comment">' +
+            '<div class="timeline-comment-header">' +
+            `<a class="author" href="${authorPath}">x</a>` +
+            "</div>" +
             `<div class="comment-body">${visibleText}</div>` +
+            "</div></div>"
+        );
+    }
+
+    // The pull request's opening post, which names its author.
+    function openingPost(authorPath = "/octocat") {
+        return comment("pullrequest-1", authorPath, "Description");
+    }
+
+    function timelineItem(id, visibleText, authorPath = "/octocat") {
+        return (
+            '<div class="TimelineItem js-comment-container">' +
+            comment(`issuecomment-${id}`, authorPath, visibleText) +
             "</div>"
         );
     }
@@ -2059,6 +2078,7 @@ describe("renderMergifyContext", () => {
             /revision-data/i.test(body) ? "Revision history" : "Mergify stack";
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
+            openingPost() +
             commentBodies
                 .map((body, i) => timelineItem(i + 1, visibleText(body)))
                 .join("");
@@ -2093,6 +2113,136 @@ describe("renderMergifyContext", () => {
         expect(
             panel.querySelector('[data-mergify-rev-num="1"]'),
         ).not.toBeNull();
+    });
+
+    // Serves each comment's edit_form from a map of id → body, so a test
+    // can lay out the timeline itself.
+    function serveEditForms(bodiesById) {
+        global.fetch = jest.fn((url) => {
+            const m = /\/issue_comments\/(\d+)\/edit_form$/.exec(String(url));
+            const body = m ? bodiesById[m[1]] : undefined;
+            return Promise.resolve({
+                ok: true,
+                text: () =>
+                    Promise.resolve(
+                        body === undefined
+                            ? ""
+                            : `<html><body><textarea>${escapeBody(body)}</textarea></body></html>`,
+                    ),
+            });
+        });
+    }
+
+    function editFormsFetched() {
+        return global.fetch.mock.calls
+            .map(([url]) => /\/issue_comments\/(\d+)\/edit_form$/.exec(url))
+            .filter(Boolean)
+            .map((m) => m[1]);
+    }
+
+    describe("reads only the pull request author's comment", () => {
+        it("ignores a revision history posted by another account", async () => {
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                openingPost("/octocat") +
+                timelineItem(1, "Revision history", "/someone-else");
+            serveEditForms({ 1: revisionBody(122) });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(document.querySelector("#mergify-context")).toBeNull();
+            expect(editFormsFetched()).toEqual([]);
+        });
+
+        it("renders the author's comment and leaves another one unread", async () => {
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                openingPost("/octocat") +
+                timelineItem(1, "Revision history", "/someone-else") +
+                timelineItem(2, "Revision history", "/OctoCat");
+            serveEditForms({ 1: revisionBody(122), 2: revisionBody(122) });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(document.querySelector("#mergify-context")).not.toBeNull();
+            expect(editFormsFetched()).toEqual(["2"]);
+        });
+
+        it("ignores a revision history posted by an app", async () => {
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                openingPost("/octocat") +
+                timelineItem(1, "Revision history", "/apps/some-app");
+            serveEditForms({ 1: revisionBody(122) });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(editFormsFetched()).toEqual([]);
+        });
+
+        // A stack pushed with an app's token: the app opened the pull
+        // request and posted its revision history.
+        it("reads the revision history of the app that opened the pull request", async () => {
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                openingPost("/apps/some-app") +
+                timelineItem(1, "Revision history", "/apps/other-app") +
+                timelineItem(2, "Revision history", "/some-app") +
+                timelineItem(3, "Revision history", "/apps/some-app");
+            serveEditForms({
+                1: revisionBody(122),
+                2: revisionBody(122),
+                3: revisionBody(122),
+            });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(document.querySelector("#mergify-context")).not.toBeNull();
+            expect(editFormsFetched()).toEqual(["3"]);
+        });
+
+        // The header comes before the body, so text in the body cannot stand
+        // in for the author even if it reproduced the header's markup.
+        it("reads the author from the comment header, not its body", async () => {
+            const forgedHeader =
+                '<div class="timeline-comment-header">' +
+                '<a class="author" href="/octocat">octocat</a></div>';
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                openingPost("/octocat") +
+                timelineItem(
+                    1,
+                    `Revision history ${forgedHeader}`,
+                    "/someone-else",
+                );
+            serveEditForms({ 1: revisionBody(122) });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(editFormsFetched()).toEqual([]);
+        });
+
+        it("reads nothing when the page names no pull request author", async () => {
+            document.body.innerHTML =
+                '<div id="discussion_bucket"></div>' +
+                timelineItem(1, "Revision history", "/octocat");
+            serveEditForms({ 1: revisionBody(122) });
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(document.querySelector("#mergify-context")).toBeNull();
+            expect(editFormsFetched()).toEqual([]);
+        });
+
+        it("applies the same rule to the Conversation HTML fetched for the Files tab", async () => {
+            document.body.innerHTML = '<div id="discussion_bucket"></div>';
+            const conversationHtml =
+                "<html><body>" +
+                openingPost("/octocat") +
+                timelineItem(9001, "Revision history", "/someone-else") +
+                "</body></html>";
+            serveEditForms({ 9001: revisionBody(122) });
+            const serveEditForm = global.fetch;
+            global.fetch = jest.fn((url) =>
+                String(url).endsWith("/o/r/pull/122")
+                    ? Promise.resolve({
+                          ok: true,
+                          text: () => Promise.resolve(conversationHtml),
+                      })
+                    : serveEditForm(url),
+            );
+            await renderMergifyContext({ org: "o", repo: "r", number: 122 });
+            expect(document.querySelector("#mergify-context")).toBeNull();
+            expect(editFormsFetched()).toEqual([]);
+        });
     });
 
     it("paints neither a stack list nor a floating stack-nav pill", async () => {
@@ -2131,6 +2281,7 @@ describe("renderMergifyContext", () => {
     it("does not download the Conversation page when the timeline is rendered", async () => {
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
+            openingPost() +
             timelineItem(1, "Someone else's comment");
         global.fetch = jest.fn(() =>
             Promise.resolve({ ok: true, text: () => Promise.resolve("") }),
@@ -2153,6 +2304,7 @@ describe("renderMergifyContext", () => {
         // the user lacks read access). Result: no body collected, no panel.
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
+            openingPost() +
             timelineItem(1, "Revision history");
         global.fetch = jest.fn(() =>
             Promise.resolve({ ok: false, status: 404 }),
@@ -2164,6 +2316,7 @@ describe("renderMergifyContext", () => {
     it("backs off after an edit_form failure (negative cache)", async () => {
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
+            openingPost() +
             timelineItem(1, "Revision history");
         const fetchSpy = jest.fn(() =>
             Promise.resolve({ ok: false, status: 404 }),
@@ -2185,6 +2338,7 @@ describe("renderMergifyContext", () => {
             '<section class="use-sticky-header-module__stickyHeader__abc"></section>';
         const conversationHtml =
             "<html><body>" +
+            openingPost() +
             timelineItem(9001, "Revision history") +
             "</body></html>";
         const escaped = escapeBody(revisionBody(11335));
@@ -2245,6 +2399,7 @@ describe("renderMergifyContext", () => {
         // left, so it must never reach the DOM.
         document.body.innerHTML =
             '<div id="discussion_bucket"></div>' +
+            openingPost() +
             timelineItem(1, "Revision history");
         let resolveEditForm;
         global.fetch = jest.fn(
