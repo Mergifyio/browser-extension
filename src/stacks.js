@@ -46,13 +46,16 @@ export function extractMarkerJson(body, prefix) {
 // markdown table. The JSON marker doesn't include reasons, but mergify-cli
 // emits them in the 5-column markdown form: | # | Type | Changes | Reason | Date |
 // Returns { [number]: reason } only for entries whose reason cell is non-empty.
+// Linear in the body's length: a body is up to 64 KiB of text anyone with
+// comment access chose, and a regex split such as /\s*\|\s*/ backtracks
+// quadratically over a long run of spaces, freezing the tab.
 export function extractRevisionRowReasons(body) {
     const out = {};
     for (const line of body.split("\n")) {
         if (!line.startsWith("| ")) continue;
         if (/^\|\s*-+/.test(line)) continue;
         const cells = line
-            .split(/\s*\|\s*/)
+            .split("|")
             .slice(1, -1)
             .map((s) => s.trim());
         if (cells.length !== 5) continue;
@@ -66,12 +69,14 @@ export function extractRevisionRowReasons(body) {
 export function parseRevisionMarker(commentBodies, pullNumber) {
     let latest = null;
     for (const body of commentBodies) {
+        // Read once per body, not once per marker in it.
+        let reasons = null;
         for (const raw of extractMarkerJson(body, REVISION_MARKER_PREFIX)) {
             try {
                 const parsed = JSON.parse(raw);
                 if (parsed.schema_version !== 1) continue;
                 if (parsed.pull_number !== pullNumber) continue;
-                const reasons = extractRevisionRowReasons(body);
+                reasons ??= extractRevisionRowReasons(body);
                 latest = {
                     ...parsed,
                     entries: parsed.entries.map((e) => ({

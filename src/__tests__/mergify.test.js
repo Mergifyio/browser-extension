@@ -1247,6 +1247,24 @@ describe("parseRevisionMarker", () => {
         expect(parseRevisionMarker([body], 122)).toBeNull();
     });
 
+    // GitHub caps a comment at 65,536 characters, so a 64 KiB row is the
+    // longest a body can carry. A backtracking split took seconds on it.
+    it("reads a 64 KiB table row in linear time", () => {
+        const spaces = " ".repeat(64 * 1024);
+        const body =
+            `| 1 | amend | x${spaces}y | kept | t |\n` +
+            `| a${spaces}b |\n` +
+            makeMarker({
+                schema_version: 1,
+                pull_number: 122,
+                entries: [{ number: 1, change_type: "amend" }],
+            });
+        const start = performance.now();
+        const result = parseRevisionMarker([body], 122);
+        expect(performance.now() - start).toBeLessThan(250);
+        expect(result.entries[0].reason).toBe("kept");
+    });
+
     it("uses the latest matching marker when multiple are present", () => {
         const a = makeMarker({
             schema_version: 1,
