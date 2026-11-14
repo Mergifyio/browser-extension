@@ -1247,6 +1247,64 @@ describe("parseRevisionMarker", () => {
         expect(parseRevisionMarker([body], 122)).toBeNull();
     });
 
+    it("keeps each entry field only with the type the panel renders", () => {
+        const body = makeMarker({
+            schema_version: 1,
+            pull_number: 122,
+            entries: [
+                {
+                    number: 2,
+                    change_type: "amend",
+                    old_sha: "aaaaaaa",
+                    new_sha: "bbbbbbb",
+                    replay_sha: "ccccccc",
+                    timestamp_iso: "2026-04-23T16:02:00Z",
+                    compare_url: "https://example.com/x",
+                    extra: "ignored",
+                },
+                {
+                    number: "3",
+                    change_type: { toString: null },
+                    old_sha: 1,
+                    new_sha: ["bbbbbbb"],
+                    timestamp_iso: 0,
+                },
+                null,
+                "not an entry",
+            ],
+        });
+        const result = parseRevisionMarker([body], 122);
+        expect(result.entries).toEqual([
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                replay_sha: "ccccccc",
+                timestamp_iso: "2026-04-23T16:02:00Z",
+                reason: null,
+            },
+            {
+                number: null,
+                change_type: null,
+                old_sha: null,
+                new_sha: null,
+                replay_sha: null,
+                timestamp_iso: null,
+                reason: null,
+            },
+        ]);
+    });
+
+    it("skips a marker whose entries are not a list", () => {
+        const body = makeMarker({
+            schema_version: 1,
+            pull_number: 122,
+            entries: { 0: { number: 1 } },
+        });
+        expect(parseRevisionMarker([body], 122)).toBeNull();
+    });
+
     // GitHub caps a comment at 65,536 characters, so a 64 KiB row is the
     // longest a body can carry. A backtracking split took seconds on it.
     it("reads a 64 KiB table row in linear time", () => {
@@ -1475,40 +1533,142 @@ describe("buildContextPanel", () => {
         expect(dots[1].getAttribute("data-mergify-change-type")).toBe("amend");
     });
 
-    it("links 'initial' to commit page and others to compare_url", () => {
-        const revData = {
-            schema_version: 1,
-            pull_number: 122,
-            entries: [
-                {
-                    number: 1,
-                    change_type: "initial",
-                    old_sha: null,
-                    new_sha: "aaaaaaa",
-                    timestamp_iso: "2026-04-22T09:14:00Z",
-                    compare_url: null,
-                },
-                {
-                    number: 2,
-                    change_type: "amend",
-                    old_sha: "aaaaaaa",
-                    new_sha: "bbbbbbb",
-                    timestamp_iso: "2026-04-23T16:02:00Z",
-                    compare_url: "https://x/compare/aaaaaaa...bbbbbbb",
-                },
-            ],
-        };
-        const el = buildContextPanel(revData, {
-            org: "o",
-            repo: "r",
-            number: 122,
-        });
-        const links = el.querySelectorAll("[data-mergify-rev-dot]");
+    function dotsFor(entries) {
+        const el = buildContextPanel(
+            { schema_version: 1, pull_number: 122, entries },
+            ctx(),
+        );
+        return el.querySelectorAll("[data-mergify-rev-dot]");
+    }
+
+    it("links 'initial' to its commit and others to a comparison in this repository", () => {
+        const links = dotsFor([
+            {
+                number: 1,
+                change_type: "initial",
+                old_sha: null,
+                new_sha: "aaaaaaa",
+                timestamp_iso: "2026-04-22T09:14:00Z",
+            },
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                timestamp_iso: "2026-04-23T16:02:00Z",
+            },
+        ]);
         expect(links[0].getAttribute("href")).toBe("/o/r/commit/aaaaaaa");
         expect(links[1].getAttribute("href")).toBe(
-            "https://x/compare/aaaaaaa...bbbbbbb",
+            "/o/r/compare/aaaaaaa...bbbbbbb",
         );
         for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
+    });
+
+    // The marker's compare_url is never a link, whatever it holds: entries
+    // read before this change may still sit in the panel's cache with one.
+    it.each([
+        ["another site", "https://example.com/aaaaaaa...bbbbbbb"],
+        ["a protocol-relative URL", "//example.com/compare"],
+        ["a javascript: URL", "javascript:alert(document.domain)"],
+    ])("ignores a compare_url pointing at %s", (_label, compareUrl) => {
+        const [dot] = dotsFor([
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                compare_url: compareUrl,
+            },
+        ]);
+        expect(dot.getAttribute("href")).toBe("/o/r/compare/aaaaaaa...bbbbbbb");
+    });
+
+    it("compares against the replay commit when one is recorded", () => {
+        const [dot] = dotsFor([
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                replay_sha: "ccccccc",
+            },
+        ]);
+        expect(dot.getAttribute("href")).toBe("/o/r/compare/aaaaaaa...ccccccc");
+    });
+
+    it.each([
+        ["a path", "../../../evil"],
+        ["a URL", "https://example.com"],
+        ["a javascript: URL", "javascript:alert(1)"],
+        ["too short", "abc"],
+        ["not a string", 1234567],
+    ])("builds no link from a sha that is %s", (_label, sha) => {
+        const [initial, amend, replayed] = dotsFor([
+            { number: 1, change_type: "initial", old_sha: null, new_sha: sha },
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: sha,
+            },
+            {
+                number: 3,
+                change_type: "amend",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                replay_sha: sha,
+            },
+        ]);
+        expect(initial.hasAttribute("href")).toBe(false);
+        expect(amend.hasAttribute("href")).toBe(false);
+        expect(amend.getAttribute("aria-label")).not.toMatch(/open diff/);
+        // A bad replay sha falls back to the revision's own head.
+        expect(replayed.getAttribute("href")).toBe(
+            "/o/r/compare/aaaaaaa...bbbbbbb",
+        );
+    });
+
+    it("links to the commit when the old sha is not hex", () => {
+        const [dot] = dotsFor([
+            {
+                number: 2,
+                change_type: "amend",
+                old_sha: "../evil",
+                new_sha: "bbbbbbb",
+            },
+        ]);
+        expect(dot.getAttribute("href")).toBe("/o/r/commit/bbbbbbb");
+    });
+
+    it("renders marker text as text", () => {
+        const [dot] = dotsFor([
+            {
+                number: 2,
+                change_type: '<img src=x onerror="alert(1)">',
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+                timestamp_iso: "<b>x</b>",
+                reason: "<script>alert(1)</script>",
+            },
+        ]);
+        expect(dot.querySelector("img, b, script")).toBeNull();
+        expect(dot.textContent).toContain('<img src=x onerror="alert(1)">');
+        expect(dot.textContent).toContain("<script>alert(1)</script>");
+    });
+
+    it("colours a change type named after an Object property as unknown", () => {
+        const [dot] = dotsFor([
+            {
+                number: 2,
+                change_type: "constructor",
+                old_sha: "aaaaaaa",
+                new_sha: "bbbbbbb",
+            },
+        ]);
+        expect(dot.querySelector("span").style.background).toBe(
+            "var(--fgColor-accent, #58a6ff)",
+        );
     });
 
     it("marks the latest revision with data-mergify-latest", () => {
