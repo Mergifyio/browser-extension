@@ -1,7 +1,7 @@
 {
     "era": "github_dom_2026_07",
     "recordedAt": "2026-07-19",
-    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running, and PR metadata carried in the react-app.embeddedData JSON rather than as markup. Gone vs 2025_02: .merge-pr, .gh-header-meta and .commit-ref.base-ref (authorship and base branch now read from the embedded payload), and the Mergify app avatar on pages whose checks are collapsed — so mergifyDetectableFromPage stays false on quiet PRs of Mergify-enabled repos, where the configuration lookup resolves it instead. span.State survives here only on cross-referenced PRs in the timeline, never for the viewed PR. Captured from synthetic PRs on mergify-sandbox repos, sanitized. github_pr_opened_overview is an A/B variant recorded 2026-11-10: the Overview page, an opt-in preview GitHub serves per user alongside the classic view, captured with its merge-status side panel open (?panel=mergeStatus, the sidebar row's anchor). It is a separate react-app (app-name=repo) with no #new_comment_field: comments go through a React markdown editor whose textarea id is generated per render. github_pr_opened_overview_default is the same pull request as the Overview page opens it, recorded 2026-11-10: the side panel is closed and not remembered, so the only merge-box anchor is the summary card at the top (the parent of section[aria-label=\"Recommended action\"], holding GitHub's own Merge button), present in every pull request state. With the panel closed the Mergify app avatar (only in the panel's checks list) is gone too, so mergifyDetectableFromPage is false there, as on the classic quiet pages. github_pr_queued_overview and github_pr_merged_overview are one pull request (#12) on the Overview page, recorded 2026-11-10 while the merge queue held it and once it had merged it. That page has no .TimelineItem or .comment-body: comments are [data-testid=timeline-item] entries listed newest first, each with its comment id on an article and its body in a .markdown-body, and the merge and its author show only in the summary card. The current engine titles its status comment with the queue's step (\"Testing\"), not \"Merge Queue Status\", so statusCommentId is Mergify's latest comment there. queued and queueButtonState stay false and unqueued on the queued page: with no checks list on the page, the queue state comes from the Mergify Merge Queue check, fetched rather than read.",
+    "description": "Current github.com React DOM: span[data-status] status pills, hydrated merge box inside data-testid=mergebox-partial, checks list collapsed unless a check is running, and PR metadata carried in the react-app.embeddedData JSON rather than as markup. Gone vs 2025_02: .merge-pr, .gh-header-meta and .commit-ref.base-ref (authorship and base branch now read from the embedded payload), and the Mergify app avatar on pages whose checks are collapsed — so mergifyDetectableFromPage stays false on quiet PRs of Mergify-enabled repos, where the configuration lookup resolves it instead. span.State survives here only on cross-referenced PRs in the timeline, never for the viewed PR. Captured from synthetic PRs on mergify-sandbox repos, sanitized. github_pr_opened_overview is an A/B variant recorded 2026-11-10: the Overview page, an opt-in preview GitHub serves per user alongside the classic view, captured with its merge-status side panel open (?panel=mergeStatus, the sidebar row's anchor). It is a separate react-app (app-name=repo) with no #new_comment_field: comments go through a React markdown editor whose textarea id is generated per render. github_pr_opened_overview_default is the same pull request as the Overview page opens it, recorded 2026-11-10: the side panel is closed and not remembered, so the only merge-box anchor is the summary card at the top (the parent of section[aria-label=\"Recommended action\"], holding GitHub's own Merge button), present in every pull request state. With the panel closed the Mergify app avatar (only in the panel's checks list) is gone too, so mergifyDetectableFromPage is false there, as on the classic quiet pages. github_pr_queued_overview and github_pr_merged_overview are one pull request (#12) on the Overview page, recorded 2026-11-10 while the merge queue held it and once it had merged it. That page has no .TimelineItem or .comment-body: comments are [data-testid=timeline-item] entries listed newest first, each with its comment id on an article and its body in a .markdown-body, and the merge and its author show only in the summary card. The current engine titles its status comment with the queue's step (\"Testing\"), not \"Merge Queue Status\", so statusCommentId is Mergify's latest comment there. queued and queueButtonState stay false and unqueued on the queued page: with no checks list on the page, the queue state comes from the Mergify Merge Queue check, fetched rather than read. pullRequestAuthor is null and authorCommentIds empty on the Overview pages: they render no opening post (#pullrequest-<id>) and no a.author link, so the Mergify Stacks panel reads no comment there.",
     "pages": {
         "github_pr_opened": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/6",
@@ -15,7 +15,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": []
         },
         "github_pr_draft": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/7",
@@ -29,7 +31,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "draft",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": []
         },
         "github_pr_queued": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/8",
@@ -43,7 +47,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "queued",
             "statusCommentId": "5017179426",
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": ["5017179028"]
         },
         "github_pr_batch_open": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/9",
@@ -57,7 +63,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "batch",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/apps/mergify",
+            "authorCommentIds": []
         },
         "github_pr_no_timeline_actions": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/3",
@@ -71,7 +79,9 @@
             "baseRef": "main",
             "queueButtonState": "closed",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": []
         },
         "github_pr_merged": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/1",
@@ -85,7 +95,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "merged",
             "statusCommentId": "5004863726",
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": ["5004860436"]
         },
         "github_pr_batch_closed": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/4",
@@ -99,7 +111,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "closed",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/apps/mergify",
+            "authorCommentIds": []
         },
         "github_pr_opened_overview": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/11?panel=mergeStatus",
@@ -113,7 +127,9 @@
             "mergeBoxRowVariants": ["sidebar", "default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": null,
+            "authorCommentIds": []
         },
         "github_pr_opened_overview_default": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/11",
@@ -127,7 +143,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": null,
+            "authorCommentIds": []
         },
         "github_pr_queued_overview": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/12",
@@ -141,7 +159,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": "6772931814",
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": null,
+            "authorCommentIds": []
         },
         "github_pr_merged_overview": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/12",
@@ -155,7 +175,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "merged",
             "statusCommentId": "6772931814",
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": null,
+            "authorCommentIds": []
         },
         "github_pr_no_mergify": {
             "path": "/mergify-sandbox/browser-extension-fixtures-no-mergify/pull/2",
@@ -169,7 +191,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": []
         }
     }
 }

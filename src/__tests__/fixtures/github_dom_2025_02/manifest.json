@@ -15,7 +15,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "draft",
             "statusCommentId": "2912525941",
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/syffe",
+            "authorCommentIds": []
         },
         "github_pr_merged": {
             "path": "/nodejs/node/pull/57792",
@@ -29,7 +31,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "closed",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/aduh95",
+            "authorCommentIds": []
         },
         "github_pr_no_mergify": {
             "path": "/cypress-io/cypress/pull/32277",
@@ -43,7 +47,9 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "statusCommentId": null,
-            "postsCommand": true
+            "postsCommand": true,
+            "pullRequestAuthor": "/adamalston",
+            "authorCommentIds": []
         },
         "github_pr_no_timeline_actions": {
             "path": "/Mergifyio/docs/pull/7215",
@@ -57,7 +63,9 @@
             "mergeBoxRowVariants": [],
             "queueButtonState": "draft",
             "statusCommentId": "2912525941",
-            "postsCommand": false
+            "postsCommand": false,
+            "pullRequestAuthor": "/syffe",
+            "authorCommentIds": []
         }
     }
 }
