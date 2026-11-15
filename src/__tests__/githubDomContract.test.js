@@ -40,6 +40,10 @@ const {
     wasMergedByMergify,
 } = require("../mergify");
 const { findLatestStatusCommentSync } = require("../mqPayload");
+const {
+    findPullRequestAuthorComments,
+    readPullRequestAuthor,
+} = require("../stacks");
 
 describe.each(listGitHubDomEras())("%s", (era) => {
     const manifest = loadEraManifest(era);
@@ -152,6 +156,17 @@ describe.each(listGitHubDomEras())("%s", (era) => {
                     parent.insertBefore(ta, next);
                 }
             }
+        });
+
+        // The Mergify Stacks panel reads a revision history only from a
+        // comment its pull request's author wrote.
+        it("finds the comments the pull request's author wrote", () => {
+            expect(readPullRequestAuthor(document)).toBe(
+                expected.pullRequestAuthor,
+            );
+            expect(
+                findPullRequestAuthorComments(document).map((c) => c.id),
+            ).toEqual(expected.authorCommentIds);
         });
 
         it("reads the base branch", () => {
