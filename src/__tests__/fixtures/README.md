@@ -10,7 +10,7 @@ of every era.
 
 ```
 fixtures/
-  github_pr_mergify_timestamp.html   # hand-made timeline fragment
+  github_pr_mergify_comment.html   # hand-made timeline fragment
   searchConfigFound.html             # /search results page (config lookup)
   searchConfigNotFound.html
   github_dom_2025_02/                # legacy DOM (closest stand-in for GHES)

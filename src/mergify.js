@@ -31,14 +31,12 @@ import {
     updateAllMergifyRows,
 } from "./queue.js";
 import { renderMergifyContext } from "./stacks.js";
-import { convertMergifyTimestamps } from "./timestamps.js";
 
 export * from "./debug.js";
 export * from "./dom.js";
 export * from "./logo.js";
 export * from "./queue.js";
 export * from "./stacks.js";
-export * from "./timestamps.js";
 // Re-export everything for the test suite (which imports from "../mergify").
 // Cache classes are re-exported as named exports (not export *) so that
 // jest.spyOn can replace them on the module object in tests.
@@ -263,7 +261,6 @@ function onPageUpdate() {
     requestAnimationFrame(() => {
         pageUpdateScheduled = false;
         tryInject();
-        convertMergifyTimestamps();
     });
 }
 
