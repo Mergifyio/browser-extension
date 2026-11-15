@@ -66,6 +66,26 @@ export function extractRevisionRowReasons(body) {
     return out;
 }
 
+function textOrNull(value) {
+    return typeof value === "string" ? value : null;
+}
+
+// A marker entry, field by field: the marker is text in a comment, so each
+// value is kept only with the type the panel renders it as, and as text.
+// Its `compare_url` is left out on purpose: links are built by revisionHref.
+function readRevisionEntry(entry, reasons) {
+    const number = Number.isInteger(entry.number) ? entry.number : null;
+    return {
+        number,
+        change_type: textOrNull(entry.change_type),
+        old_sha: textOrNull(entry.old_sha),
+        new_sha: textOrNull(entry.new_sha),
+        replay_sha: textOrNull(entry.replay_sha),
+        timestamp_iso: textOrNull(entry.timestamp_iso),
+        reason: (number !== null && reasons[number]) || null,
+    };
+}
+
 export function parseRevisionMarker(commentBodies, pullNumber) {
     let latest = null;
     for (const body of commentBodies) {
@@ -76,13 +96,14 @@ export function parseRevisionMarker(commentBodies, pullNumber) {
                 const parsed = JSON.parse(raw);
                 if (parsed.schema_version !== 1) continue;
                 if (parsed.pull_number !== pullNumber) continue;
+                if (!Array.isArray(parsed.entries)) continue;
                 reasons ??= extractRevisionRowReasons(body);
                 latest = {
-                    ...parsed,
-                    entries: parsed.entries.map((e) => ({
-                        ...e,
-                        reason: reasons[e.number] || null,
-                    })),
+                    schema_version: parsed.schema_version,
+                    pull_number: parsed.pull_number,
+                    entries: parsed.entries
+                        .filter((e) => e !== null && typeof e === "object")
+                        .map((e) => readRevisionEntry(e, reasons)),
                 };
             } catch (_e) {
                 debug("parseRevisionMarker: failed to parse marker JSON", _e);
@@ -280,6 +301,31 @@ export function buildContextPanel(revisionData, currentPull) {
     return root;
 }
 
+// A git object name: abbreviated (7) up to SHA-256 (64) hex digits.
+const GIT_SHA_RE = /^[0-9a-f]{7,64}$/i;
+
+function gitSha(value) {
+    return typeof value === "string" && GIT_SHA_RE.test(value) ? value : null;
+}
+
+// Where a revision dot links: built from the repository of the page being
+// viewed and shas that are hex, never from a URL the comment carries, so a
+// dot can only open a commit or a comparison in this repository. A revision
+// whose sha is not hex gets no link. The head of the comparison is the
+// replay commit when mergify-cli recorded one (the amendment without the
+// rebase noise), as its own compare link does.
+function revisionHref(currentPull, entry) {
+    const newSha = gitSha(entry.new_sha);
+    if (!newSha) return null;
+    const repoPath = `/${currentPull.org}/${currentPull.repo}`;
+    const oldSha = gitSha(entry.old_sha);
+    if (entry.change_type === "initial" || !oldSha) {
+        return `${repoPath}/commit/${newSha}`;
+    }
+    const head = gitSha(entry.replay_sha) ?? newSha;
+    return `${repoPath}/compare/${oldSha}...${head}`;
+}
+
 export function buildRevisionColumn(revisionData, currentPull) {
     const col = document.createElement("div");
     col.setAttribute("data-mergify-section", "revisions");
@@ -297,8 +343,8 @@ export function buildRevisionColumn(revisionData, currentPull) {
 
     // Squash runs of consecutive `rebase` entries into one display entry.
     // Adjacent rebases without an amend in between are mostly noise;
-    // collapsing them gives a cleaner timeline. The squashed dot's compare
-    // URL spans the run (oldest old_sha → newest new_sha) so clicking
+    // collapsing them gives a cleaner timeline. The squashed dot keeps the
+    // run's oldest old_sha and takes its newest new_sha, so its compare link
     // shows the full delta of the rebase storm.
     const displayEntries = [];
     for (const entry of revisionData.entries) {
@@ -309,12 +355,10 @@ export function buildRevisionColumn(revisionData, currentPull) {
             last.change_type === "rebase"
         ) {
             last.new_sha = entry.new_sha;
+            last.replay_sha = null;
             last.timestamp_iso = entry.timestamp_iso;
             last.last_number = entry.number;
             last.run_count = (last.run_count || 1) + 1;
-            if (entry.old_sha && last.old_sha) {
-                last.compare_url = `/${currentPull.org}/${currentPull.repo}/compare/${last.old_sha}...${entry.new_sha}`;
-            }
             continue;
         }
         displayEntries.push({ ...entry, run_count: 1 });
@@ -351,26 +395,29 @@ export function buildRevisionColumn(revisionData, currentPull) {
             a.setAttribute("data-mergify-rebase-run", String(entry.run_count));
         }
         if (isLatest) a.setAttribute("data-mergify-latest", "true");
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
         const typeText =
             entry.run_count > 1
                 ? `${entry.change_type} ×${entry.run_count}`
                 : entry.change_type;
+        const href = revisionHref(currentPull, entry);
+        if (href) {
+            a.href = href;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+        }
         a.setAttribute(
             "aria-label",
-            `Revision ${entry.number} (${typeText}) — open diff`,
+            href
+                ? `Revision ${entry.number} (${typeText}) — open diff`
+                : `Revision ${entry.number} (${typeText})`,
         );
-        a.href =
-            entry.change_type === "initial" || !entry.compare_url
-                ? `/${currentPull.org}/${currentPull.repo}/commit/${entry.new_sha}`
-                : entry.compare_url;
         a.style.cssText =
             "display:flex;flex-direction:column;align-items:center;" +
             "gap:4px;width:60px;text-decoration:none;color:inherit;";
 
-        const color =
-            DOT_COLORS[entry.change_type] || "var(--fgColor-accent, #58a6ff)";
+        const color = Object.hasOwn(DOT_COLORS, entry.change_type)
+            ? DOT_COLORS[entry.change_type]
+            : "var(--fgColor-accent, #58a6ff)";
         const dotEl = document.createElement("span");
         dotEl.style.cssText = isLatest
             ? `width:12px;height:12px;border-radius:50%;background:${color};` +
@@ -403,7 +450,7 @@ export function buildRevisionColumn(revisionData, currentPull) {
         const shaLabel = document.createElement("span");
         shaLabel.style.cssText =
             "color:var(--fgColor-accent, #58a6ff);font-family:monospace;";
-        shaLabel.textContent = entry.new_sha.slice(0, 7);
+        shaLabel.textContent = gitSha(entry.new_sha)?.slice(0, 7) ?? "";
         a.appendChild(shaLabel);
 
         if (entry.reason) {
