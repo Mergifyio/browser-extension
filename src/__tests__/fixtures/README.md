@@ -65,6 +65,8 @@ listed in each era's `description`.
 | `statusCommentId` | the `issuecomment-<id>` the payload poll fetches when no edit textarea is materialized: the latest Mergify comment headed "Merge Queue Status", else the latest Mergify comment with an id; `null` when there is none |
 | `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 | `postsCommand` | `postCommand()` finds the page's new-comment composer, fills it with the `@mergifyio` command and clicks its Comment button: the classic form or the Overview page's React editor. `false` only on a page with no composer |
+| `pullRequestAuthor` | the profile path (`/<login>`, or `/apps/<slug>` for an app) of the opening post's author, the only account whose comments the Mergify Stacks panel reads; `null` when the page renders no opening post |
+| `authorCommentIds` | the `issuecomment-<id>`s written by that account, in page order |
 
 ## Recording a new era
 
