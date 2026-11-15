@@ -129,17 +129,59 @@ function hasConversationTimeline(scope) {
     return scope.querySelector(COMMENT_CONTAINERS) !== null;
 }
 
+// The author link GitHub puts in a comment's header. It is page chrome: a
+// comment's own text cannot set a class, so it cannot forge one.
+const COMMENT_AUTHOR_LINK = ".timeline-comment-header a.author";
+
+// An account's profile path: `/<login>` for a user, `/apps/<slug>` for an
+// app, which no user's login can collide with.
+const PROFILE_PATH_RE = /^\/(?:apps\/)?[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+
+// The comment author's profile path, lowercased as GitHub logins are
+// case-insensitive. Null for a comment whose header shows no author (a
+// minimized comment).
+export function readCommentAuthor(comment) {
+    const href =
+        comment.querySelector(COMMENT_AUTHOR_LINK)?.getAttribute("href") ?? "";
+    return PROFILE_PATH_RE.test(href) ? href.toLowerCase() : null;
+}
+
+// The pull request's author is the author of its opening post, which GitHub
+// renders as the first comment of the timeline, `#pullrequest-<id>`. Read in
+// the same scope as the comments, so the Conversation HTML fetched for the
+// Files tab answers both. Null when the scope carries no opening post.
+export function readPullRequestAuthor(scope) {
+    for (const post of scope.querySelectorAll('[id^="pullrequest-"]')) {
+        if (/^pullrequest-\d+$/.test(post.id)) {
+            return readCommentAuthor(post);
+        }
+    }
+    return null;
+}
+
+// The comments the pull request's author wrote, as [{ id, comment }].
+export function findPullRequestAuthorComments(scope) {
+    const author = readPullRequestAuthor(scope);
+    if (!author) return [];
+    const out = [];
+    for (const comment of scope.querySelectorAll('[id^="issuecomment-"]')) {
+        const id = /^issuecomment-(\d+)$/.exec(comment.id)?.[1];
+        if (id && readCommentAuthor(comment) === author) {
+            out.push({ id, comment });
+        }
+    }
+    return out;
+}
+
+// mergify-cli posts the revision history with the token `mergify stack push`
+// runs with, and that command only adopts pull requests opened by the token's
+// account. So the comment to read is the pull request author's: one written
+// by anybody else is not mergify-cli's, whatever its text says.
 function findMergifyCommentIdsIn(scope) {
     const ids = new Set();
-    const containers = scope.querySelectorAll(COMMENT_CONTAINERS);
-    for (const c of containers) {
-        const body = c.querySelector(".comment-body");
-        if (!body) continue;
-        const text = body.textContent || "";
-        if (!MERGIFY_COMMENT_TEXT_RE.test(text)) continue;
-        const idEl = c.querySelector('[id^="issuecomment-"]');
-        const m = idEl?.id?.match(/issuecomment-(\d+)/);
-        if (m) ids.add(m[1]);
+    for (const { id, comment } of findPullRequestAuthorComments(scope)) {
+        const text = comment.querySelector(".comment-body")?.textContent || "";
+        if (MERGIFY_COMMENT_TEXT_RE.test(text)) ids.add(id);
     }
     return [...ids];
 }
