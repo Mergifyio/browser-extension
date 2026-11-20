@@ -248,9 +248,24 @@ jobs:
       # Read-only: download the asset off the published release.
       contents: read
     steps:
+      # Check out at the release tag for release-tools/, whose lockfile
+      # pins the store CLI and its whole dependency tree. The checkout
+      # keeps no token: this job only needs to read the repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: '20'
+
+      # Install from the lockfile, before any store credential is in the
+      # environment. None of these packages has an install script, so
+      # --ignore-scripts costs nothing and keeps a future one from running.
+      - name: Install the locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
 
       - name: Download the reviewed Chrome asset
         env:
@@ -281,9 +296,10 @@ jobs:
           set -euo pipefail
           # No subcommand = upload + publish in one shot. v4 dropped the
           # old `--auto-publish` flag (upload+publish is now the default
-          # when no command is given); pinned to major 4 so the CLI's
-          # contract can't shift under us.
-          npx --yes chrome-webstore-upload-cli@4 \
+          # when no command is given). The CLI is the exact version
+          # release-tools/package-lock.json pins, never one npx fetches
+          # while these credentials are in the environment.
+          release-tools/node_modules/.bin/chrome-webstore-upload \
             --source "mergify-chrome-${TAG}.zip" \
             --extension-id "$EXTENSION_ID"
 
@@ -295,9 +311,24 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Check out at the release tag for release-tools/, whose lockfile
+      # pins the store CLI and its whole dependency tree. The checkout
+      # keeps no token: this job only needs to read the repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: '20'
+
+      # Install from the lockfile, before any store credential is in the
+      # environment. None of these packages has an install script, so
+      # --ignore-scripts costs nothing and keeps a future one from running.
+      - name: Install the locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
 
       - name: Download the reviewed Firefox asset
         env:
@@ -326,10 +357,11 @@ jobs:
           # version is uploaded instead of blocking on approval — without
           # it, web-ext waits up to 15 min and then *errors out* on the
           # still-pending review, failing the job even though the submit
-          # succeeded.
+          # succeeded. web-ext is the exact version
+          # release-tools/package-lock.json pins.
           rm -rf firefox-src
           unzip -q "mergify-firefox-${TAG}.zip" -d firefox-src
-          npx --yes web-ext@10 sign \
+          release-tools/node_modules/.bin/web-ext sign \
             --source-dir firefox-src \
             --channel listed \
             --approval-timeout 0

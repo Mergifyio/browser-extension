@@ -49,6 +49,13 @@ The store jobs run only on Publish (never on the draft stage) and
 only for full releases — a release marked **pre-release** is skipped,
 so you can stage one without shipping it to the stores.
 
+The Chrome and Firefox jobs run their store CLI with the store
+credentials in the environment, so they never fetch it from the
+registry: they install `release-tools/` from its lockfile at the
+release tag and call the installed binaries. Dependabot keeps those
+versions current. A release tag cut from a commit older than
+`release-tools/` therefore can't publish to Chrome or Firefox.
+
 - **Chrome Web Store** — `chrome-webstore-upload-cli` uploads
   `mergify-chrome-<tag>.zip` and publishes it immediately.
 - **Firefox Add-ons (AMO)** — `web-ext sign --channel listed` submits

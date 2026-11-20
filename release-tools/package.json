@@ -1,0 +1,9 @@
+{
+    "name": "mergify-browser-extension-release-tools",
+    "private": true,
+    "description": "Store publishing CLIs for .github/workflows/release.yaml, locked so the jobs holding the store credentials never fetch them from the registry at run time.",
+    "dependencies": {
+        "chrome-webstore-upload-cli": "4.0.2",
+        "web-ext": "10.8.0"
+    }
+}
