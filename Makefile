@@ -13,7 +13,10 @@ MERGIFY_DOMAIN ?= $(MERGIFY_DOMAIN_DEFAULT)
 TARGETS = mergify-firefox-$(VERSION).zip mergify-chrome-$(VERSION).zip mergify-safari-$(VERSION).pkg
 DEV_TARGETS = dev dev-build dev-watch dev-clean
 
-# esbuild comes from node_modules at the version package-lock.json pins.
+# esbuild comes from node_modules, which `npm ci` fills at the version
+# package-lock.json pins. The guard below only checks that the binary
+# exists, not its version: a node_modules left by an older install
+# builds with whatever esbuild it holds, so run `npm ci` after pulling.
 # Never `npx esbuild`: without node_modules, npx would fetch whatever
 # version the registry serves and run its install script, which in the
 # release job happens next to the unlocked signing keychain.

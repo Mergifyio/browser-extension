@@ -66,9 +66,9 @@ on:
         type: string
       target_commitish:
         description: |
-          Branch or commit SHA to tag. Defaults to the branch the
-          workflow runs from — keep as-is unless you're cherry-
-          picking a release commit off an older line.
+          Branch or full commit SHA to build and tag. Defaults to
+          the branch the workflow runs from — keep as-is unless
+          you're cherry-picking a release commit off an older line.
         required: false
         type: string
         default: ''
@@ -113,6 +113,10 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # Build the commit the release will tag. Without `ref:`,
+          # `make` would build the dispatch branch while the tag went
+          # on `target_commitish`.
+          ref: ${{ inputs.target_commitish || github.ref }}
           # `--generate-notes` needs full history to walk back to the
           # previous tag.
           fetch-depth: 0
@@ -122,6 +126,23 @@ jobs:
           # create` gets its own through GH_TOKEN.
           persist-credentials: false
 
+      # `gh release create` reuses a tag that already exists, wherever
+      # it points, so the draft would carry assets built from another
+      # commit. Fail before the build instead.
+      - name: Check an existing tag points at the build commit
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if tagged=$(git rev-parse -q --verify "refs/tags/${INPUT_TAG}^{commit}"); then
+            head=$(git rev-parse HEAD)
+            if [ "${tagged}" != "${head}" ]; then
+              echo "::error::tag '${INPUT_TAG}' already exists at ${tagged}, not at the build commit ${head}"
+              exit 1
+            fi
+          fi
+
       # Same Node as the CI `test` job, so the release builds with the
       # toolchain the pull requests were tested with.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
@@ -129,13 +150,17 @@ jobs:
           node-version: '23'
 
       # `npm ci` installs esbuild at the version and integrity hash that
-      # package-lock.json pins, and runs before the certificate import so
-      # no install script ever runs next to the unlocked keychain. The
-      # Makefile refuses to build without node_modules/.bin/esbuild
-      # rather than letting `npx` fetch an unpinned one.
+      # package-lock.json pins, and runs before the certificate import.
+      # `--ignore-scripts` keeps every dependency's install script from
+      # running in a job that holds `contents: write` and, later, the
+      # signing identity; esbuild doesn't need its postinstall, since
+      # its launcher finds the binary in the `@esbuild/darwin-*`
+      # optional package. The Makefile refuses to build without
+      # node_modules/.bin/esbuild rather than letting `npx` fetch an
+      # unpinned one.
       - name: Install dependencies
         run: |
-          npm ci
+          npm ci --ignore-scripts
           brew install gnu-sed
 
           sudo xcode-select -s /Applications/Xcode.app
@@ -147,6 +172,9 @@ jobs:
           security default-keychain -s build.keychain
           security unlock-keychain -p password build.keychain
           security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/xcodebuild
+          # The identity now lives in the keychain; don't leave the
+          # decoded file in the workspace while `make` runs.
+          rm -f certificate.p12
           security set-key-partition-list -S apple-tool:,apple: -s -k password build.keychain
         env:
           CERTIFICATE_P12: ${{ secrets.BROWSER_EXT_APPLE_CERTIFICATE_P12 }}
@@ -164,13 +192,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           # Read inputs via env, not `${{ }}` interpolation, so a tag
-          # or commitish value containing shell metacharacters can't
-          # break out of the script. With direct interpolation,
+          # value containing shell metacharacters can't break out of
+          # the script. With direct interpolation,
           # `inputs.tag = "foo'; rm -rf /; '"` would render the script
           # as runnable injected commands; through env they reach bash
           # as plain string values.
           INPUT_TAG: ${{ inputs.tag }}
-          INPUT_TARGET: ${{ inputs.target_commitish }}
         shell: bash
         run: |
           set -euo pipefail
@@ -182,9 +209,11 @@ jobs:
               --generate-notes
               --title "${INPUT_TAG}"
           )
-          if [ -n "${INPUT_TARGET}" ]; then
-              args+=(--target "${INPUT_TARGET}")
-          fi
+          # Tag the commit that was checked out and built. Passing
+          # `target_commitish` through would leave the tag free to land
+          # elsewhere if that branch moved during the build, and with no
+          # `--target` gh tags the default branch, not the dispatch one.
+          args+=(--target "$(git rev-parse HEAD)")
           # `--draft` keeps the release mutable until the maintainer
           # clicks Publish. `--generate-notes` builds a changelog from
           # PRs merged since the previous tag — overridable in the UI
@@ -202,7 +231,8 @@ jobs:
 
       # Remove the decoded certificate and the build keychain whatever
       # happened above, so nothing that runs later on this runner finds
-      # the signing identity.
+      # the signing identity. The import step already deleted the
+      # certificate; this catches a run that failed before it did.
       - name: Remove signing material
         if: always()
         shell: bash
@@ -374,6 +404,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
 
       - name: Install the App Store Connect API key
         env:
