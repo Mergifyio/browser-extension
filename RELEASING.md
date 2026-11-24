@@ -49,8 +49,9 @@ The store jobs run only on Publish (never on the draft stage) and
 only for full releases — a release marked **pre-release** is skipped,
 so you can stage one without shipping it to the stores.
 
-- **Chrome Web Store** — `chrome-webstore-upload-cli` uploads
-  `mergify-chrome-<tag>.zip` and publishes it immediately.
+- **Chrome Web Store** — `chrome-webstore-upload-cli`, locked in
+  `release-tools/chrome/`, uploads `mergify-chrome-<tag>.zip` and
+  publishes it immediately.
 - **Firefox Add-ons (AMO)** — `web-ext sign --channel listed` submits
   `mergify-firefox-<tag>.zip` to Mozilla's review queue. The job exits
   as soon as the version is queued; Mozilla approval is asynchronous
@@ -65,6 +66,13 @@ so you can stage one without shipping it to the stores.
   verifies it via an online check, so the unstapled pkg still passes
   on a machine with network access). Stapling here is only a no-op
   belt-and-suspenders.
+
+The Chrome job never fetches its CLI from npm while it holds the store
+credentials: it installs it with `npm ci` from the lockfile in
+`release-tools/chrome/`. Dependabot keeps that lockfile current but
+skips major versions, since a major can change the command line the
+job passes. Bump a major by hand, after checking the job's arguments
+against the CLI's changelog.
 
 The three jobs are independent: if one store fails (e.g. an expired
 token, a rejected version), the others still ship and the failed job
