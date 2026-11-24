@@ -12,6 +12,25 @@ updates:
         dependency-type: "all"
     cooldown:
       default-days: 7
+  # The store CLIs release.yaml runs with the store credentials. Majors
+  # are skipped: one can change the command line a publish job passes,
+  # and CI only checks that each CLI installs and starts. Bump a major
+  # by hand.
+  - package-ecosystem: npm
+    directories:
+      - "/release-tools/chrome"
+    schedule:
+      interval: daily
+      time: "08:00"
+      timezone: Europe/Paris
+    allow:
+      - dependency-name: "*"
+        dependency-type: "all"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

@@ -53,11 +53,41 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
           make
 
+  # release.yaml runs these CLIs only on a release, with the store
+  # credentials. Install and start each one the same way here, so a
+  # Dependabot bump that breaks one fails its pull request, not the
+  # next release.
+  release-tools:
+    name: release tools (${{ matrix.dir }})
+    runs-on: ubuntu-26.04
+    strategy:
+      matrix:
+        include:
+          - dir: chrome
+            bin: chrome-webstore-upload
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install from the lockfile
+        working-directory: release-tools/${{ matrix.dir }}
+        run: npm ci --ignore-scripts
+
+      - name: Start the CLI
+        working-directory: release-tools/${{ matrix.dir }}
+        env:
+          BIN: ${{ matrix.bin }}
+        run: node_modules/.bin/"$BIN" --version
+
   ci-gate:
     if: ${{ !cancelled() }}
     needs:
       - actionlint
       - test
+      - release-tools
     runs-on: ubuntu-26.04
     steps:
       - name: Verify all jobs succeeded

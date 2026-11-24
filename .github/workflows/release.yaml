@@ -304,17 +304,25 @@ jobs:
       # Read-only: download the asset off the published release.
       contents: read
     steps:
-      # Only .nvmrc, for setup-node: the job ships the release asset,
-      # never files from the checkout.
+      # Only .nvmrc, for setup-node, and the locked CLI: the job ships
+      # the release asset, never files from the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          sparse-checkout: .nvmrc
+          sparse-checkout: |
+            .nvmrc
+            release-tools/chrome/
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: .nvmrc
+
+      # The upload step runs this CLI with the store credentials, so it
+      # comes from the lockfile, never from whatever npm serves that day.
+      - name: Install the Chrome Web Store CLI
+        working-directory: release-tools/chrome
+        run: npm ci --ignore-scripts
 
       - name: Download the reviewed Chrome asset
         env:
@@ -345,9 +353,9 @@ jobs:
           set -euo pipefail
           # No subcommand = upload + publish in one shot. v4 dropped the
           # old `--auto-publish` flag (upload+publish is now the default
-          # when no command is given); pinned to major 4 so the CLI's
-          # contract can't shift under us.
-          npx --yes chrome-webstore-upload-cli@4 \
+          # when no command is given). Dependabot leaves the CLI's major
+          # alone, so that contract can't shift under us.
+          release-tools/chrome/node_modules/.bin/chrome-webstore-upload \
             --source "mergify-chrome-${TAG}.zip" \
             --extension-id "$EXTENSION_ID"
 

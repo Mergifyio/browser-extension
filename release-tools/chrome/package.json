@@ -1,0 +1,7 @@
+{
+    "private": true,
+    "description": "The Chrome Web Store CLI that publish-chrome in .github/workflows/release.yaml runs, installed from this lockfile so the job never fetches it from npm.",
+    "dependencies": {
+        "chrome-webstore-upload-cli": "4.0.2"
+    }
+}
