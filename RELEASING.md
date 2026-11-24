@@ -20,7 +20,7 @@ is no auto-compute.
    release commit off an older branch.
 4. Click **Run workflow**.
 
-The workflow builds and signs the three artifacts on `macos-15`
+The workflow builds and signs the three artifacts on `macos-26`
 (Xcode is needed for the Safari `.pkg`) and runs
 `gh release create <tag> --draft --generate-notes` to create the
 release with the assets attached and notes auto-generated from PRs
