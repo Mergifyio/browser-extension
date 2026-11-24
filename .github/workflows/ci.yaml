@@ -24,9 +24,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # The release archive at a fixed version, checked against the SHA-256
-      # published in that release's checksums file, instead of an installer
-      # script fetched from actionlint's main branch. Bump both together.
+      # A fixed release, checked against the SHA-256 listed in that release's
+      # actionlint_<version>_checksums.txt. Dependabot can't bump a version
+      # written in a run step: change both values together, by hand.
       - name: Install actionlint
         env:
           ACTIONLINT_VERSION: 1.7.7
@@ -89,6 +89,8 @@ jobs:
             bin: web-ext
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
