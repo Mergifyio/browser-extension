@@ -1,0 +1,37 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": ["config:best-practices", ":semanticCommitTypeAll(chore)"],
+    "prConcurrentLimit": 10,
+    "prHourlyLimit": 10,
+    "rebaseWhen": "conflicted",
+    "minimumReleaseAge": "7 days",
+    "osvVulnerabilityAlerts": true,
+    "constraints": {
+        "npm": ">=11.10.0"
+    },
+    "lockFileMaintenance": {
+        "description": "A relock resolves every indirect dependency afresh, with no release date Renovate could check, so Renovate does not hold it back: npm enforces the age itself, from min-release-age in each project's .npmrc, which needs npm 11.10 (the constraint above). The schedule widens the default 'before 4am on monday' to all of Monday, so a run that does not happen in those four hours is not the week's only chance.",
+        "minimumReleaseAge": null,
+        "schedule": ["* * * * 1"]
+    },
+    "packageRules": [
+        {
+            "description": "security:minimumReleaseAgeNpm (via config:best-practices) waits only 3 days for npm packages, and a packageRules entry wins over the top-level minimumReleaseAge. Npm itself refuses anything younger than 7 days (.npmrc), so a bump raised sooner would fail to lock. Limited to the update types that carry a release date: the preset exempts the others, pinning included, and a value here would hold them for ever.",
+            "matchDatasources": ["npm"],
+            "matchUpdateTypes": ["major", "minor", "patch"],
+            "minimumReleaseAge": "7 days"
+        },
+        {
+            "description": "release.yaml runs these CLIs with the store credentials. One pull request moves both lockfiles.",
+            "matchFileNames": ["release-tools/**"],
+            "groupName": "release tools",
+            "groupSlug": "release-tools"
+        },
+        {
+            "description": "A major can change the command line a publish job passes, and CI only checks that each CLI installs and starts. Renovate lists it on the Dependency Dashboard and opens its pull request once someone has checked the job's arguments against the changelog and ticked it there.",
+            "matchFileNames": ["release-tools/**"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": true
+        }
+    ]
+}
