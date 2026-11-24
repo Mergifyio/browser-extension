@@ -70,10 +70,11 @@ so you can stage one without shipping it to the stores.
 
 The Chrome and Firefox jobs never fetch their CLI from npm while they
 hold the store credentials: each installs it with `npm ci` from its
-lockfile under `release-tools/`. Dependabot keeps those lockfiles
-current but skips major versions, since a major can change the command
-line a job passes. Bump a major by hand, after checking the job's
-arguments against the CLI's changelog.
+lockfile under `release-tools/`. Renovate keeps those lockfiles current,
+but it lists a CLI's next major on its Dependency Dashboard issue and
+opens the pull request only once someone ticks it there, since a major
+can change the command line a job passes. Check the job's arguments
+against the CLI's changelog before ticking it.
 
 The three jobs are independent: if one store fails (e.g. an expired
 token, a rejected version), the others still ship and the failed job

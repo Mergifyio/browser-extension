@@ -9,16 +9,22 @@ shared:
     merge_method: squash
   CheckRuns: &CheckRuns
     - check-success=ci-gate
+  # Renovate opens the version updates (renovate.json). dependabot[bot] stays
+  # for the security updates GitHub opens when the repository settings turn
+  # them on, which need no dependabot.yml.
   DefaultReviewCond: &DefaultReviewCond
     - "#approved-reviews-by>=1"
     - author = dependabot[bot]
+    - author = renovate[bot]
 
 queue_rules:
   - name: automated updates
     <<: *DefaultQueueOptions
     queue_conditions:
       - base = main
-      - author = dependabot[bot]
+      - or:
+          - author = dependabot[bot]
+          - author = renovate[bot]
       - and: *CheckRuns
     merge_conditions:
       - and: *CheckRuns
@@ -37,6 +43,7 @@ pull_request_rules:
   - name: request review
     conditions:
       - -author=dependabot[bot]
+      - -author=renovate[bot]
       - -merged
       - -closed
       - and: *CheckRuns
