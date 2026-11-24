@@ -143,11 +143,11 @@ jobs:
             fi
           fi
 
-      # Same Node as the CI `test` job, so the release builds with the
-      # toolchain the pull requests were tested with.
+      # .nvmrc sets Node for CI and every release job, so the release
+      # builds with the toolchain the pull requests were tested with.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: '23'
+          node-version-file: .nvmrc
 
       # `npm ci` installs esbuild at the version and integrity hash that
       # package-lock.json pins, and runs before the certificate import.
@@ -304,9 +304,17 @@ jobs:
       # Read-only: download the asset off the published release.
       contents: read
     steps:
+      # Only .nvmrc, for setup-node: the job ships the release asset,
+      # never files from the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .nvmrc
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
       - name: Download the reviewed Chrome asset
         env:
@@ -351,9 +359,17 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Only .nvmrc, for setup-node: the job ships the release asset,
+      # never files from the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .nvmrc
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
 
       - name: Download the reviewed Firefox asset
         env:

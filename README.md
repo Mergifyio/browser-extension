@@ -10,6 +10,9 @@ For Firefox, go to [Firefox web store](https://addons.mozilla.org/fr/firefox/add
 
 ## Build
 
+Use the Node version in `.nvmrc` (`nvm use` picks it up), the one CI and
+the release jobs run.
+
 Install the locked dependencies first: `make` uses the esbuild from
 `node_modules` and stops if it is missing.
 ```

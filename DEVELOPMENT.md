@@ -2,6 +2,9 @@
 
 ## Quick Start for Chrome Extension Development
 
+Use the Node version in `.nvmrc` (`nvm use` picks it up): CI and the
+release jobs read the same file.
+
 ### Option 1: Using npm (Recommended)
 
 1. **Install dependencies:**
