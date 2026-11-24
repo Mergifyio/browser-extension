@@ -15,10 +15,12 @@ updates:
   # The store CLIs release.yaml runs with the store credentials. Majors
   # are skipped: one can change the command line a publish job passes,
   # and CI only checks that each CLI installs and starts. Bump a major
-  # by hand.
+  # by hand. Updates are grouped into at most one pull request a day,
+  # since web-ext alone pulls in hundreds of indirect dependencies.
   - package-ecosystem: npm
     directories:
       - "/release-tools/chrome"
+      - "/release-tools/firefox"
     schedule:
       interval: daily
       time: "08:00"
@@ -29,6 +31,10 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    groups:
+      release-tools:
+        patterns:
+          - "*"
     cooldown:
       default-days: 7
   - package-ecosystem: "github-actions"

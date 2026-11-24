@@ -367,17 +367,27 @@ jobs:
     permissions:
       contents: read
     steps:
-      # Only .nvmrc, for setup-node: the job ships the release asset,
-      # never files from the checkout.
+      # Only .nvmrc, for setup-node, and the locked web-ext: the job
+      # ships the release asset, never files from the checkout. Keep it
+      # that narrow: web-ext reads options from a package.json or
+      # web-ext-config file in the working directory.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          sparse-checkout: .nvmrc
+          sparse-checkout: |
+            .nvmrc
+            release-tools/firefox/
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version-file: .nvmrc
+
+      # The signing step runs web-ext with the AMO credentials, so it
+      # comes from the lockfile, never from whatever npm serves that day.
+      - name: Install web-ext
+        working-directory: release-tools/firefox
+        run: npm ci --ignore-scripts
 
       - name: Download the reviewed Firefox asset
         env:
@@ -409,7 +419,7 @@ jobs:
           # succeeded.
           rm -rf firefox-src
           unzip -q "mergify-firefox-${TAG}.zip" -d firefox-src
-          npx --yes web-ext@10 sign \
+          release-tools/firefox/node_modules/.bin/web-ext sign \
             --source-dir firefox-src \
             --channel listed \
             --approval-timeout 0
