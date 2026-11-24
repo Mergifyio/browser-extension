@@ -24,24 +24,15 @@ jobs:
         with:
           persist-credentials: false
 
-      # A fixed release, checked against the SHA-256 listed in that release's
-      # actionlint_<version>_checksums.txt. Dependabot can't bump a version
-      # written in a run step: change both values together, by hand.
-      - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: 1.7.7
-          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
-        run: |
-          set -euo pipefail
-          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL -o "$archive" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
-          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
-          tar -xzf "$archive" actionlint
-          rm "$archive"
-
+      # actionlint's own image, which also pins the shellcheck it runs on
+      # run: scripts. Keep both the tag and the digest: Renovate bumps the
+      # tag and the digest together, and it cannot bump a digest alone to a
+      # new version.
       - name: Check workflow files
-        run: ./actionlint -color
+        # yamllint disable-line rule:line-length
+        uses: docker://rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+        with:
+          args: -color
 
   test:
     timeout-minutes: 20
@@ -75,8 +66,7 @@ jobs:
 
   # release.yaml runs these CLIs only on a release, with the store
   # credentials. Install and start each one the same way here, so a
-  # Dependabot bump that breaks one fails its pull request, not the
-  # next release.
+  # bump that breaks one fails its pull request, not the next release.
   release-tools:
     name: release tools (${{ matrix.dir }})
     runs-on: ubuntu-26.04

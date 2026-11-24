@@ -353,8 +353,9 @@ jobs:
           set -euo pipefail
           # No subcommand = upload + publish in one shot. v4 dropped the
           # old `--auto-publish` flag (upload+publish is now the default
-          # when no command is given). Dependabot leaves the CLI's major
-          # alone, so that contract can't shift under us.
+          # when no command is given). Renovate raises the CLI's next major
+          # only once someone approves it, so that contract can't shift
+          # under us.
           release-tools/chrome/node_modules/.bin/chrome-webstore-upload \
             --source "mergify-chrome-${TAG}.zip" \
             --extension-id "$EXTENSION_ID"
