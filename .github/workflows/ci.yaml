@@ -64,6 +64,77 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
           make
 
+  # TEMPORARY, do not merge: compares the Safari build on both images.
+  safari-build-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-26]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+          brew install gnu-sed
+
+      - name: Build the package as the test job does, and inspect it
+        run: |
+          set -euo pipefail
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          make mergify-safari-dev.pkg 2>&1 | tee build.log
+          echo "::group::deployment target warnings"
+          grep -i 'deployment target' build.log | sort -u || echo "none"
+          echo "::endgroup::"
+          pkgutil --expand-full mergify-safari-dev.pkg expanded
+          app=expanded/com.mergify.mergify-safari.pkg/Payload/mergify-safari.app
+          appex="$app/Contents/PlugIns/mergify-safari Extension.appex"
+          for bundle in "$app" "$appex"; do
+            echo "== ${bundle#expanded/}"
+            for key in LSMinimumSystemVersion DTXcode DTSDKName; do
+              echo "$key: $(/usr/libexec/PlistBuddy -c "Print :$key" "$bundle/Contents/Info.plist")"
+            done
+            binary="$bundle/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
+            echo "archs: $(lipo -archs "$binary")"
+            xcrun vtool -show-build "$binary"
+          done
+
+      # The release build archives for arm64 and x86_64 with Developer ID
+      # signing; this repeats it with signing off, the part CI can run.
+      - name: Archive for arm64 and x86_64, unsigned
+        run: |
+          set -euo pipefail
+          make mergify-safariTMP-dev.zip
+          mkdir -p universal/src
+          (cd universal/src && unzip -q ../../mergify-safariTMP-dev.zip)
+          xcrun safari-web-extension-converter --no-prompt --force \
+            --copy-resources --macos-only --no-open \
+            --app-name mergify-safari \
+            --bundle-identifier com.mergify.mergify-safari \
+            --project-location universal universal/src
+          echo "== deployment target in the generated project"
+          grep -h 'MACOSX_DEPLOYMENT_TARGET' \
+            universal/mergify-safari/mergify-safari.xcodeproj/project.pbxproj | sort -u
+          xcodebuild -project universal/mergify-safari/mergify-safari.xcodeproj \
+            -scheme mergify-safari -configuration Release -sdk macosx \
+            -archivePath universal/build.xcarchive \
+            -derivedDataPath universal/build archive \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+            MACOSX_DEPLOYMENT_TARGET=10.14 \
+            2>&1 | tee universal.log | tail -5
+          grep -i 'deployment target' universal.log | sort -u || echo "no deployment target warnings"
+          binary=universal/build.xcarchive/Products/Applications/mergify-safari.app/Contents/MacOS/mergify-safari
+          echo "archs: $(lipo -archs "$binary")"
+          xcrun vtool -show-build "$binary"
+
   # release.yaml runs these CLIs only on a release, with the store
   # credentials. Install and start each one the same way here, so a
   # bump that breaks one fails its pull request, not the next release.
