@@ -12,7 +12,7 @@
 import {
     MergifyCache as _MergifyCache,
     StackContextCache as _StackContextCache,
-    removeLegacyPrStatusEntries,
+    sweepLocalStorage,
 } from "./cache.js";
 import { debug } from "./debug.js";
 import { getPullRequestData, isGitHubPullRequestPage } from "./dom.js";
@@ -43,10 +43,10 @@ export * from "./stacks.js";
 export {
     _MergifyCache as MergifyCache,
     _StackContextCache as StackContextCache,
-    removeLegacyPrStatusEntries,
+    sweepLocalStorage,
 };
 
-removeLegacyPrStatusEntries();
+sweepLocalStorage();
 
 // Orchestrator-owned state
 let lastPullRequestUrl = null;
@@ -56,6 +56,9 @@ let pageUpdateScheduled = false;
 let _mqAttached = false;
 
 export function resetForNavigation() {
+    // A tab that only navigates within GitHub never loads this script again,
+    // so the sweep at load would be the only one it gets.
+    sweepLocalStorage();
     resetQueueState(); // also calls resetStackState internally
     mqPayload.detach();
     _mqAttached = false;

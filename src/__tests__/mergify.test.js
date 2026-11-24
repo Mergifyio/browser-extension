@@ -1,7 +1,7 @@
 const {
     MergifyCache,
     StackContextCache,
-    removeLegacyPrStatusEntries,
+    sweepLocalStorage,
     injectRowIntoMergeBox,
     isPullRequestOpen,
     isPullRequestDraft,
@@ -1251,24 +1251,29 @@ describe("parseRevisionMarker", () => {
     });
 });
 
-describe("removeLegacyPrStatusEntries", () => {
+describe("sweepLocalStorage", () => {
+    const HOUR = 60 * 60 * 1000;
+
+    beforeEach(() => {
+        jest.spyOn(Date, "now").mockImplementation(() => 10 * HOUR);
+    });
     afterEach(() => {
+        jest.restoreAllMocks();
         localStorage.clear();
     });
 
     // The per-PR status cache that coloured the stack rows' dots expired on
     // read, and its only reader went with the stack list — so without this
     // sweep its entries would sit in the user's storage for ever.
-    it("removes only the legacy pr_status entries", () => {
+    it("removes the legacy pr_status entries and keeps unrelated keys", () => {
         localStorage.setItem(
             "mergify_browser_extension_pr_status_o_r_1_sha",
-            '{"status":"open","timestamp":1}',
+            `{"status":"open","timestamp":${10 * HOUR}}`,
         );
         localStorage.setItem("mergify_browser_extension_o_r", "{}");
-        localStorage.setItem("mergify_browser_extension_stack_ctx_o_r_1", "{}");
         localStorage.setItem("unrelated", "x");
 
-        removeLegacyPrStatusEntries();
+        sweepLocalStorage();
 
         expect(
             localStorage.getItem(
@@ -1278,9 +1283,6 @@ describe("removeLegacyPrStatusEntries", () => {
         expect(
             localStorage.getItem("mergify_browser_extension_o_r"),
         ).not.toBeNull();
-        expect(
-            localStorage.getItem("mergify_browser_extension_stack_ctx_o_r_1"),
-        ).not.toBeNull();
         expect(localStorage.getItem("unrelated")).not.toBeNull();
     });
 
@@ -1289,8 +1291,45 @@ describe("removeLegacyPrStatusEntries", () => {
     it("keeps the repo-enabled entry of an org/repo that shares the prefix", () => {
         const collision = "mergify_browser_extension_pr_status-page";
         localStorage.setItem(collision, '{"isMergifyEnabled":true}');
-        removeLegacyPrStatusEntries();
+        sweepLocalStorage();
         expect(localStorage.getItem(collision)).not.toBeNull();
+    });
+
+    // Expiry on read keeps an entry until its pull request is opened again;
+    // the sweep removes it without that pull request ever being read.
+    it("removes revision cache entries older than an hour, keeps younger ones", () => {
+        const cache = new StackContextCache();
+        Date.now.mockImplementation(() => 8 * HOUR);
+        cache.update("o", "r", 1, { schema_version: 1, entries: [] });
+        // The { stackData, revisionData } shape written before the stack
+        // list was removed carries the same timestamp.
+        localStorage.setItem(
+            cache.key("o", "r", 2),
+            JSON.stringify({
+                stackData: { schema_version: 1, pulls: [] },
+                timestamp: 8 * HOUR,
+            }),
+        );
+        Date.now.mockImplementation(() => 9.5 * HOUR);
+        cache.update("o", "r", 3, { schema_version: 1, entries: [] });
+
+        Date.now.mockImplementation(() => 10 * HOUR);
+        sweepLocalStorage();
+
+        expect(localStorage.getItem(cache.key("o", "r", 1))).toBeNull();
+        expect(localStorage.getItem(cache.key("o", "r", 2))).toBeNull();
+        expect(localStorage.getItem(cache.key("o", "r", 3))).not.toBeNull();
+    });
+
+    it("removes revision cache entries it cannot read", () => {
+        const cache = new StackContextCache();
+        localStorage.setItem(cache.key("o", "r", 1), "not-json");
+        localStorage.setItem(cache.key("o", "r", 2), "{}");
+
+        sweepLocalStorage();
+
+        expect(localStorage.getItem(cache.key("o", "r", 1))).toBeNull();
+        expect(localStorage.getItem(cache.key("o", "r", 2))).toBeNull();
     });
 });
 
