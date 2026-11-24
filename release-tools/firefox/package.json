@@ -1,0 +1,7 @@
+{
+    "private": true,
+    "description": "The web-ext that publish-firefox in .github/workflows/release.yaml runs, installed from this lockfile so the job never fetches it from npm.",
+    "dependencies": {
+        "web-ext": "10.8.0"
+    }
+}

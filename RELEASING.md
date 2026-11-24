@@ -52,7 +52,8 @@ so you can stage one without shipping it to the stores.
 - **Chrome Web Store** — `chrome-webstore-upload-cli`, locked in
   `release-tools/chrome/`, uploads `mergify-chrome-<tag>.zip` and
   publishes it immediately.
-- **Firefox Add-ons (AMO)** — `web-ext sign --channel listed` submits
+- **Firefox Add-ons (AMO)** — `web-ext sign --channel listed`, with
+  web-ext locked in `release-tools/firefox/`, submits
   `mergify-firefox-<tag>.zip` to Mozilla's review queue. The job exits
   as soon as the version is queued; Mozilla approval is asynchronous
   and happens later on AMO. (web-ext can only sign a source directory,
@@ -67,12 +68,12 @@ so you can stage one without shipping it to the stores.
   on a machine with network access). Stapling here is only a no-op
   belt-and-suspenders.
 
-The Chrome job never fetches its CLI from npm while it holds the store
-credentials: it installs it with `npm ci` from the lockfile in
-`release-tools/chrome/`. Dependabot keeps that lockfile current but
-skips major versions, since a major can change the command line the
-job passes. Bump a major by hand, after checking the job's arguments
-against the CLI's changelog.
+The Chrome and Firefox jobs never fetch their CLI from npm while they
+hold the store credentials: each installs it with `npm ci` from its
+lockfile under `release-tools/`. Dependabot keeps those lockfiles
+current but skips major versions, since a major can change the command
+line a job passes. Bump a major by hand, after checking the job's
+arguments against the CLI's changelog.
 
 The three jobs are independent: if one store fails (e.g. an expired
 token, a rejected version), the others still ship and the failed job
