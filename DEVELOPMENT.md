@@ -20,7 +20,14 @@
 
 ### Option 2: Using Make
 
-1. **Start development mode:**
+1. **Install dependencies:**
+   ```bash
+   npm ci
+   ```
+   The Make targets use the esbuild installed in `node_modules` and stop
+   if it is missing.
+
+2. **Start development mode:**
    ```bash
    make dev
    ```
