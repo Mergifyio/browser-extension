@@ -1,0 +1,1 @@
+Re-scrubbed the 2026_11 classic fixture with skills#273's sanitizer: 7 per-form CSRF tokens and 2 timestamp_secret values were still in it. Values only.
