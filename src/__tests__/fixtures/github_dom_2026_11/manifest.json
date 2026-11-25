@@ -1,0 +1,39 @@
+{
+    "era": "github_dom_2026_11",
+    "recordedAt": "2026-11-25",
+    "description": "github.com DOM as served on 2026-11-25, both views of one open pull request (mergify-sandbox/browser-extension-fixtures#16, opened by the capturing account, so the only person in the page is the scrubbed viewer). Both views now mount react-app[app-name=repo]. github_pr_opened is the classic view, reached with ?overview=false by an account that opted into the Overview preview: same #new_comment_field form and mergebox-partial anchor as 2026_07, and Mergify's \"Tick the box\" comment on the page carries the app avatar, so mergifyDetectableFromPage is true and statusCommentId is that comment. github_pr_opened_overview_default is the Overview page as it opens: GitHub renamed its telemetry attribute, so the editor's Comment button carries data-telemetry-action=\"pull_requests.comments.submit\" and no data-dd-action-name at all; a lookup on the old name finds no composer and every merge-box button posts nothing (MRGFY-13408). The timeline is not rendered as the page opens (no [data-testid=timeline-item]), so statusCommentId is null there, as on 2026_07's github_pr_opened_overview_default. pullRequestAuthor is null and authorCommentIds empty on the Overview page: it renders no opening post (#pullrequest-<id>) and no a.author link, so the Mergify Stacks panel reads no comment there, as on 2026_07.",
+    "pages": {
+        "github_pr_opened": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/16?overview=false",
+            "state": "open",
+            "mergifyDetectableFromPage": true,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "overviewMergedTitle": false,
+            "queued": false,
+            "baseRef": "main",
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "unqueued",
+            "statusCommentId": "7161512330",
+            "postsCommand": true,
+            "pullRequestAuthor": "/fixture-author",
+            "authorCommentIds": []
+        },
+        "github_pr_opened_overview_default": {
+            "path": "/mergify-sandbox/browser-extension-fixtures/pull/16",
+            "state": "open",
+            "mergifyDetectableFromPage": false,
+            "authoredByMergify": false,
+            "mergedByMergify": false,
+            "overviewMergedTitle": false,
+            "queued": false,
+            "baseRef": "main",
+            "mergeBoxRowVariants": ["default"],
+            "queueButtonState": "unqueued",
+            "statusCommentId": null,
+            "postsCommand": true,
+            "pullRequestAuthor": null,
+            "authorCommentIds": []
+        }
+    }
+}

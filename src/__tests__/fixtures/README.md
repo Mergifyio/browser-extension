@@ -17,9 +17,12 @@ fixtures/
     manifest.json
     github_pr_opened.html
     ...
-  github_dom_2026_07/                # current github.com React DOM
+  github_dom_2026_07/                # github.com React DOM, 2026-07 (+ Overview pages 2026-11-10)
     manifest.json
     github_pr_opened.html
+    ...
+  github_dom_2026_11/                # github.com DOM of 2026-11-25: Overview editor's renamed telemetry tag
+    manifest.json
     ...
 ```
 
