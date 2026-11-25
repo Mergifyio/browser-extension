@@ -1320,29 +1320,31 @@ describe("note on GitHub's protected-ref block", () => {
 const { findMergeQueueCheckRunId } = require("../queue");
 
 describe("findMergeQueueCheckRunId", () => {
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const era = (dir, page) =>
-        fs.readFileSync(
-            path.resolve(__dirname, "fixtures", dir, `${page}.html`),
-            "utf8",
-        );
-    const LINK =
-        '<h4><a href="/o/r/pull/8/checks?check_run_id=88231724892" tabindex="-1"><span>Mergify Merge Queue</span></a></h4>';
+    const sidebarLink = (id, name) =>
+        `<a class="SideNav-subItem" data-turbo="false" href="/o/r/pull/8/checks?check_run_id=${id}">\n                    <span>${name}</span>\n</a>`;
+    const LINK = sidebarLink("88231724892", "Mergify Merge Queue");
+    // The /checks page repeats its main pane, as an escaped JSON string, in
+    // a script ahead of the sidebar.
+    const checksPage = (sidebar, summary = "") => {
+        const pane = `${sidebar}<div class="markdown-body">${summary}</div>`;
+        const copy = JSON.stringify(pane)
+            .replaceAll("<", "\\u003c")
+            .replaceAll(">", "\\u003e");
+        return `<script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsChecksRoute.Main":{"value":${copy}}}}</script>${pane}`;
+    };
 
-    test("reads the id off the recorded Mergify Merge Queue check link", () => {
+    test("reads the queue check's id off the /checks page", () => {
         expect(
             findMergeQueueCheckRunId(
-                era("github_dom_2026_07", "github_pr_queued"),
+                checksPage(LINK + sidebarLink("1", "Summary")),
             ),
         ).toBe("88231724892");
     });
 
-    test("ignores the other checks' links on a recorded page without the queue check", () => {
-        // Mergify Merge Protections and Summary links, no Merge Queue one.
-        const html = era("github_dom_2025_02", "github_pr_opened");
-        expect(html).toContain("check_run_id=");
-        expect(findMergeQueueCheckRunId(html)).toBeNull();
+    test("returns null on a /checks page without the queue check", () => {
+        expect(
+            findMergeQueueCheckRunId(checksPage(sidebarLink("1", "Summary"))),
+        ).toBeNull();
     });
 
     test("reads the bare link the other tests mock", () => {
@@ -1354,9 +1356,7 @@ describe("findMergeQueueCheckRunId", () => {
     });
 
     test("skips another check's link to reach the queue one", () => {
-        const html =
-            '<h4><a href="/o/r/pull/8/checks?check_run_id=1" tabindex="-1"><span>Summary</span></a></h4>' +
-            LINK;
+        const html = sidebarLink("1", "Summary") + LINK;
         expect(findMergeQueueCheckRunId(html)).toBe("88231724892");
     });
 
@@ -1380,10 +1380,8 @@ describe("findMergeQueueCheckRunId", () => {
         ).toBeNull();
     });
 
-    // The pattern this replaced, /check_run_id=(\d+)[^>]*>…/, took about
-    // 1.3 s on the 65,000-digit input and ~0.1 s on the repeated ids, on the
-    // page's main thread, every poll. Linear now: well under a millisecond
-    // and a few milliseconds. The bound leaves room for a slow CI runner.
+    // A match blocks the page's main thread. Each case takes a few
+    // milliseconds at most; the bound leaves room for a slow CI runner.
     test.each([
         [
             "a 65,000-digit run with no closing >",
@@ -1394,8 +1392,8 @@ describe("findMergeQueueCheckRunId", () => {
             "check_run_id=1 ".repeat(4600),
         ],
         [
-            "a 65,000-digit run right before the real link",
-            `check_run_id=${"1".repeat(65000)}${LINK}`,
+            "a 65,000-digit run in a check summary on the /checks page",
+            checksPage(LINK, `check_run_id=${"1".repeat(65000)}`),
         ],
     ])("stays fast on %s", (_label, html) => {
         const start = performance.now();
