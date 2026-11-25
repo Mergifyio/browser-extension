@@ -80,3 +80,6 @@ captures come from synthetic PRs on sandbox repos, not from live PRs. The
 capture + sanitization pipeline lives in the internal
 `record-github-fixtures` skill (Mergifyio/skills); it drops a ready era
 directory here, after which only the manifest's ground truth needs writing.
+When its sanitizer learns a new rule, run it again over every `.html` file
+here, not only the new capture: older captures still carry whatever it used
+to miss.
