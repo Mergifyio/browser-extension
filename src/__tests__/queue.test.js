@@ -436,12 +436,14 @@ describe("buildQueueButton", () => {
 const { postCommand } = require("../queue");
 
 describe("postCommand", () => {
-    const overviewComposer = (id) => `
+    // GitHub tags the editor's buttons with data-telemetry-action since
+    // November 2026, with data-dd-action-name before.
+    const overviewComposer = (id, tag = "data-telemetry-action") => `
         <fieldset id="${id}">
             <textarea placeholder="Leave a comment"></textarea>
             <div data-testid="markdown-editor-footer">
-                <button type="button" data-dd-action-name="pull_requests.lifecycle.close">Close pull request</button>
-                <button type="button" aria-disabled="true" data-dd-action-name="pull_requests.comments.submit">Comment</button>
+                <button type="button" ${tag}="pull_requests.lifecycle.close">Close pull request</button>
+                <button type="button" aria-disabled="true" ${tag}="pull_requests.comments.submit">Comment</button>
             </div>
         </fieldset>`;
 
@@ -495,6 +497,39 @@ describe("postCommand", () => {
     test("posts from the page's composer, not from an editor open above it", () => {
         document.body.innerHTML =
             overviewComposer("reply") + overviewComposer("page");
+
+        expect(postCommand("refresh")).toBe(true);
+
+        expect(document.querySelector("#reply textarea").value).toBe("");
+        expect(document.querySelector("#page textarea").value).toBe(
+            "@mergifyio refresh",
+        );
+    });
+
+    test("posts through an Overview editor that still carries the old telemetry tag", () => {
+        document.body.innerHTML = overviewComposer(
+            "page",
+            "data-dd-action-name",
+        );
+        const submitClick = jest.fn();
+        document
+            .querySelector(
+                '[data-dd-action-name="pull_requests.comments.submit"]',
+            )
+            .addEventListener("click", submitClick);
+
+        expect(postCommand("refresh")).toBe(true);
+
+        expect(document.querySelector("textarea").value).toBe(
+            "@mergifyio refresh",
+        );
+        expect(submitClick).toHaveBeenCalledTimes(1);
+    });
+
+    test("takes the page's composer whichever tag each editor carries", () => {
+        document.body.innerHTML =
+            overviewComposer("reply") +
+            overviewComposer("page", "data-dd-action-name");
 
         expect(postCommand("refresh")).toBe(true);
 

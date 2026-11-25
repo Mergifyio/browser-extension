@@ -462,6 +462,14 @@ export function deriveQueueButtonState() {
     return "unqueued";
 }
 
+// The Overview editor's Comment button carries GitHub's telemetry tag. GitHub
+// renamed the attribute in November 2026, and a page from an older deploy
+// still serves the old one.
+const OVERVIEW_COMMENT_SUBMIT_SELECTOR = [
+    'button[data-telemetry-action="pull_requests.comments.submit"]',
+    'button[data-dd-action-name="pull_requests.comments.submit"]',
+].join(",");
+
 // The pull request's new-comment composer: { field, submit }, or null when the
 // page has none. The classic view serves a server-rendered form; the Overview
 // page (an opt-in preview since 2026-11) serves a React markdown editor whose
@@ -476,9 +484,7 @@ export function findCommentComposer() {
     }
     // Last match: reply and edit editors render inside the comment list,
     // above the page's own composer at its foot.
-    const submits = document.querySelectorAll(
-        'button[data-dd-action-name="pull_requests.comments.submit"]',
-    );
+    const submits = document.querySelectorAll(OVERVIEW_COMMENT_SUBMIT_SELECTOR);
     for (const submit of Array.from(submits).reverse()) {
         const field = submit.closest("fieldset")?.querySelector("textarea");
         if (field) return { field, submit };
