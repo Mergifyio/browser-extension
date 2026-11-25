@@ -286,15 +286,15 @@ export function isPullRequestQueued() {
     return lastKnownQueueState;
 }
 
-// The "Mergify Merge Queue" check run's link on the pull request's /checks
-// page reads `href="…/checks?check_run_id=<id>" tabindex="-1"><span>Mergify
-// Merge Queue</span>`. Every repetition is bounded and the pieces can't
-// overlap: the id stops at the first non-digit (and a check run id fits in
-// 20 digits), and what sits between it and the tag's `>` is at most 1000
-// characters with no `<` or `>`, so the match can't run past the tag it
-// started in. The unbounded `(\d+)[^>]*>` this replaces backtracked
-// quadratically on a long digit run with no `>` after it, freezing the tab
-// for seconds on text a contributor can put on the page.
+// The /checks page sidebar links the check run as
+// `href="…/checks?check_run_id=<id>">`, a newline and indentation, then
+// `<span>Mergify Merge Queue</span>`. The match runs on the page's main
+// thread at every poll, and the page puts text contributors control (check
+// run names and summaries, repeated in an escaped JSON copy ahead of the
+// sidebar) before that link. So every repetition is bounded (a check run id
+// is 64-bit: at most 20 digits) and no two can claim the same characters:
+// `(\d+)[^>]*` backtracks quadratically on a long digit run and freezes the
+// tab.
 const MERGE_QUEUE_CHECK_RUN_RE =
     /check_run_id=(\d{1,20})(?!\d)[^<>]{0,1000}>\s*<span>Mergify Merge Queue/;
 
