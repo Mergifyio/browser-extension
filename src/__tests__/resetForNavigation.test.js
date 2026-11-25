@@ -16,4 +16,11 @@ describe("resetForNavigation", () => {
         resetForNavigation();
         expect(mqPayloadModule.detach).toHaveBeenCalled();
     });
+
+    test("removes expired revision cache entries", () => {
+        const key = "mergify_browser_extension_stack_ctx_o_r_1";
+        localStorage.setItem(key, '{"revisionData":null,"timestamp":0}');
+        resetForNavigation();
+        expect(localStorage.getItem(key)).toBeNull();
+    });
 });
