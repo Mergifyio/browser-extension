@@ -16,7 +16,7 @@ name: Release
 #   explicit semver `tag` (e.g. `1.4.2`). The workflow builds and
 #   signs the three artifacts (`mergify-firefox-<tag>.zip`,
 #   `mergify-chrome-<tag>.zip`, `mergify-safari-<tag>.pkg`) on
-#   `macos-15` (Xcode is needed for the Safari `.pkg`) and creates the
+#   `macos-26` (Xcode is needed for the Safari `.pkg`) and creates the
 #   GitHub Release as a *draft* with all three assets attached and
 #   notes auto-generated from the commit log via `--generate-notes`.
 #
@@ -90,7 +90,7 @@ jobs:
   prepare-draft:
     name: build artifacts and create draft release
     if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       # `gh release create` writes the release.
       contents: write
@@ -430,7 +430,7 @@ jobs:
     needs: assert-assets-present
     if: github.event_name == 'release' && github.event.action == 'published' && github.event.release.prerelease == false
     # macOS runner: notarytool/stapler ship with Xcode, not on Linux.
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: read
     steps:

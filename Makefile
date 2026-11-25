@@ -98,6 +98,12 @@ $(ESBUILD):
 
 APPLE_APP_NAME=mergify-safari
 
+# The oldest macOS the Safari app and its extension run on. Passed to
+# xcodebuild on the command line, which overrides every target's own
+# setting: the converter gives the app target the SDK's version, so
+# without it the app's minimum would follow whichever Xcode builds it.
+MACOS_DEPLOYMENT_TARGET = 10.14
+
 mergify-safari-${VERSION}.pkg: mergify-safariTMP-$(VERSION).zip
 	rm -rf safari
 	mkdir -p safari/src
@@ -134,6 +140,7 @@ ifeq ($(SIGN),1)
 	    archive \
 		ARCHS="arm64 x86_64" \
 		ONLY_ACTIVE_ARCH=NO \
+		MACOSX_DEPLOYMENT_TARGET=$(MACOS_DEPLOYMENT_TARGET) \
 		CODE_SIGN_STYLE="Manual" \
 		CODE_SIGN_IDENTITY="Developer ID Application: Mergify ($(APPLE_TEAM_ID))" \
 		DEVELOPMENT_TEAM=$(APPLE_TEAM_ID) \
@@ -162,7 +169,8 @@ else
 	    -archivePath safari/build.xcarchive \
 		-sdk macosx \
 		-derivedDataPath safari/build \
-	    archive
+	    archive \
+		MACOSX_DEPLOYMENT_TARGET=$(MACOS_DEPLOYMENT_TARGET)
 
 	productbuild \
 	  --component safari/build.xcarchive/Products/Applications/$(APPLE_APP_NAME).app /Applications \
