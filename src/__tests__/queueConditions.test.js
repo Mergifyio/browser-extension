@@ -1,4 +1,4 @@
-const { loadFixture } = require("./utils");
+const { classicComment, loadFixture, renderedCommand } = require("./utils");
 const { TextDecoder, TextEncoder } = require("node:util");
 
 // jsdom has neither; the browser the extension runs in has both.
@@ -1242,10 +1242,12 @@ describe("rich row while the queue request waits", () => {
         required_conditions: [],
     };
 
-    const withPayload = (payload) =>
+    // The payload as read from the status report issuecomment-<reportId>.
+    const withPayload = (payload, reportId = null) =>
         jest.doMock("../mqPayload", () => ({
             ...jest.requireActual("../mqPayload"),
             getCurrent: () => ({ source: "payload", payload }),
+            getPayloadCommentId: () => reportId,
         }));
 
     beforeEach(() => {
@@ -1311,29 +1313,68 @@ describe("rich row while the queue request waits", () => {
         });
     });
 
-    test("offers to cancel the request, and says so while the dequeue is pending", async () => {
+    // The report the payload was read from, then the dequeue the click posts:
+    // it lands before the engine rewrites the report, and Mergify puts its 👍
+    // on it as it receives it, before that too.
+    test.each([
+        ["an unacknowledged", false],
+        ["an acknowledged", true],
+    ])(
+        "offers to cancel the request, and says so while %s dequeue is pending",
+        async (_label, thumbsUp) => {
+            await jest.isolateModulesAsync(async () => {
+                withPayload(WAITING_PAYLOAD, "100");
+                const queue = require("../queue");
+                mockCheckRun(PROTECTIONS_RUN_HTML);
+                await queue.fetchQueueState();
+
+                const button = () =>
+                    queue
+                        .buildRichRow(WAITING_PAYLOAD)
+                        .querySelector("[data-mergify-queue-btn]");
+                expect(button().textContent).toBe("Cancel queue request");
+
+                // A second click would post a second dequeue.
+                document.body.insertAdjacentHTML(
+                    "beforeend",
+                    classicComment({
+                        id: 200,
+                        body: renderedCommand("dequeue"),
+                        thumbsUp,
+                    }),
+                );
+                expect(button().getAttribute("data-mergify-queue-btn")).toBe(
+                    "dequeuing",
+                );
+                expect(button().hasAttribute("disabled")).toBe(true);
+            });
+        },
+    );
+
+    test("a dequeue posted before the report leaves the cancel button", async () => {
         await jest.isolateModulesAsync(async () => {
-            withPayload(WAITING_PAYLOAD);
+            // That dequeue ended an earlier request; this one came from a
+            // checkbox, which leaves no command behind.
+            withPayload(WAITING_PAYLOAD, "200");
             const queue = require("../queue");
             mockCheckRun(PROTECTIONS_RUN_HTML);
             await queue.fetchQueueState();
-
-            const button = () =>
-                queue
-                    .buildRichRow(WAITING_PAYLOAD)
-                    .querySelector("[data-mergify-queue-btn]");
-            expect(button().textContent).toBe("Cancel queue request");
-
-            // The click's comment lands before the engine rewrites the status
-            // comment: a second click would post a second dequeue.
             document.body.insertAdjacentHTML(
                 "beforeend",
-                '<div class="TimelineItem"><div class="comment-body">@mergifyio dequeue</div></div>',
+                classicComment({
+                    id: 100,
+                    body: renderedCommand("dequeue"),
+                    thumbsUp: true,
+                }),
             );
-            expect(button().getAttribute("data-mergify-queue-btn")).toBe(
-                "dequeuing",
+
+            const button = queue
+                .buildRichRow(WAITING_PAYLOAD)
+                .querySelector("[data-mergify-queue-btn]");
+            expect(button.getAttribute("data-mergify-queue-btn")).toBe(
+                "requested",
             );
-            expect(button().hasAttribute("disabled")).toBe(true);
+            expect(button.textContent).toBe("Cancel queue request");
         });
     });
 

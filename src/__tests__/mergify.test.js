@@ -24,9 +24,13 @@ const {
     clearCommentsCache,
 } = require("../mergify");
 const {
+    CANCELLED_REPORT_HTML,
+    classicComment,
     loadFixture,
     injectFixtureInDOM,
     injectEraFixtureInDOM,
+    overviewComment,
+    renderedCommand,
 } = require("./utils");
 
 describe("MergifyCache", () => {
@@ -567,28 +571,16 @@ describe("isPullRequestQueued", () => {
     });
 });
 
-// The report the engine writes when a push cancels a queue request on a
-// repository without the queue's checkbox controls, as GitHub renders it: 85
-// characters naming the command, and never a 👍 (MRGFY-13536).
-const CANCELLED_REQUEST_HINT = `
-    <h3>🛑 Queue command cancelled</h3>
-    <p><strong>Hint</strong></p>
-    <p>To request it again, post a <code class="notranslate">@mergifyio queue</code> comment.</p>`;
+// A timeline of the comments given oldest first, as each view renders it: the
+// Overview page lists the newest first.
+const TIMELINES = {
+    classic: (comments) => comments.map(classicComment).join(""),
+    Overview: (comments) => comments.map(overviewComment).reverse().join(""),
+};
 
-// The classic timeline once that report is rewritten: the request Mergify
-// acknowledged, then the report.
-const CLASSIC_TIMELINE_WITH_CANCELLED_REQUEST_HINT = `
-    <div class="TimelineItem js-comment-container">
-        <a class="author Link--primary" href="/someuser">someuser</a>
-        <div class="comment-body markdown-body">
-            <p dir="auto"><a class="user-mention notranslate" data-hovercard-type="organization" href="https://github.com/Mergifyio">@Mergifyio</a> queue</p>
-        </div>
-        <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
-    </div>
-    <div class="TimelineItem js-comment-container">
-        <a class="author Link--primary" href="/apps/mergify">mergify</a>
-        <div class="comment-body markdown-body">${CANCELLED_REQUEST_HINT}</div>
-    </div>`;
+function showTimeline(view, ...comments) {
+    document.body.innerHTML = TIMELINES[view](comments);
+}
 
 describe("findLastMergifyCommand", () => {
     afterEach(() => {
@@ -600,193 +592,205 @@ describe("findLastMergifyCommand", () => {
         expect(findLastMergifyCommand()).toBeNull();
     });
 
-    it("should find @Mergifyio queue command", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@Mergifyio queue</div>
-            </div>
-        `;
-        const result = findLastMergifyCommand();
-        expect(result.command).toBe("queue");
-    });
-
-    it("should find @mergifyio dequeue command", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio dequeue</div>
-            </div>
-        `;
-        const result = findLastMergifyCommand();
-        expect(result.command).toBe("dequeue");
-    });
-
-    it("should return the most recent command", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-            </div>
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio dequeue</div>
-            </div>
-        `;
-        const result = findLastMergifyCommand();
-        expect(result.command).toBe("dequeue");
-    });
-
-    it("should detect acknowledged (thumbs up) state", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-                <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
-            </div>
-        `;
-        const result = findLastMergifyCommand();
-        expect(result.command).toBe("queue");
-        expect(result.acknowledged).toBe(true);
-    });
-
-    it("on the Overview page, returns the latest command although the page lists it first", () => {
-        // GitHub's Overview page (2026-11): newest comment first, the
-        // comment's id on its <article>, the body a bare .markdown-body, and
-        // each reaction a button labelled with its emoji and count.
-        document.body.innerHTML = `
-            <div data-testid="timeline-item"><div><article id="issuecomment-200">
-                <div class="markdown-body"><p>@mergifyio dequeue</p></div>
-            </article></div></div>
-            <div data-testid="timeline-item"><div><article id="issuecomment-100">
-                <div class="markdown-body"><p>@mergifyio queue</p></div>
-                <button aria-label="👍 1 reaction">👍 1</button>
-            </article></div></div>`;
-
-        expect(findLastMergifyCommand()).toEqual({
-            command: "dequeue",
-            acknowledged: false,
+    describe.each(Object.keys(TIMELINES))("on the %s view", (view) => {
+        it.each(["queue", "dequeue"])("finds the %s command", (command) => {
+            showTimeline(view, { id: 100, body: renderedCommand(command) });
+            expect(findLastMergifyCommand()).toEqual({
+                command,
+                acknowledged: false,
+            });
         });
-    });
 
-    it("on the Overview page, reads Mergify's 👍 on the command", () => {
-        document.body.innerHTML = `
-            <div data-testid="timeline-item"><div><article id="issuecomment-100">
-                <div class="markdown-body"><p>@mergifyio queue</p></div>
-                <button aria-label="Add reaction">☺</button>
-                <button aria-label="👍 1 reaction">👍 1</button>
-            </article></div></div>`;
-
-        expect(findLastMergifyCommand()).toEqual({
-            command: "queue",
-            acknowledged: true,
+        it("returns the most recent command", () => {
+            showTimeline(
+                view,
+                { id: 100, body: renderedCommand("queue"), thumbsUp: true },
+                { id: 200, body: renderedCommand("dequeue") },
+            );
+            expect(findLastMergifyCommand()).toEqual({
+                command: "dequeue",
+                acknowledged: false,
+            });
         });
-    });
 
-    it("should detect unacknowledged state", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-            </div>
-        `;
-        const result = findLastMergifyCommand();
-        expect(result.acknowledged).toBe(false);
-    });
-
-    it("skips a comment naming the command mid-sentence for the command before it", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">@Mergifyio queue</div>
-                <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
-            </div>
-            <div class="TimelineItem">
-                <div class="comment-body"><p>Should I post <code>@mergifyio queue</code> again?</p></div>
-            </div>
-        `;
-        expect(findLastMergifyCommand()).toEqual({
-            command: "queue",
-            acknowledged: true,
+        it("reads Mergify's 👍 on the command", () => {
+            showTimeline(view, {
+                id: 100,
+                body: renderedCommand("queue"),
+                thumbsUp: true,
+            });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "queue",
+                acknowledged: true,
+            });
         });
-    });
 
-    it("reads a command whatever follows it", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem">
-                <div class="comment-body">
-                    <p>@Mergifyio dequeue</p>
-                    <p>${"Ready once the release notes are in. ".repeat(5)}</p>
-                </div>
-            </div>
-        `;
-        expect(findLastMergifyCommand()).toEqual({
-            command: "dequeue",
-            acknowledged: false,
+        it("reads the deprecated requeue alias as queue", () => {
+            showTimeline(view, { id: 100, body: renderedCommand("requeue") });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "queue",
+                acknowledged: false,
+            });
         });
-    });
 
-    // GitHub's rendering of a comment whose markdown does not start with the
-    // trigger, so the engine does not run it, though its text does.
-    it.each([
-        [
-            "a quote reply",
-            `<blockquote>
-<p dir="auto"><a class="user-mention notranslate" data-hovercard-type="organization" href="https://github.com/Mergifyio">@Mergifyio</a> queue</p>
+        it("reads the trigger written as the URL of Mergify's account", () => {
+            showTimeline(view, {
+                id: 100,
+                body: '<p dir="auto"><a href="https://github.com/Mergifyio">https://github.com/Mergifyio</a> queue</p>',
+            });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "queue",
+                acknowledged: false,
+            });
+        });
+
+        // The engine strips them before matching (strip_invisible_characters).
+        it.each([
+            ["a zero-width space", "​"],
+            ["a word joiner", "⁠"],
+        ])("reads a command behind %s", (_label, lead) => {
+            showTimeline(view, {
+                id: 100,
+                body: renderedCommand("dequeue", lead),
+            });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "dequeue",
+                acknowledged: false,
+            });
+        });
+
+        it("reads a command with an invisible character after the trigger", () => {
+            showTimeline(view, {
+                id: 100,
+                body: renderedCommand("dequeue").replace(
+                    "</a> ",
+                    "</a>\u2060 ",
+                ),
+            });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "dequeue",
+                acknowledged: false,
+            });
+        });
+
+        it("skips a code span behind an invisible character", () => {
+            showTimeline(view, {
+                id: 100,
+                body: '<p dir="auto">​<code class="notranslate">@mergifyio queue</code></p>',
+            });
+            expect(findLastMergifyCommand()).toBeNull();
+        });
+
+        it("skips a comment naming the command mid-sentence for the command before it", () => {
+            showTimeline(
+                view,
+                { id: 100, body: renderedCommand("queue"), thumbsUp: true },
+                {
+                    id: 200,
+                    body: '<p dir="auto">Should I post <code class="notranslate">@mergifyio queue</code> again?</p>',
+                },
+            );
+            expect(findLastMergifyCommand()).toEqual({
+                command: "queue",
+                acknowledged: true,
+            });
+        });
+
+        it("reads a command whatever follows it", () => {
+            showTimeline(view, {
+                id: 100,
+                body: `${renderedCommand("dequeue")}
+<p dir="auto">${"Ready once the release notes are in. ".repeat(5)}</p>`,
+            });
+            expect(findLastMergifyCommand()).toEqual({
+                command: "dequeue",
+                acknowledged: false,
+            });
+        });
+
+        // A comment whose markdown does not start with the trigger, so the
+        // engine does not run it, though its text does.
+        it.each([
+            [
+                "a quote reply",
+                `<blockquote>
+${renderedCommand("queue")}
 </blockquote>
 <p dir="auto">Why is this not queued yet? ${"It has been approved for an hour. ".repeat(4)}</p>`,
-        ],
-        [
-            "a code span",
-            '<p dir="auto"><code class="notranslate">@mergifyio queue</code> does nothing here?</p>',
-        ],
-        [
-            "a list item",
-            `<ul dir="auto">
+            ],
+            [
+                "a code span",
+                '<p dir="auto"><code class="notranslate">@mergifyio queue</code> does nothing here?</p>',
+            ],
+            [
+                "a list item",
+                `<ul dir="auto">
 <li><a class="user-mention notranslate" data-hovercard-type="organization" href="https://github.com/Mergifyio">@Mergifyio</a> queue</li>
 </ul>`,
-        ],
-        [
-            "a code block",
-            `<pre class="notranslate"><code class="notranslate">@mergifyio queue
+            ],
+            [
+                "a code block",
+                `<pre class="notranslate"><code class="notranslate">@mergifyio queue
 </code></pre>`,
-        ],
-    ])("skips the command in %s", (_label, rendered) => {
-        document.body.innerHTML = `
-            <div class="TimelineItem js-comment-container">
-                <div class="comment-body markdown-body">${rendered}</div>
-            </div>
-        `;
-        expect(findLastMergifyCommand()).toBeNull();
+            ],
+        ])("skips the command in %s", (_label, body) => {
+            showTimeline(view, { id: 100, body });
+            expect(findLastMergifyCommand()).toBeNull();
+        });
+
+        it("skips Mergify's cancelled-request hint", () => {
+            showTimeline(
+                view,
+                { id: 100, body: renderedCommand("queue"), thumbsUp: true },
+                {
+                    id: 200,
+                    author: "/apps/mergify",
+                    body: CANCELLED_REPORT_HTML,
+                },
+            );
+            expect(findLastMergifyCommand()).toEqual({
+                command: "queue",
+                acknowledged: true,
+            });
+        });
+
+        it("skips Mergify's own comment even when it opens with the command", () => {
+            showTimeline(view, {
+                id: 100,
+                author: "/apps/mergify",
+                body: '<p dir="auto">@mergifyio queue was cancelled by a push.</p>',
+            });
+            expect(findLastMergifyCommand()).toBeNull();
+        });
     });
 
-    it("skips Mergify's cancelled-request hint", () => {
-        document.body.innerHTML = CLASSIC_TIMELINE_WITH_CANCELLED_REQUEST_HINT;
+    // The engine runs a command from a comment only (issue_comment events).
+    it("on the classic view, reads no command from the description, a review or the composer's preview", () => {
+        document.body.innerHTML = `
+            <div class="TimelineItem js-comment-container">
+                <div id="issue-1" class="timeline-comment-group">
+                    <div id="pullrequest-1" class="timeline-comment-group">
+                        <a class="author Link--primary" href="/someuser">someuser</a>
+                        <div class="comment-body markdown-body">${renderedCommand("dequeue")}</div>
+                    </div>
+                </div>
+            </div>
+            ${classicComment({ id: 100, body: renderedCommand("queue"), thumbsUp: true })}
+            <div class="TimelineItem js-comment-container">
+                <div id="pullrequestreview-300" class="timeline-comment-group">
+                    <a class="author Link--primary" href="/someuser">someuser</a>
+                    <div class="comment-body markdown-body">${renderedCommand("dequeue")}</div>
+                </div>
+            </div>
+            <div id="issuecomment-new">
+                <div class="timeline-comment-wrapper timeline-new-comment js-comment-container">
+                    <div class="comment-body markdown-body js-preview-body">${renderedCommand("dequeue")}</div>
+                </div>
+            </div>`;
         expect(findLastMergifyCommand()).toEqual({
             command: "queue",
             acknowledged: true,
         });
-    });
-
-    it("on the Overview page, skips Mergify's cancelled-request hint", () => {
-        document.body.innerHTML = `
-            <div data-testid="timeline-item"><div><article id="issuecomment-200">
-                <a data-testid="avatar-link" href="/apps/mergify">mergify</a>
-                <div class="markdown-body">${CANCELLED_REQUEST_HINT}</div>
-            </article></div></div>
-            <div data-testid="timeline-item"><div><article id="issuecomment-100">
-                <a data-testid="avatar-link" href="/someuser">someuser</a>
-                <div class="markdown-body"><p>@Mergifyio queue</p></div>
-                <button aria-label="👍 1 reaction">👍 1</button>
-            </article></div></div>`;
-
-        expect(findLastMergifyCommand()).toEqual({
-            command: "queue",
-            acknowledged: true,
-        });
-    });
-
-    it("skips Mergify's own comment even when it opens with the command", () => {
-        document.body.innerHTML = `
-            <div class="TimelineItem js-comment-container">
-                <a class="author Link--primary" href="/apps/mergify">mergify</a>
-                <div class="comment-body"><p>@mergifyio queue was cancelled by a push.</p></div>
-            </div>
-        `;
-        expect(findLastMergifyCommand()).toBeNull();
     });
 });
 
@@ -814,9 +818,7 @@ describe("deriveQueueButtonState", () => {
     it("should return 'queuing' when queue command posted without thumbs up", () => {
         document.body.innerHTML = `
             <span data-status="pullOpened">Open</span>
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-            </div>
+            ${classicComment({ id: 100, body: renderedCommand("queue") })}
         `;
         expect(deriveQueueButtonState()).toBe("queuing");
     });
@@ -824,10 +826,7 @@ describe("deriveQueueButtonState", () => {
     it("should return 'unqueued' when queue command has thumbs up but check run says not queued", () => {
         document.body.innerHTML = `
             <span data-status="pullOpened">Open</span>
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-                <button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>
-            </div>
+            ${classicComment({ id: 100, body: renderedCommand("queue"), thumbsUp: true })}
         `;
         expect(deriveQueueButtonState()).toBe("unqueued");
     });
@@ -835,7 +834,14 @@ describe("deriveQueueButtonState", () => {
     it("offers Add to merge queue again after Mergify's cancelled-request hint", () => {
         document.body.innerHTML = `
             <span data-status="pullOpened">Open</span>
-            ${CLASSIC_TIMELINE_WITH_CANCELLED_REQUEST_HINT}`;
+            ${TIMELINES.classic([
+                { id: 100, body: renderedCommand("queue"), thumbsUp: true },
+                {
+                    id: 200,
+                    author: "/apps/mergify",
+                    body: CANCELLED_REPORT_HTML,
+                },
+            ])}`;
         expect(deriveQueueButtonState()).toBe("unqueued");
     });
 
@@ -847,9 +853,7 @@ describe("deriveQueueButtonState", () => {
     it("should return 'draft' for a draft PR even with a pending queue command", () => {
         document.body.innerHTML = `
             <span data-status="draft">Draft</span>
-            <div class="TimelineItem">
-                <div class="comment-body">@mergifyio queue</div>
-            </div>
+            ${classicComment({ id: 100, body: renderedCommand("queue") })}
         `;
         expect(deriveQueueButtonState()).toBe("draft");
     });
