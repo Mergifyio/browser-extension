@@ -25,6 +25,7 @@ const {
     MERGE_BOX_ROW_ATTR,
     deriveQueueButtonState,
     findCommentComposer,
+    findLastMergifyCommand,
     findOverviewMergedTitles,
     getBaseRef,
     injectRowIntoMergeBox,
@@ -171,6 +172,15 @@ describe.each(listGitHubDomEras())("%s", (era) => {
 
         it("reads the base branch", () => {
             expect(getBaseRef()).toBe(expected.baseRef);
+        });
+
+        // The last queue command on the timeline, as the engine reads one (a
+        // comment opening on the trigger, never one Mergify wrote), and
+        // whether it carries a 👍, which Mergify adds once it ran it. An
+        // unacknowledged one holds the row on its pending state (queuing or
+        // dequeuing).
+        it("reads the last queue command a person posted", () => {
+            expect(findLastMergifyCommand()).toEqual(expected.lastCommand);
         });
 
         // The rendered outcome of the detectors above: "batch" is what keeps
