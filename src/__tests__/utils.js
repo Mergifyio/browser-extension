@@ -56,6 +56,43 @@ function injectEraFixtureInDOM(era, page) {
     document.body.innerHTML = loadEraFixture(era, page);
 }
 
+// GitHub's rendering of a comment opening on the mention of Mergify's account
+// (POST /markdown, gfm), after `lead` if any.
+const renderedCommand = (command, lead = "") =>
+    `<p dir="auto">${lead}<a class="user-mention notranslate" data-hovercard-type="organization" data-hovercard-url="/orgs/Mergifyio/hovercard" href="https://github.com/Mergifyio">@Mergifyio</a> ${command}</p>`;
+
+// The report the engine rewrites a cancelled queue request into, on a
+// repository without the queue's checkbox controls, as GitHub renders it: 85
+// characters naming the command, no payload, and never a 👍 (MRGFY-13536).
+const CANCELLED_REPORT_HTML = `<h3 dir="auto">🛑 Queue command cancelled</h3>
+<p dir="auto"><strong>Hint</strong></p>
+<p dir="auto">To request it again, post a <code class="notranslate">@mergifyio queue</code> comment.</p>`;
+
+// A comment as the classic view renders it: its issuecomment-<id> on the
+// group holding its author link, body and reactions.
+function classicComment({ id, body, author = "/someuser", thumbsUp = false }) {
+    return `
+        <div class="TimelineItem js-comment-container">
+            <div id="issuecomment-${id}" class="timeline-comment-group">
+                <a class="author Link--primary" href="${author}">${author}</a>
+                <div class="comment-body markdown-body">${body}</div>
+                ${thumbsUp ? '<button class="social-reaction-summary-item" value="THUMBS_UP react">1</button>' : ""}
+            </div>
+        </div>`;
+}
+
+// The same comment on GitHub's Overview page (2026-11): its id on its
+// <article>, the author link marked by a test id, the body a bare
+// .markdown-body, and each reaction a button labelled with its emoji and count.
+function overviewComment({ id, body, author = "/someuser", thumbsUp = false }) {
+    return `
+        <div data-testid="timeline-item"><div><article id="issuecomment-${id}">
+            <a data-testid="avatar-link" href="${author}">${author}</a>
+            <div class="markdown-body">${body}</div>
+            ${thumbsUp ? '<button aria-label="👍 1 reaction">👍 1</button>' : ""}
+        </article></div></div>`;
+}
+
 module.exports = {
     loadFixture,
     injectFixtureInDOM,
@@ -64,4 +101,8 @@ module.exports = {
     listEraFixtureFiles,
     loadEraFixture,
     injectEraFixtureInDOM,
+    renderedCommand,
+    CANCELLED_REPORT_HTML,
+    classicComment,
+    overviewComment,
 };

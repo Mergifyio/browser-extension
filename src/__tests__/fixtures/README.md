@@ -65,7 +65,7 @@ listed in each era's `description`.
 | `queued` | a Mergify Merge Queue check reports the PR as queued |
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |
-| `statusCommentId` | the `issuecomment-<id>` the payload poll fetches when no edit textarea is materialized: the latest Mergify comment headed "Merge Queue Status", else the latest Mergify comment with an id; `null` when there is none |
+| `statusCommentId` | the `issuecomment-<id>` the payload poll fetches when no edit textarea is materialized: the latest Mergify status report (an h3 opening on the state's emoji, the status card's image, or an engine up to 8.17's "Merge Queue Status" h1); `null` when there is none |
 | `lastCommand` | what `findLastMergifyCommand()` returns: the last `queue` / `dequeue` command on the timeline (a comment opening on the trigger, never one Mergify wrote) and whether it carries a 👍, which Mergify adds once it ran it, as `{ "command", "acknowledged" }`, or `null` |
 | `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 | `postsCommand` | `postCommand()` finds the page's new-comment composer, fills it with the `@mergifyio` command and clicks its Comment button: the classic form or the Overview page's React editor. `false` only on a page with no composer |

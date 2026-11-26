@@ -15,7 +15,7 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "draft",
             "lastCommand": null,
-            "statusCommentId": "2912525941",
+            "statusCommentId": null,
             "postsCommand": true,
             "pullRequestAuthor": "/syffe",
             "authorCommentIds": []
@@ -66,7 +66,7 @@
             "mergeBoxRowVariants": [],
             "queueButtonState": "draft",
             "lastCommand": null,
-            "statusCommentId": "2912525941",
+            "statusCommentId": null,
             "postsCommand": false,
             "pullRequestAuthor": "/syffe",
             "authorCommentIds": []

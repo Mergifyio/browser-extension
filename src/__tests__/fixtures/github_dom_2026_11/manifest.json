@@ -1,7 +1,7 @@
 {
     "era": "github_dom_2026_11",
     "recordedAt": "2026-11-25",
-    "description": "github.com DOM as served on 2026-11-25, both views of two open pull requests, each opened by the capturing account, so the only person in the page is the scrubbed viewer: mergify-sandbox/browser-extension-fixtures#16 (github_pr_opened*, 2026-11-25) and the cancelled-request pages below (2026-11-26). Both views now mount react-app[app-name=repo]. github_pr_opened is the classic view, reached with ?overview=false by an account that opted into the Overview preview: same #new_comment_field form and mergebox-partial anchor as 2026_07, and Mergify's \"Tick the box\" comment on the page carries the app avatar, so mergifyDetectableFromPage is true and statusCommentId is that comment. github_pr_opened_overview_default is the Overview page as it opens: GitHub renamed its telemetry attribute, so the editor's Comment button carries data-telemetry-action=\"pull_requests.comments.submit\" and no data-dd-action-name at all; a lookup on the old name finds no composer and every merge-box button posts nothing (MRGFY-13408). The timeline is not rendered as the page opens (no [data-testid=timeline-item]), so statusCommentId is null there, as on 2026_07's github_pr_opened_overview_default. pullRequestAuthor is null and authorCommentIds empty on the Overview page: it renders no opening post (#pullrequest-<id>) and no a.author link, so the Mergify Stacks panel reads no comment there, as on 2026_07. github_pr_cancelled_request and its _overview were recorded on 2026-11-26 from mergify-sandbox/browser-extension-cancelled-request#1 (queue_controls_comment: false): the author's acknowledged `@Mergifyio queue`, then a push, so Mergify rewrote its report into the 85-character \"To request it again, post a `@mergifyio queue` comment.\" hint and replied that the request was cancelled. The hint carries no payload and never gets a 👍: an extension reading it as the last command holds the row on \"Adding to merge queue…\" (queuing) instead of unqueued (MRGFY-13536). On these pages the Overview timeline is rendered, so statusCommentId is the cancellation reply on both views. That is a pinned gap: the report itself, now headed \"🛑 Queue command cancelled\" in an h3, is the session's status comment, but the picker recognizes a status report only by the \"Merge Queue Status\" h1 the engine no longer writes, so it falls back to the latest Mergify comment.",
+    "description": "github.com DOM as served on 2026-11-25, both views of two open pull requests, each opened by the capturing account, so the only person in the page is the scrubbed viewer: mergify-sandbox/browser-extension-fixtures#16 (github_pr_opened*, 2026-11-25) and the cancelled-request pages below (2026-11-26). Both views now mount react-app[app-name=repo]. github_pr_opened is the classic view, reached with ?overview=false by an account that opted into the Overview preview: same #new_comment_field form and mergebox-partial anchor as 2026_07, and Mergify's \"Tick the box\" comment on the page carries the app avatar, so mergifyDetectableFromPage is true; it is no status report, so statusCommentId is null. github_pr_opened_overview_default is the Overview page as it opens: GitHub renamed its telemetry attribute, so the editor's Comment button carries data-telemetry-action=\"pull_requests.comments.submit\" and no data-dd-action-name at all; a lookup on the old name finds no composer and every merge-box button posts nothing (MRGFY-13408). The timeline is not rendered as the page opens (no [data-testid=timeline-item]), so statusCommentId is null there, as on 2026_07's github_pr_opened_overview_default. pullRequestAuthor is null and authorCommentIds empty on the Overview page: it renders no opening post (#pullrequest-<id>) and no a.author link, so the Mergify Stacks panel reads no comment there, as on 2026_07. github_pr_cancelled_request and its _overview were recorded on 2026-11-26 from mergify-sandbox/browser-extension-cancelled-request#1 (queue_controls_comment: false): the author's acknowledged `@Mergifyio queue`, then a push, so Mergify rewrote its report into the 85-character \"To request it again, post a `@mergifyio queue` comment.\" hint and replied that the request was cancelled. The hint carries no payload and never gets a 👍: an extension reading it as the last command holds the row on \"Adding to merge queue…\" (queuing) instead of unqueued (MRGFY-13536). On these pages the Overview timeline is rendered, so statusCommentId is the report on both views, headed \"🛑 Queue command cancelled\" in an h3, not Mergify's cancellation reply below it (MRGFY-13539).",
     "pages": {
         "github_pr_opened": {
             "path": "/mergify-sandbox/browser-extension-fixtures/pull/16?overview=false",
@@ -15,7 +15,7 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "lastCommand": null,
-            "statusCommentId": "7161512330",
+            "statusCommentId": null,
             "postsCommand": true,
             "pullRequestAuthor": "/fixture-author",
             "authorCommentIds": []
@@ -49,7 +49,7 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "lastCommand": { "command": "queue", "acknowledged": true },
-            "statusCommentId": "7192028704",
+            "statusCommentId": "7192018251",
             "postsCommand": true,
             "pullRequestAuthor": "/fixture-author",
             "authorCommentIds": ["7192016573"]
@@ -66,7 +66,7 @@
             "mergeBoxRowVariants": ["default"],
             "queueButtonState": "unqueued",
             "lastCommand": { "command": "queue", "acknowledged": true },
-            "statusCommentId": "7192028704",
+            "statusCommentId": "7192018251",
             "postsCommand": true,
             "pullRequestAuthor": null,
             "authorCommentIds": []

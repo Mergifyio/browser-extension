@@ -140,8 +140,7 @@ describe.each(listGitHubDomEras())("%s", (era) => {
 
         // GitHub rarely materializes a comment's edit textarea, so the payload
         // poll usually picks the comment to fetch from the rendered timeline:
-        // the latest status report, by its heading, else the latest Mergify
-        // comment it can fetch.
+        // the latest status report, by its heading or its card.
         it("picks the status comment the payload poll fetches", () => {
             const textareas = Array.from(
                 document.querySelectorAll("textarea"),

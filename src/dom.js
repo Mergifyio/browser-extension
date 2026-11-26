@@ -15,19 +15,22 @@ export function isMergifyBotComment(container) {
     return false;
 }
 
-// The comments of the Overview page's timeline, oldest first. That page lists
-// them in the order its viewer picked, newest first by default, so they are
-// sorted by comment id, which GitHub allocates in creation order. An entry
-// without one (a commit, a label event) is left out.
-export function overviewTimelineComments(root = document) {
+// The pull request's comments, oldest first, on either view: each is the
+// element carrying its issuecomment-<id>, which holds its author, body and
+// reactions. The description, a review, the composer or a timeline event
+// carries no such id. The Overview page (an opt-in preview since 2026-11)
+// lists them in the order its viewer picked, newest first by default, so they
+// are sorted by that id, which GitHub allocates in creation order.
+export function timelineComments(root = document) {
     const comments = [];
-    for (const item of root.querySelectorAll('[data-testid="timeline-item"]')) {
-        const holder = item.querySelector('[id^="issuecomment-"]');
-        const id = /^issuecomment-(\d+)$/.exec(holder?.id ?? "")?.[1];
-        if (id) comments.push({ item, id: Number(id) });
+    for (const holder of root.querySelectorAll('[id^="issuecomment-"]')) {
+        // Not issuecomment-<id>-edit-form, -permalink, or the composer's
+        // issuecomment-new.
+        const id = /^issuecomment-(\d+)$/.exec(holder.id)?.[1];
+        if (id) comments.push({ holder, id: Number(id) });
     }
     comments.sort((a, b) => a.id - b.id);
-    return comments.map((c) => c.item);
+    return comments.map((c) => c.holder);
 }
 
 // Login of the Mergify GitHub App as it appears in GitHub's embedded payload.

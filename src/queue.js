@@ -5,9 +5,9 @@ import {
     isGitHubPullRequestPage,
     isMergifyBotComment,
     MERGIFY_APP_LOGIN,
-    overviewTimelineComments,
     readEmbeddedPullRequestPayload,
     readPrStatusFromDocument,
+    timelineComments,
 } from "./dom.js";
 import { getLogoSvg, parseSvg } from "./logo.js";
 import {
@@ -401,11 +401,30 @@ async function _fetchCheckStates(data) {
     }
 }
 
-const QUEUE_COMMAND_REGEX = /^\s*@mergify(?:io)? (dequeue|queue)\b/i;
+// What may come before the trigger: the engine's COMMAND_MATCHER allows
+// whitespace, and strip_invisible_characters removes control characters and
+// format characters such as a zero-width space or a word joiner first.
+// What the engine strips from a comment before matching a command
+// (strip_invisible_characters): control characters but tab and line breaks,
+// and format characters such as a zero-width space or a word joiner.
+const INVISIBLE_CHARACTERS =
+    /(?![\t\n\r])\p{Cc}|[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb]/gu;
+// The engine's COMMAND_MATCHER: the trigger as a mention or as the URL of
+// Mergify's account, then the command. `requeue` is a deprecated alias of
+// `queue`.
+const QUEUE_COMMAND_REGEX =
+    /^\s*(?:@|https:\/\/github\.com\/)mergify(?:io)? (dequeue|requeue|queue)\b/i;
+
+// The text a command is matched on, as the engine sees it. The trigger and
+// the command fit in a few dozen characters: the rest of a long paragraph
+// is not worth stripping on every lookup.
+function _visibleText(node) {
+    return node.textContent.slice(0, 256).replace(INVISIBLE_CHARACTERS, "");
+}
 
 function _leadingNode(node) {
     for (const child of node.childNodes) {
-        if (child.nodeType !== Node.TEXT_NODE || child.textContent.trim()) {
+        if (child.nodeType !== Node.TEXT_NODE || _visibleText(child).trim()) {
             return child;
         }
     }
@@ -425,32 +444,38 @@ function _openingCommand(body) {
     if (!lead || (lead.nodeType !== Node.TEXT_NODE && lead.nodeName !== "A")) {
         return null;
     }
-    const match = QUEUE_COMMAND_REGEX.exec(lead.parentNode.textContent);
-    return match ? match[1].toLowerCase() : null;
+    const match = QUEUE_COMMAND_REGEX.exec(_visibleText(lead.parentNode));
+    if (!match) return null;
+    const command = match[1].toLowerCase();
+    return command === "requeue" ? "queue" : command;
 }
 
-export function findLastMergifyCommand() {
-    const classic = document.querySelectorAll(
-        ".TimelineItem, .js-comment-container",
-    );
-    // The Overview page (an opt-in preview since 2026-11) has neither: its
-    // comments come oldest first, and their body is a bare .markdown-body.
-    const comments = classic.length ? classic : overviewTimelineComments();
+// The last queue command a person posted, with the comment holding it.
+function _lastCommand() {
+    // The engine runs a command from a comment only (issue_comment events),
+    // never from the description, a review or what the composer previews.
+    const comments = timelineComments();
     for (let i = comments.length - 1; i >= 0; i--) {
+        // The Overview page's comment body is a bare .markdown-body.
         const body = comments[i].querySelector(".comment-body, .markdown-body");
         if (!body) continue;
         // The engine never runs its own comments as commands.
         if (isMergifyBotComment(comments[i])) continue;
         const command = _openingCommand(body);
-        if (!command) continue;
-        // Mergify acknowledges a command with a 👍. The Overview page labels
-        // each reaction button with its emoji and count ("👍 1 reaction").
-        const acknowledged = !!comments[i].querySelector(
-            'button.social-reaction-summary-item[value^="THUMBS_UP"], button[aria-label^="👍"]',
-        );
-        return { command, acknowledged };
+        if (command) return { comment: comments[i], command };
     }
     return null;
+}
+
+export function findLastMergifyCommand() {
+    const last = _lastCommand();
+    if (!last) return null;
+    // Mergify acknowledges a command with a 👍. The Overview page labels
+    // each reaction button with its emoji and count ("👍 1 reaction").
+    const acknowledged = !!last.comment.querySelector(
+        'button.social-reaction-summary-item[value^="THUMBS_UP"], button[aria-label^="👍"]',
+    );
+    return { command: last.command, acknowledged };
 }
 
 export function deriveQueueButtonState() {
@@ -829,6 +854,16 @@ function _currentPayload() {
         return cur && cur.source === "payload" ? cur.payload : null;
     } catch (_e) {
         return null;
+    }
+}
+
+// The id of the status report the current payload was read from, 0 when
+// unknown.
+function _currentReportId() {
+    try {
+        return Number(require("./mqPayload.js").getPayloadCommentId()) || 0;
+    } catch (_e) {
+        return 0;
     }
 }
 
@@ -1750,10 +1785,14 @@ function deriveQueueButtonStateFromPayload(state) {
     )
         return "queued";
     // "waiting" is a queue command waiting for the queue conditions. A
-    // dequeue command posted after it cancels it, which the status comment
-    // says only once the engine rewrites it.
+    // dequeue command posted after its report cancels it, which the report
+    // says only once the engine rewrites it. One posted before the report
+    // ended an earlier request: this one came from a checkbox or a queue rule.
     if (state === "waiting") {
-        return findLastMergifyCommand()?.command === "dequeue"
+        const last = _lastCommand();
+        return last?.command === "dequeue" &&
+            Number(last.comment.id.slice("issuecomment-".length)) >
+                _currentReportId()
             ? "dequeuing"
             : "requested";
     }

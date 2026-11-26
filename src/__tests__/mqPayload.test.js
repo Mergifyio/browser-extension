@@ -4,6 +4,11 @@ const {
     findLatestStatusCommentSync,
     resolveLatestStatusCommentPayload,
 } = require("../mqPayload");
+const {
+    CANCELLED_REPORT_HTML,
+    overviewComment,
+    renderedCommand,
+} = require("./utils");
 
 const validJson = JSON.stringify({
     version: 1,
@@ -121,13 +126,56 @@ describe("parsePayload", () => {
 
 const MARKER_SOURCE = `<!---\nDO NOT EDIT\n-*- Mergify Payload -*-\n{"version":1,"state":"checking","queue_rule_name":null,"queued_at":null,"estimated_time_of_merge":null,"speculative_check_pr":null,"required_conditions":[]}\n-*- Mergify Payload End -*-\n-->`;
 
-// Build a TimelineItem fixture.
-//  - bot:           if true, includes the `a.author[href="/apps/mergify"]` author link
-//  - inlineSource:  if non-null, embeds a textarea.CommentBox-input with that value
-//  - commentId:     if non-null, wraps the timeline item in an issuecomment-<id> div
-function buildTimelineItem({ bot, inlineSource, commentId } = {}) {
+// GitHub's rendering of what the engine writes on a pull request (2026-11).
+// A status report opens on an <h3> naming the state after its emoji; the
+// payload above it is an HTML comment GitHub does not render.
+const WAITING_REPORT_HTML = `<h3 dir="auto">⏳ Waiting for queue conditions</h3>
+<p dir="auto"><strong>Waiting for</strong></p>
+<ul class="contains-task-list">
+<li class="task-list-item"><input type="checkbox" id="" disabled="" class="task-list-item-checkbox" aria-label="Incomplete task"> <code class="notranslate">status-success=ci-gate</code></li>
+</ul>`;
+const DEQUEUED_REPORT_HTML = `
+<h3 dir="auto">🚫 Left the queue · pull request manually dequeued</h3>
+<p dir="auto">12 min in the queue, with no time running CI.</p>`;
+// The source of the report a cancelled queue command is rewritten into,
+// CANCELLED_REPORT_HTML once rendered: it carries no payload.
+const CANCELLED_REPORT_MARKDOWN =
+    "### 🛑 Queue command cancelled\n\n**Hint**\n\nTo request it again, post a `@mergifyio queue` comment.";
+// The status card an org feature flag writes instead: its JSON is an HTML
+// comment, the card an image whose alt text opens with "Merge Queue: ".
+const CARD_REPORT_HTML =
+    '<p dir="auto"><a href="https://dashboard.mergify.com/orgs/mergify-sandbox/repos/browser-extension-cancelled-request/queues/status?branch=main&amp;pull=1" rel="nofollow"><themed-picture data-catalyst-inline="true"><picture><source media="(prefers-color-scheme: dark)" srcset="https://camo.githubusercontent.com/ea6dd42a1ac8de5bfa15f04645bfe11c46b849fc4fdf8696cf424373d36f12cb/68747470733a2f2f6170692e6d6572676966792e636f6d2f63617264732f30313233343536373839616263646566303132333435363738396162636465662e7376673f7468656d653d6461726b" data-canonical-src="https://api.mergify.com/cards/0123456789abcdef0123456789abcdef.svg?theme=dark"><img alt="Merge Queue: Waiting for queue conditions." src="https://camo.githubusercontent.com/18854c86f90bfd0378897cc4c9ec37489ef1fb7dbd2be15a39f0aee0fe3f59e9/68747470733a2f2f6170692e6d6572676966792e636f6d2f63617264732f30313233343536373839616263646566303132333435363738396162636465662e7376673f7468656d653d6c69676874" width="100%" data-canonical-src="https://api.mergify.com/cards/0123456789abcdef0123456789abcdef.svg?theme=light"></picture></themed-picture></a></p>';
+// Mergify's replies to commands open on a quote of the command, its other
+// comments on a heading of their own.
+const REFRESH_REPLY_HTML = `<blockquote>
+<p dir="auto"><code class="notranslate">refresh</code></p>
+</blockquote>
+<h4 dir="auto">✅ Pull request refreshed</h4>`;
+const CANCELLATION_REPLY_HTML = `<blockquote>
+<p dir="auto"><code class="notranslate">queue</code></p>
+</blockquote>
+<h4 dir="auto">🛑 The queue request has been cancelled: new commits were pushed</h4>`;
+const CONFLICTS_HTML =
+    '<h3 dir="auto">Mergify resolved the conflicts with <code class="notranslate">main</code></h3>';
+const MERGE_PROTECTIONS_HTML = '<h1 dir="auto">Merge Protections</h1>';
+
+let nextCommentId = 1000;
+
+// A comment as the classic view renders it: its issuecomment-<id> on the
+// element holding its author link, body and edit form.
+//  - bot:          its author link is Mergify's app
+//  - body:         its rendered body, the waiting report unless given
+//  - inlineSource: if non-null, the edit form's textarea.CommentBox-input
+//                  holds that markdown, as GitHub renders for an editor
+//  - commentId:    its id, the next one in creation order unless given
+function buildTimelineItem({
+    bot,
+    inlineSource,
+    commentId = String(nextCommentId++),
+    body = WAITING_REPORT_HTML,
+} = {}) {
     const item = document.createElement("div");
-    item.className = "TimelineItem";
+    item.id = `issuecomment-${commentId}`;
     if (bot) {
         const author = document.createElement("a");
         author.className = "author";
@@ -136,6 +184,7 @@ function buildTimelineItem({ bot, inlineSource, commentId } = {}) {
     }
     const commentBody = document.createElement("div");
     commentBody.className = "comment-body";
+    commentBody.innerHTML = body;
     item.appendChild(commentBody);
     if (inlineSource != null) {
         const ta = document.createElement("textarea");
@@ -145,13 +194,13 @@ function buildTimelineItem({ bot, inlineSource, commentId } = {}) {
         ta.value = inlineSource;
         item.appendChild(ta);
     }
-    if (commentId != null) {
-        const wrapper = document.createElement("div");
-        wrapper.id = `issuecomment-${commentId}`;
-        wrapper.appendChild(item);
-        return wrapper;
-    }
     return item;
+}
+
+function appendComments(...comments) {
+    for (const comment of comments) {
+        document.body.appendChild(buildTimelineItem(comment));
+    }
 }
 
 describe("findLatestStatusCommentSync", () => {
@@ -160,71 +209,52 @@ describe("findLatestStatusCommentSync", () => {
     });
 
     test("returns payload synchronously when inline textarea has the marker", () => {
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, inlineSource: MARKER_SOURCE }),
-        );
+        appendComments({ bot: true, inlineSource: MARKER_SOURCE });
         const result = findLatestStatusCommentSync();
         expect(result).not.toBeNull();
         expect(result.payload).not.toBeNull();
         expect(result.payload.state).toBe("checking");
     });
 
-    test("returns payload=null when Mergify comment exists but has no inline textarea", () => {
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, commentId: "12345" }),
-        );
-        const result = findLatestStatusCommentSync();
-        expect(result).not.toBeNull();
-        expect(result.payload).toBeNull();
-        expect(result.commentId).toBe("12345");
+    test("returns payload=null when the report has no inline textarea", () => {
+        appendComments({ bot: true, commentId: "12345" });
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
+            commentId: "12345",
+        });
     });
 
-    test("returns null when no Mergify-authored TimelineItem exists", () => {
-        document.body.appendChild(
-            buildTimelineItem({ bot: false, inlineSource: MARKER_SOURCE }),
-        );
+    test("returns null when no Mergify-authored comment exists", () => {
+        appendComments({ bot: false, inlineSource: MARKER_SOURCE });
         expect(findLatestStatusCommentSync()).toBeNull();
     });
 
-    test("picks the newest in DOM order when multiple Mergify comments exist", () => {
+    test("picks the newest report when several exist", () => {
         const firstSource = `<!---\nDO NOT EDIT\n-*- Mergify Payload -*-\n{"version":1,"state":"waiting","queue_rule_name":null,"queued_at":null,"estimated_time_of_merge":null,"speculative_check_pr":null,"required_conditions":[]}\n-*- Mergify Payload End -*-\n-->`;
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, inlineSource: firstSource }),
+        appendComments(
+            { bot: true, inlineSource: firstSource },
+            { bot: true, inlineSource: MARKER_SOURCE },
         );
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, inlineSource: MARKER_SOURCE }),
-        );
-        const result = findLatestStatusCommentSync();
-        expect(result.payload.state).toBe("checking");
+        expect(findLatestStatusCommentSync().payload.state).toBe("checking");
     });
 
-    test("skips later Mergify-authored events that have no marker and picks the latest status comment", () => {
-        // Real PRs have many Mergify-authored TimelineItems that are events
-        // (labels added, reviewers requested, queue breadcrumbs) AFTER the
-        // status comment in DOM order. The status comment is the only one
-        // with the payload marker; the resolver must skip the events and
-        // pick the latest comment WITH a marker.
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, inlineSource: MARKER_SOURCE }),
+    test("skips the timeline events Mergify authors after its report", () => {
+        // Labels added, reviewers requested, queue breadcrumbs: no comment.
+        appendComments({ bot: true, inlineSource: MARKER_SOURCE });
+        document.body.insertAdjacentHTML(
+            "beforeend",
+            `<div class="TimelineItem"><a class="author" href="/apps/mergify">mergify</a> added the <span>queue</span> label</div>`.repeat(
+                2,
+            ),
         );
-        // Two subsequent Mergify events without textareas or commentIds —
-        // these are not status comments.
-        document.body.appendChild(buildTimelineItem({ bot: true }));
-        document.body.appendChild(buildTimelineItem({ bot: true }));
-        const result = findLatestStatusCommentSync();
-        expect(result).not.toBeNull();
-        expect(result.payload).not.toBeNull();
-        expect(result.payload.state).toBe("checking");
+        expect(findLatestStatusCommentSync().payload.state).toBe("checking");
     });
 
     test("prefers the latest status report over a later Mergify reply", () => {
-        const status = buildTimelineItem({ bot: true, commentId: "100" });
-        status.querySelector(".comment-body").innerHTML =
-            "<h1>Merge Queue Status</h1><p>Waiting for queue conditions</p>";
-        document.body.appendChild(status);
-        // Mergify's answer to a Refresh click, posted after it.
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, commentId: "200" }),
+        appendComments(
+            { bot: true, commentId: "100" },
+            // Mergify's answer to a Refresh click, posted after it.
+            { bot: true, commentId: "200", body: REFRESH_REPLY_HTML },
         );
         expect(findLatestStatusCommentSync()).toEqual({
             payload: null,
@@ -233,25 +263,97 @@ describe("findLatestStatusCommentSync", () => {
     });
 
     test("reads the latest status report inline, not an older one's marker", () => {
-        // Session 1 ended "dequeued"; session 2's report was rewritten
-        // without a payload when its queue command was cancelled.
-        const older = buildTimelineItem({
-            bot: true,
-            commentId: "100",
-            inlineSource: markerFor({ ...VALID_PAYLOAD, state: "dequeued" }),
-        });
-        older.querySelector(".comment-body").innerHTML =
-            "<h1>Merge Queue Status</h1>";
-        document.body.appendChild(older);
-        const latest = buildTimelineItem({
-            bot: true,
+        appendComments(
+            // Session 1 ended "dequeued".
+            {
+                bot: true,
+                commentId: "100",
+                inlineSource: markerFor({
+                    ...VALID_PAYLOAD,
+                    state: "dequeued",
+                }),
+                body: DEQUEUED_REPORT_HTML,
+            },
+            // Session 2's report, rewritten without a payload when a push
+            // cancelled its queue command, and Mergify saying so below it.
+            {
+                bot: true,
+                commentId: "200",
+                inlineSource: CANCELLED_REPORT_MARKDOWN,
+                body: CANCELLED_REPORT_HTML,
+            },
+            { bot: true, commentId: "300", body: CANCELLATION_REPLY_HTML },
+        );
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
             commentId: "200",
-            inlineSource:
-                "# Merge Queue Status\n\n🛑 Queue command has been cancelled",
+            read: true,
         });
-        latest.querySelector(".comment-body").innerHTML =
-            "<h1>Merge Queue Status</h1>";
-        document.body.appendChild(latest);
+    });
+
+    test("reads a status card as the report", () => {
+        appendComments(
+            { bot: true, commentId: "100", body: CARD_REPORT_HTML },
+            { bot: true, commentId: "200", body: REFRESH_REPLY_HTML },
+        );
+        expect(findLatestStatusCommentSync()).toEqual({
+            payload: null,
+            commentId: "100",
+        });
+    });
+
+    test("reads a status card posted after a cancelled report", () => {
+        // A cancelled card is rewritten as a text report; the next queue
+        // request posts a card again.
+        appendComments(
+            { bot: true, commentId: "100", body: CANCELLED_REPORT_HTML },
+            { bot: true, commentId: "200", body: CARD_REPORT_HTML },
+            { bot: true, commentId: "300", body: REFRESH_REPLY_HTML },
+        );
+        expect(findLatestStatusCommentSync().commentId).toBe("200");
+    });
+
+    test.each([
+        ["a heading without an emoji", CONFLICTS_HTML],
+        ["the merge protections' heading", MERGE_PROTECTIONS_HTML],
+    ])(
+        "reads no status report in a Mergify comment opening on %s",
+        (_label, body) => {
+            appendComments(
+                { bot: true, commentId: "100" },
+                { bot: true, commentId: "200", body },
+            );
+            expect(findLatestStatusCommentSync().commentId).toBe("100");
+        },
+    );
+
+    test("reads no status report from Mergify's other comments", () => {
+        appendComments(
+            { bot: true, body: MERGE_PROTECTIONS_HTML },
+            { bot: true, body: REFRESH_REPLY_HTML },
+        );
+        expect(findLatestStatusCommentSync()).toBeNull();
+    });
+
+    test("reads the report an engine up to 8.17 heads with Merge Queue Status", () => {
+        appendComments(
+            {
+                bot: true,
+                commentId: "100",
+                inlineSource: markerFor({
+                    ...VALID_PAYLOAD,
+                    state: "dequeued",
+                }),
+                body: "<h1>Merge Queue Status</h1>",
+            },
+            {
+                bot: true,
+                commentId: "200",
+                inlineSource:
+                    "# Merge Queue Status\n\n🛑 Queue command has been cancelled",
+                body: "<h1>Merge Queue Status</h1>",
+            },
+        );
         expect(findLatestStatusCommentSync()).toEqual({
             payload: null,
             commentId: "200",
@@ -260,56 +362,42 @@ describe("findLatestStatusCommentSync", () => {
     });
 
     test("ignores a user comment that links to the app and copies the heading", () => {
-        const status = buildTimelineItem({ bot: true, commentId: "100" });
-        status.querySelector(".comment-body").innerHTML =
-            "<h1>Merge Queue Status</h1>";
-        document.body.appendChild(status);
-        const forged = buildTimelineItem({ commentId: "300" });
-        forged.querySelector(".comment-body").innerHTML =
-            '<h1>Merge Queue Status</h1><a href="/apps/mergify">Mergify</a>';
-        document.body.appendChild(forged);
+        appendComments(
+            { bot: true, commentId: "100" },
+            {
+                commentId: "300",
+                body: `${CANCELLED_REPORT_HTML}<a href="/apps/mergify">Mergify</a>`,
+            },
+        );
         expect(findLatestStatusCommentSync().commentId).toBe("100");
     });
 
     test("on the Overview page, reads the latest status report although the page lists it first", () => {
-        // GitHub's Overview page (2026-11): newest comment first, the
-        // comment's id on its <article>, the author's header link marked by a
-        // test id, the body a bare .markdown-body.
-        const comment = ({ id, author, body }) => `
-            <div data-testid="timeline-item"><div>
-                <article id="issuecomment-${id}">
-                    <a data-testid="avatar-link" href="${author}">${author}</a>
-                    <div class="markdown-body">${body}</div>
-                </article>
-            </div></div>`;
+        // overviewComment takes the comments newest first, as the page lists
+        // them by default.
         document.body.innerHTML = [
             // Mergify's answer to a Refresh click.
-            comment({
+            overviewComment({
                 id: 400,
                 author: "/apps/mergify",
-                body: "<p>Pull request refreshed</p>",
+                body: REFRESH_REPLY_HTML,
             }),
             // A user copying the heading, linking to the app in the body.
-            comment({
+            overviewComment({
                 id: 350,
-                author: "/someuser",
-                body: '<h1>Merge Queue Status</h1><a href="/apps/mergify">Mergify</a>',
+                body: `${CANCELLED_REPORT_HTML}<a href="/apps/mergify">Mergify</a>`,
             }),
-            comment({
+            overviewComment({
                 id: 300,
                 author: "/apps/mergify",
-                body: "<h1>Merge Queue Status</h1>",
+                body: CANCELLED_REPORT_HTML,
             }),
-            comment({
-                id: 250,
-                author: "/someuser",
-                body: "<p>@mergifyio queue</p>",
-            }),
+            overviewComment({ id: 250, body: renderedCommand("queue") }),
             // An earlier queue session's report.
-            comment({
+            overviewComment({
                 id: 100,
                 author: "/apps/mergify",
-                body: "<h1>Merge Queue Status</h1>",
+                body: DEQUEUED_REPORT_HTML,
             }),
         ].join("");
 
@@ -317,24 +405,6 @@ describe("findLatestStatusCommentSync", () => {
             payload: null,
             commentId: "300",
         });
-    });
-
-    test("falls back to the latest commentId-bearing candidate when no inline marker is present", () => {
-        // None of the candidates have a hydrated textarea with the marker,
-        // but two are issuecomment-hosted. The resolver should return the
-        // latest commentId for the fetch fallback.
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, commentId: "100" }),
-        );
-        document.body.appendChild(buildTimelineItem({ bot: true })); // event
-        document.body.appendChild(
-            buildTimelineItem({ bot: true, commentId: "200" }),
-        );
-        document.body.appendChild(buildTimelineItem({ bot: true })); // event
-        const result = findLatestStatusCommentSync();
-        expect(result).not.toBeNull();
-        expect(result.payload).toBeNull();
-        expect(result.commentId).toBe("200");
     });
 });
 
@@ -383,6 +453,15 @@ describe("resolveLatestStatusCommentPayload", () => {
         );
         expect(result.payload).not.toBeNull();
         expect(result.payload.state).toBe("checking");
+    });
+
+    test("fetches nothing when the page has no status report", async () => {
+        global.fetch = jest.fn();
+        document.body.appendChild(
+            buildTimelineItem({ bot: true, body: MERGE_PROTECTIONS_HTML }),
+        );
+        expect(await resolveLatestStatusCommentPayload()).toBeNull();
+        expect(global.fetch).not.toHaveBeenCalled();
     });
 
     test("returns null payload when fetch fails", async () => {
@@ -891,8 +970,6 @@ describe("payload mode — the status comment changes under it", () => {
         document.body.appendChild(
             buildTimelineItem({ bot: true, commentId: "100" }),
         );
-        document.querySelector("#issuecomment-100 .comment-body").innerHTML =
-            "<h1>Merge Queue Status</h1>";
         comments["100"] = markerFor(WAITING_PAYLOAD);
     });
 
@@ -919,8 +996,34 @@ describe("payload mode — the status comment changes under it", () => {
 
         // A push, a dequeue or closing the pull request cancels the command:
         // the engine rewrites the same comment, without a payload.
-        comments["100"] =
-            "# Merge Queue Status\n\n🛑 Queue command has been cancelled";
+        comments["100"] = CANCELLED_REPORT_MARKDOWN;
+        await jest.advanceTimersByTimeAsync(15_000);
+        await flush();
+
+        expect(getCurrent()).toEqual({
+            source: "fallback",
+            queued: false,
+            conditions: expect.objectContaining({ met: true }),
+        });
+        expect(cb).toHaveBeenLastCalledWith(getCurrent());
+    });
+
+    test("a newer report without a payload ends the payload read from the one before", async () => {
+        const cb = await attachInPayloadMode();
+
+        // Between two polls: a dequeue cancelled the request read so far, a
+        // checkbox requested it again, and a push cancelled that one too.
+        document.querySelector("#issuecomment-100 .comment-body").innerHTML =
+            CANCELLED_REPORT_HTML;
+        comments["100"] = CANCELLED_REPORT_MARKDOWN;
+        document.body.appendChild(
+            buildTimelineItem({
+                bot: true,
+                commentId: "200",
+                body: CANCELLED_REPORT_HTML,
+            }),
+        );
+        comments["200"] = CANCELLED_REPORT_MARKDOWN;
         await jest.advanceTimersByTimeAsync(15_000);
         await flush();
 
@@ -955,8 +1058,7 @@ describe("payload mode — the status comment changes under it", () => {
                 }),
         );
         const stale = refreshNow();
-        comments["100"] =
-            "# Merge Queue Status\n\n🛑 Queue command has been cancelled";
+        comments["100"] = CANCELLED_REPORT_MARKDOWN;
         await refreshNow();
         await flush();
         expect(getCurrent().source).toBe("fallback");
@@ -989,7 +1091,11 @@ describe("payload mode — the status comment changes under it", () => {
             document.body.innerHTML = "";
             if (mergifyComment) {
                 document.body.appendChild(
-                    buildTimelineItem({ bot: true, commentId: "300" }),
+                    buildTimelineItem({
+                        bot: true,
+                        commentId: "300",
+                        body: MERGE_PROTECTIONS_HTML,
+                    }),
                 );
                 comments["300"] = "# Merge Protections\n\n✅ All good";
             }
@@ -1011,7 +1117,11 @@ describe("payload mode — the status comment changes under it", () => {
 
         // Mergify answers a Refresh click below the status comment.
         document.body.appendChild(
-            buildTimelineItem({ bot: true, commentId: "200" }),
+            buildTimelineItem({
+                bot: true,
+                commentId: "200",
+                body: REFRESH_REPLY_HTML,
+            }),
         );
         comments["200"] = "> refresh\n\n#### ✅ Pull request refreshed";
         comments["100"] = markerFor({ ...VALID_PAYLOAD, state: "checking" });
