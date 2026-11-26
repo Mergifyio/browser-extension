@@ -21,7 +21,7 @@ fixtures/
     manifest.json
     github_pr_opened.html
     ...
-  github_dom_2026_11/                # github.com DOM of 2026-11-25: Overview editor's renamed telemetry tag
+  github_dom_2026_11/                # github.com DOM of 2026-11-25: Overview editor's renamed telemetry tag (+ cancelled-request pages 2026-11-26)
     manifest.json
     ...
 ```
@@ -66,6 +66,7 @@ listed in each era's `description`.
 | `baseRef` | base branch readable from the page, or `null` |
 | `mergeBoxRowVariants` | `data-mergify-merge-box-row` values the injector must create; `[]` when the page has no anchor |
 | `statusCommentId` | the `issuecomment-<id>` the payload poll fetches when no edit textarea is materialized: the latest Mergify comment headed "Merge Queue Status", else the latest Mergify comment with an id; `null` when there is none |
+| `lastCommand` | what `findLastMergifyCommand()` returns: the last `queue` / `dequeue` command on the timeline (a comment opening on the trigger, never one Mergify wrote) and whether it carries a 👍, which Mergify adds once it ran it, as `{ "command", "acknowledged" }`, or `null` |
 | `queueButtonState` | what `deriveQueueButtonState()` renders for this page — the outcome the detectors above add up to. `batch` is the one that suppresses the command buttons on a merge-queue batch PR |
 | `postsCommand` | `postCommand()` finds the page's new-comment composer, fills it with the `@mergifyio` command and clicks its Comment button: the classic form or the Overview page's React editor. `false` only on a page with no composer |
 | `pullRequestAuthor` | the profile path (`/<login>`, or `/apps/<slug>` for an app) of the opening post's author, the only account whose comments the Mergify Stacks panel reads; `null` when the page renders no opening post |
