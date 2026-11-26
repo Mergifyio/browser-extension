@@ -401,6 +401,34 @@ async function _fetchCheckStates(data) {
     }
 }
 
+const QUEUE_COMMAND_REGEX = /^\s*@mergify(?:io)? (dequeue|queue)\b/i;
+
+function _leadingNode(node) {
+    for (const child of node.childNodes) {
+        if (child.nodeType !== Node.TEXT_NODE || child.textContent.trim()) {
+            return child;
+        }
+    }
+    return null;
+}
+
+// The command a comment body opens with, "queue" or "dequeue", else null. The
+// engine runs one only when the comment's markdown starts with the trigger
+// (its COMMAND_MATCHER): never named mid-sentence, as Mergify's own reports
+// and people asking about it do ("post a `@mergifyio queue` comment"), nor
+// inside a quote, a list, a heading or a code span, whose markers the
+// rendered text no longer shows. So the body must open on a paragraph whose
+// first node is plain text or the mention link.
+function _openingCommand(body) {
+    let lead = _leadingNode(body);
+    if (lead?.nodeName === "P") lead = _leadingNode(lead);
+    if (!lead || (lead.nodeType !== Node.TEXT_NODE && lead.nodeName !== "A")) {
+        return null;
+    }
+    const match = QUEUE_COMMAND_REGEX.exec(lead.parentNode.textContent);
+    return match ? match[1].toLowerCase() : null;
+}
+
 export function findLastMergifyCommand() {
     const classic = document.querySelectorAll(
         ".TimelineItem, .js-comment-container",
@@ -411,25 +439,16 @@ export function findLastMergifyCommand() {
     for (let i = comments.length - 1; i >= 0; i--) {
         const body = comments[i].querySelector(".comment-body, .markdown-body");
         if (!body) continue;
-        // Only match short command comments (e.g. "@Mergifyio queue"),
-        // not Mergify's own long status reports that mention the command.
-        const text = body.textContent.trim();
-        if (text.length > 100) continue;
-        const lower = text.toLowerCase();
-        for (const cmd of ["dequeue", "queue"]) {
-            if (
-                lower.includes(`@mergifyio ${cmd}`) ||
-                lower.includes(`@mergify ${cmd}`)
-            ) {
-                // Mergify acknowledges a command with a 👍. The Overview page
-                // labels each reaction button with its emoji and count
-                // ("👍 1 reaction").
-                const acknowledged = !!comments[i].querySelector(
-                    'button.social-reaction-summary-item[value^="THUMBS_UP"], button[aria-label^="👍"]',
-                );
-                return { command: cmd, acknowledged };
-            }
-        }
+        // The engine never runs its own comments as commands.
+        if (isMergifyBotComment(comments[i])) continue;
+        const command = _openingCommand(body);
+        if (!command) continue;
+        // Mergify acknowledges a command with a 👍. The Overview page labels
+        // each reaction button with its emoji and count ("👍 1 reaction").
+        const acknowledged = !!comments[i].querySelector(
+            'button.social-reaction-summary-item[value^="THUMBS_UP"], button[aria-label^="👍"]',
+        );
+        return { command, acknowledged };
     }
     return null;
 }
