@@ -104,6 +104,27 @@
         "summary": ""
     },
     {
+        "name": "checks failed, waiting for a later batch",
+        "payload": {
+            "version": 1,
+            "state": "checking",
+            "queue_rule_name": "default",
+            "queued_at": "2026-10-16T12:00:00+00:00",
+            "estimated_time_of_merge": null,
+            "speculative_check_pr": 77,
+            "required_conditions": [
+                {
+                    "description": "check-success = ci",
+                    "match": false,
+                    "subconditions": []
+                }
+            ],
+            "step": "waiting_for_later_batch"
+        },
+        "title": "Checks failed · waiting for a later batch",
+        "summary": "merges if the later batch passes"
+    },
+    {
         "name": "waiting for the merge schedule",
         "payload": {
             "version": 1,

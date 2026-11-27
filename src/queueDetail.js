@@ -14,6 +14,7 @@ const STEPS = new Set([
     "waiting_for_checks_slot",
     "checks_running",
     "waiting_for_previous_batches",
+    "waiting_for_later_batch",
     "waiting_for_schedule",
     "blocked_by_frozen_batch",
     "conflict_deferred",
@@ -161,6 +162,15 @@ export function describeQueueStep(state, detail) {
                 title: "Waiting for the batches ahead",
                 icon: "clock",
                 notes: [],
+            };
+        // Its own checks failed, and the queue holds it while the batch built
+        // on it runs: that batch's pass merges both, its failure confirms
+        // this one.
+        case "waiting_for_later_batch":
+            return {
+                title: "Checks failed · waiting for a later batch",
+                icon: "clock",
+                notes: ["merges if the later batch passes"],
             };
         case "waiting_for_schedule":
             return {
